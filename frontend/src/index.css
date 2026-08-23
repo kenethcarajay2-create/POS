@@ -1,0 +1,379 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+
+/* =========================================================
+   THERMAL RECEIPT
+   Hidden during normal POS use
+========================================================= */
+
+#thermal-receipt {
+    display: none;
+}
+
+
+/* =========================================================
+   58MM THERMAL PRINT
+========================================================= */
+
+@media print {
+
+    /* =========================================
+       PAGE
+    ========================================= */
+
+    @page {
+        size: 58mm auto;
+        margin: 0;
+    }
+
+
+    html,
+    body {
+        width: 58mm !important;
+        margin: 0 !important;
+        padding: 0 !important;
+
+        background: white !important;
+    }
+
+
+    /* =========================================
+       HIDE NORMAL POS
+    ========================================= */
+
+    body * {
+        visibility: hidden !important;
+    }
+
+
+    /* =========================================
+       SHOW ONLY THERMAL RECEIPT
+    ========================================= */
+
+    #thermal-receipt,
+    #thermal-receipt * {
+        visibility: visible !important;
+    }
+
+
+    #thermal-receipt {
+
+        display: block !important;
+
+        position: absolute !important;
+
+        top: 0 !important;
+        left: 0 !important;
+
+        /*
+            48mm content width
+            inside 58mm paper.
+        */
+
+        width: 48mm !important;
+        max-width: 48mm !important;
+
+        margin: 0 !important;
+
+        padding: 1mm !important;
+
+        box-sizing: border-box !important;
+
+        background: white !important;
+        color: black !important;
+
+        font-family: Arial, Helvetica, sans-serif !important;
+
+        font-size: 7px !important;
+
+        line-height: 1.15 !important;
+
+        text-align: left !important;
+
+        word-spacing: normal !important;
+        letter-spacing: normal !important;
+    }
+
+
+    /* =========================================
+       HEADER
+    ========================================= */
+
+    .thermal-header {
+
+        width: 100% !important;
+
+        text-align: center !important;
+
+        margin: 0 0 3px 0 !important;
+        padding: 0 !important;
+    }
+
+
+    .thermal-header h1 {
+
+        font-size: 11px !important;
+
+        font-weight: bold !important;
+
+        line-height: 1.1 !important;
+
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+
+    .thermal-header p {
+
+        font-size: 7px !important;
+
+        line-height: 1.1 !important;
+
+        margin: 1px 0 0 0 !important;
+        padding: 0 !important;
+    }
+
+
+    /* =========================================
+       RECEIPT INFORMATION
+    ========================================= */
+
+    .thermal-info {
+
+        width: 100% !important;
+
+        font-size: 7px !important;
+
+        line-height: 1.25 !important;
+
+        text-align: left !important;
+
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+
+    .thermal-info div {
+
+        margin: 0 !important;
+        padding: 0 !important;
+
+        text-align: left !important;
+
+        word-spacing: normal !important;
+        letter-spacing: normal !important;
+    }
+
+
+    /* =========================================
+       DIVIDER
+    ========================================= */
+
+    .thermal-line {
+
+        width: 100% !important;
+
+        overflow: hidden !important;
+
+        white-space: nowrap !important;
+
+        font-family: monospace !important;
+
+        font-size: 6px !important;
+
+        line-height: 1 !important;
+
+        letter-spacing: 0 !important;
+        word-spacing: 0 !important;
+
+        text-align: left !important;
+
+        margin: 3px 0 !important;
+        padding: 0 !important;
+    }
+
+
+    /* =========================================
+       ITEMS
+    ========================================= */
+
+    .thermal-item {
+
+        width: 100% !important;
+
+        margin: 0 0 3px 0 !important;
+        padding: 0 !important;
+
+        text-align: left !important;
+    }
+
+
+    /* PRODUCT NAME */
+
+    .thermal-name {
+
+        width: 100% !important;
+
+        font-size: 7px !important;
+
+        font-weight: bold !important;
+
+        line-height: 1.15 !important;
+
+        text-align: left !important;
+
+        margin: 0 !important;
+        padding: 0 !important;
+
+        word-spacing: normal !important;
+        letter-spacing: normal !important;
+
+        overflow-wrap: anywhere !important;
+        word-break: break-word !important;
+    }
+
+
+    /* =========================================
+       ITEM QUANTITY / PRICE
+    ========================================= */
+
+    .thermal-item-row {
+
+        width: 100% !important;
+
+        display: grid !important;
+
+        grid-template-columns: 1fr auto !important;
+
+        column-gap: 4px !important;
+
+        align-items: center !important;
+
+        font-size: 6.5px !important;
+
+        line-height: 1.15 !important;
+
+        text-align: left !important;
+
+        margin: 0 !important;
+        padding: 0 !important;
+
+        word-spacing: normal !important;
+        letter-spacing: normal !important;
+    }
+
+
+    .thermal-item-row span {
+
+        white-space: nowrap !important;
+
+        word-spacing: normal !important;
+        letter-spacing: normal !important;
+    }
+
+
+    /* =========================================
+       TOTALS
+    ========================================= */
+
+    .thermal-totals {
+
+        width: 100% !important;
+
+        font-size: 7px !important;
+
+        line-height: 1.2 !important;
+
+        text-align: left !important;
+
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+
+    .thermal-totals > div {
+
+        width: 100% !important;
+
+        display: grid !important;
+
+        grid-template-columns: 1fr auto !important;
+
+        column-gap: 4px !important;
+
+        align-items: center !important;
+
+        margin: 1px 0 !important;
+        padding: 0 !important;
+
+        text-align: left !important;
+
+        word-spacing: normal !important;
+        letter-spacing: normal !important;
+    }
+
+
+    .thermal-totals > div span {
+
+        white-space: nowrap !important;
+
+        word-spacing: normal !important;
+        letter-spacing: normal !important;
+    }
+
+
+    /* =========================================
+       GRAND TOTAL
+    ========================================= */
+
+    .thermal-grand-total {
+
+        width: 100% !important;
+
+        font-size: 9px !important;
+
+        font-weight: bold !important;
+
+        border-top: 1px solid black !important;
+
+        margin-top: 3px !important;
+
+        padding-top: 2px !important;
+
+        margin-bottom: 2px !important;
+    }
+
+
+    /* =========================================
+       FOOTER
+    ========================================= */
+
+    .thermal-footer {
+
+        width: 100% !important;
+
+        text-align: center !important;
+
+        font-size: 7px !important;
+
+        line-height: 1.2 !important;
+
+        margin: 4px 0 0 0 !important;
+
+        padding: 0 !important;
+    }
+
+
+    .thermal-footer p {
+
+        margin: 1px 0 !important;
+        padding: 0 !important;
+
+        text-align: center !important;
+
+        word-spacing: normal !important;
+        letter-spacing: normal !important;
+    }
+
+}
