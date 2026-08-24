@@ -264,6 +264,86 @@ const getTransactions = async (
     return response.data.data;
 };
 
+/*
+============================================================
+UPDATE LEDGER TRANSACTION
+============================================================
+
+ADMIN ONLY.
+
+Backend route:
+
+PATCH /api/ledger/:id/transactions/:transactionId
+
+Supports:
+
+CREDIT
+- Product items
+- Custom/open-price items
+- Remarks
+
+PAYMENT
+- Amount
+- Remarks
+
+CASH_ADVANCE
+- Amount
+- Remarks
+
+The backend is responsible for:
+
+- reversing old inventory
+- applying corrected inventory
+- recalculating worker ledger totals
+- recalculating balances
+- recording edit history
+============================================================
+*/
+
+const updateTransaction = async (
+    accountId,
+    transactionId,
+    data
+) => {
+
+    if (!accountId) {
+
+        throw new Error(
+            "Account ID is required."
+        );
+
+    }
+
+
+    if (!transactionId) {
+
+        throw new Error(
+            "Transaction ID is required."
+        );
+
+    }
+
+
+    if (!data) {
+
+        throw new Error(
+            "Transaction update data is required."
+        );
+
+    }
+
+
+    const response =
+        await api.patch(
+            `/ledger/${accountId}/transactions/${transactionId}`,
+            data
+        );
+
+
+    return response.data.data;
+
+};
+
 
 /*
 ============================================================
@@ -915,6 +995,8 @@ const ledgerService = {
     addCashAdvance,
 
     getTransactions,
+
+    updateTransaction,
 
 
     /*

@@ -20,7 +20,6 @@ import {
     FaWallet,
     FaTrash,
     FaMinus,
-    FaBarcode,
     FaPrint,
     FaChevronDown,
     FaChevronUp,
@@ -28,6 +27,7 @@ import {
     FaSyncAlt,
     FaCalendarAlt,
     FaHistory,
+    FaEdit,
 } from "react-icons/fa";
 
 import {
@@ -36,6 +36,7 @@ import {
 
 import ledgerService from "../../services/ledger.service";
 import productService from "../../services/product.service";
+import useAuthStore from "../../store/auth.store";
 
 
 /*
@@ -74,6 +75,23 @@ function LedgerPage() {
 
     const [searchParams] =
         useSearchParams();
+
+        /*
+============================================================
+CURRENT USER
+============================================================
+*/
+
+const user =
+    useAuthStore(
+        (state) =>
+            state.user
+    );
+
+
+const isAdmin =
+    user?.role ===
+    "admin";
 
 
     /*
@@ -211,14 +229,31 @@ function LedgerPage() {
     ] = useState("");
 
     const [
-        barcodeInput,
-        setBarcodeInput,
-    ] = useState("");
-
-    const [
         selectedProductIndex,
         setSelectedProductIndex,
     ] = useState(0);
+
+
+    /*
+    ========================================================
+    CUSTOM / OPEN-PRICE CREDIT ITEM
+    ========================================================
+    */
+
+    const [
+        showCustomCredit,
+        setShowCustomCredit,
+    ] = useState(false);
+
+    const [
+        customCreditName,
+        setCustomCreditName,
+    ] = useState("Grocery");
+
+    const [
+        customCreditAmount,
+        setCustomCreditAmount,
+    ] = useState("");
 
 
     /*
@@ -227,13 +262,13 @@ function LedgerPage() {
     ========================================================
     */
 
-    const barcodeRef =
-        useRef(null);
-
     const productSearchRef =
         useRef(null);
 
     const productListRef =
+        useRef(null);
+
+    const customCreditAmountRef =
         useRef(null);
 
 
@@ -290,6 +325,52 @@ function LedgerPage() {
         setPaymentRemarks,
     ] = useState("");
 
+    /*
+============================================================
+EDIT TRANSACTION
+============================================================
+*/
+
+const [
+    showEditTransaction,
+    setShowEditTransaction,
+] = useState(false);
+
+
+const [
+    editingTransaction,
+    setEditingTransaction,
+] = useState(null);
+
+
+const [
+    editTransactionItems,
+    setEditTransactionItems,
+] = useState([]);
+
+
+const [
+    editTransactionAmount,
+    setEditTransactionAmount,
+] = useState("");
+
+
+const [
+    editTransactionRemarks,
+    setEditTransactionRemarks,
+] = useState("");
+
+
+const [
+    editTransactionReason,
+    setEditTransactionReason,
+] = useState("");
+
+
+const [
+    editProductSearch,
+    setEditProductSearch,
+] = useState("");
 
     /*
     ========================================================
@@ -2719,10 +2800,20 @@ function LedgerPage() {
 
         setProductSearch("");
 
-        setBarcodeInput("");
-
         setSelectedProductIndex(
             0
+        );
+
+        setShowCustomCredit(
+            false
+        );
+
+        setCustomCreditName(
+            "Grocery"
+        );
+
+        setCustomCreditAmount(
+            ""
         );
 
         setShowAddCredit(
@@ -2733,7 +2824,7 @@ function LedgerPage() {
         setTimeout(
             () => {
 
-                barcodeRef
+                productSearchRef
                     .current
                     ?.focus();
 
@@ -2751,6 +2842,10 @@ function LedgerPage() {
                 false
             );
 
+            setShowCustomCredit(
+                false
+            );
+
             setCreditAccount(
                 null
             );
@@ -2759,10 +2854,16 @@ function LedgerPage() {
 
             setProductSearch("");
 
-            setBarcodeInput("");
-
             setSelectedProductIndex(
                 0
+            );
+
+            setCustomCreditName(
+                "Grocery"
+            );
+
+            setCustomCreditAmount(
+                ""
             );
 
         };
@@ -2804,6 +2905,8 @@ function LedgerPage() {
                 const existing =
                     current.find(
                         (item) =>
+                            item.itemType !==
+                                "CUSTOM" &&
                             item.productId ===
                             product.id
                     );
@@ -2827,6 +2930,8 @@ function LedgerPage() {
 
                     return current.map(
                         (item) =>
+                            item.itemType !==
+                                "CUSTOM" &&
                             item.productId ===
                             product.id
                                 ? {
@@ -2847,6 +2952,12 @@ function LedgerPage() {
                     ...current,
 
                     {
+                        cartId:
+                            `product-${product.id}`,
+
+                        itemType:
+                            "PRODUCT",
+
                         productId:
                             product.id,
 
@@ -2875,13 +2986,19 @@ function LedgerPage() {
         );
 
 
-        setBarcodeInput("");
+        setProductSearch(
+            ""
+        );
+
+        setSelectedProductIndex(
+            0
+        );
 
 
         setTimeout(
             () => {
 
-                barcodeRef
+                productSearchRef
                     .current
                     ?.focus();
 
@@ -2894,53 +3011,247 @@ function LedgerPage() {
 
     /*
     ========================================================
-    BARCODE
+    COMBINED PRODUCT SEARCH / BARCODE
+    ========================================================
+
+    One input handles both:
+
+    - barcode scanner
+    - typed barcode
+    - product name search
+    - category search
     ========================================================
     */
 
-    const handleBarcodeSubmit = (
+    const handleProductSearchKeyDown = (
         event
     ) => {
 
+        if (
+            event.key !==
+            "Enter"
+        ) {
+
+            return;
+
+        }
+
+
         event.preventDefault();
 
-
-        const barcode =
-            barcodeInput.trim();
+        event.stopPropagation();
 
 
-        if (!barcode) {
+        const query =
+            productSearch
+                .trim();
+
+
+        if (!query) {
             return;
         }
 
+
+        /*
+        ----------------------------------------------------
+        EXACT BARCODE MATCH
+        ----------------------------------------------------
+        Barcode scanners normally send Enter automatically.
+        */
+
+        const barcodeProduct =
+            products.find(
+                (product) =>
+                    String(
+                        product.barcode ||
+                        ""
+                    ) ===
+                    query
+            );
+
+
+        if (barcodeProduct) {
+
+            addProductToCredit(
+                barcodeProduct
+            );
+
+            return;
+
+        }
+
+
+        /*
+        ----------------------------------------------------
+        SELECTED SEARCH RESULT
+        ----------------------------------------------------
+        */
 
         const product =
-            products.find(
-                (item) =>
-                    item.barcode ===
-                    barcode
+            filteredProducts[
+                selectedProductIndex
+            ];
+
+
+        if (product) {
+
+            addProductToCredit(
+                product
             );
-
-
-        if (!product) {
-
-            alert(
-                `Product with barcode ${barcode} was not found.`
-            );
-
-
-            setBarcodeInput("");
 
             return;
 
         }
 
 
-        addProductToCredit(
-            product
+        alert(
+            `No product found for ${query}.`
         );
 
     };
+
+
+    /*
+    ========================================================
+    CUSTOM / GROCERY CREDIT
+    ========================================================
+    */
+
+    const openCustomCredit =
+        () => {
+
+            setCustomCreditName(
+                "Grocery"
+            );
+
+            setCustomCreditAmount(
+                ""
+            );
+
+            setShowCustomCredit(
+                true
+            );
+
+
+            setTimeout(
+                () => {
+
+                    customCreditAmountRef
+                        .current
+                        ?.focus();
+
+                },
+                80
+            );
+
+        };
+
+
+    const closeCustomCredit =
+        () => {
+
+            setShowCustomCredit(
+                false
+            );
+
+            setCustomCreditName(
+                "Grocery"
+            );
+
+            setCustomCreditAmount(
+                ""
+            );
+
+
+            setTimeout(
+                () => {
+
+                    productSearchRef
+                        .current
+                        ?.focus();
+
+                },
+                40
+            );
+
+        };
+
+
+    const addCustomCreditItem =
+        () => {
+
+            const name =
+                customCreditName
+                    .trim() ||
+                "Grocery";
+
+
+            const amount =
+                Number(
+                    customCreditAmount
+                );
+
+
+            if (
+                !Number.isFinite(
+                    amount
+                ) ||
+                amount <= 0
+            ) {
+
+                alert(
+                    "Enter a valid custom credit amount."
+                );
+
+                return;
+
+            }
+
+
+            const customId =
+                `custom-${Date.now()}-${Math.random()}`;
+
+
+            setCreditCart(
+                (current) => [
+
+                    ...current,
+
+                    {
+                        cartId:
+                            customId,
+
+                        itemType:
+                            "CUSTOM",
+
+                        productId:
+                            null,
+
+                        barcode:
+                            "",
+
+                        name,
+
+                        price:
+                            amount,
+
+                        quantity:
+                            1,
+
+                        stock:
+                            null,
+
+                        unit:
+                            "Custom",
+                    },
+
+                ]
+            );
+
+
+            closeCustomCredit();
+
+        };
 
 
     /*
@@ -2959,6 +3270,33 @@ function LedgerPage() {
         const handleKeyboard = (
             event
         ) => {
+
+            /*
+            ----------------------------------------------------
+            CUSTOM ITEM POPUP OWNS ITS KEYBOARD
+            ----------------------------------------------------
+            */
+
+            if (showCustomCredit) {
+
+                if (
+                    event.key ===
+                    "Escape"
+                ) {
+
+                    event.preventDefault();
+
+                    event.stopPropagation();
+
+                    closeCustomCredit();
+
+                }
+
+
+                return;
+
+            }
+
 
             if (
                 event.key ===
@@ -3075,8 +3413,14 @@ function LedgerPage() {
                 "Enter"
             ) {
 
+                /*
+                The combined search field handles its own
+                Enter key so barcode scans work correctly.
+                */
+
                 if (
-                    barcodeInput.trim()
+                    document.activeElement ===
+                    productSearchRef.current
                 ) {
 
                     return;
@@ -3127,9 +3471,10 @@ function LedgerPage() {
 
     }, [
         showAddCredit,
+        showCustomCredit,
         filteredProducts,
         selectedProductIndex,
-        barcodeInput,
+        productSearch,
         creditAccount,
         creditCart,
         saving,
@@ -3187,7 +3532,7 @@ function LedgerPage() {
     */
 
     const changeCreditQuantity = (
-        productId,
+        itemId,
         amount
     ) => {
 
@@ -3196,12 +3541,38 @@ function LedgerPage() {
                 current.map(
                     (item) => {
 
+                        const currentId =
+                            item.cartId ||
+                            item.productId;
+
+
                         if (
-                            item.productId !==
-                            productId
+                            currentId !==
+                            itemId
                         ) {
 
                             return item;
+
+                        }
+
+
+                        if (
+                            item.itemType ===
+                            "CUSTOM"
+                        ) {
+
+                            return {
+
+                                ...item,
+
+                                quantity:
+                                    Math.max(
+                                        1,
+                                        item.quantity +
+                                        amount
+                                    ),
+
+                            };
 
                         }
 
@@ -3230,15 +3601,18 @@ function LedgerPage() {
 
 
     const removeCreditItem = (
-        productId
+        itemId
     ) => {
 
         setCreditCart(
             (current) =>
                 current.filter(
                     (item) =>
-                        item.productId !==
-                        productId
+                        (
+                            item.cartId ||
+                            item.productId
+                        ) !==
+                        itemId
                 )
         );
 
@@ -3270,7 +3644,7 @@ function LedgerPage() {
             ) {
 
                 alert(
-                    "Please add at least one product."
+                    "Please add at least one credit item."
                 );
 
                 return;
@@ -3307,15 +3681,46 @@ function LedgerPage() {
 
                             items:
                                 creditCart.map(
-                                    (item) => ({
+                                    (item) => {
 
-                                        productId:
-                                            item.productId,
+                                        if (
+                                            item.itemType ===
+                                            "CUSTOM"
+                                        ) {
 
-                                        quantity:
-                                            item.quantity,
+                                            return {
 
-                                    })
+                                                itemType:
+                                                    "CUSTOM",
+
+                                                name:
+                                                    item.name,
+
+                                                quantity:
+                                                    item.quantity,
+
+                                                unitPrice:
+                                                    item.price,
+
+                                            };
+
+                                        }
+
+
+                                        return {
+
+                                            itemType:
+                                                "PRODUCT",
+
+                                            productId:
+                                                item.productId,
+
+                                            quantity:
+                                                item.quantity,
+
+                                        };
+
+                                    }
                                 ),
 
                             remarks:
@@ -3885,6 +4290,1011 @@ function LedgerPage() {
 
         };
 
+
+        /*
+============================================================
+OPEN EDIT TRANSACTION
+============================================================
+*/
+
+const openEditTransaction = (
+    transaction
+) => {
+
+    if (!isAdmin) {
+
+        return;
+
+    }
+
+
+    if (!transaction) {
+
+        return;
+
+    }
+
+
+    /*
+    --------------------------------------------------------
+    WORKER HISTORY LOCK
+
+    Backend also enforces this.
+
+    PAID/CLOSED worker ledgers cannot be edited.
+    --------------------------------------------------------
+    */
+
+    if (
+        selectedAccount?.type ===
+            "WORKER" &&
+        selectedWorkerLedger?.status !==
+            "OPEN"
+    ) {
+
+        alert(
+            "Transactions from a PAID or CLOSED worker ledger cannot be edited."
+        );
+
+        return;
+
+    }
+
+
+    setEditingTransaction(
+        transaction
+    );
+
+
+    setEditTransactionRemarks(
+        transaction.remarks ||
+        ""
+    );
+
+
+    setEditTransactionReason(
+        ""
+    );
+
+
+    setEditProductSearch(
+        ""
+    );
+
+
+    /*
+    ========================================================
+    CREDIT
+    ========================================================
+    */
+
+    if (
+        transaction.type ===
+        "CREDIT"
+    ) {
+
+        const items =
+            (
+                transaction.items ||
+                []
+            ).map(
+                (
+                    item,
+                    index
+                ) => {
+
+                    const itemType =
+                        item.itemType ||
+                        (
+                            item.product
+                                ? "PRODUCT"
+                                : "CUSTOM"
+                        );
+
+
+                    const productId =
+                        item.product?._id ||
+                        item.product?.id ||
+                        item.product ||
+                        item.productId ||
+                        null;
+
+
+                    return {
+
+                        cartId:
+                            `edit-${transaction.id || transaction._id}-${index}`,
+
+                        itemType,
+
+                        productId:
+                            itemType ===
+                            "PRODUCT"
+                                ? String(
+                                    productId ||
+                                    ""
+                                )
+                                : null,
+
+                        name:
+                            item.name ||
+                            item.product?.name ||
+                            "Item",
+
+                        barcode:
+                            item.barcode ||
+                            item.product?.barcode ||
+                            "",
+
+                        quantity:
+                            Number(
+                                item.quantity
+                            ) || 1,
+
+                        unitPrice:
+                            Number(
+                                item.unitPrice ??
+                                item.price
+                            ) || 0,
+
+                    };
+
+                }
+            );
+
+
+        setEditTransactionItems(
+            items
+        );
+
+    } else {
+
+        /*
+        ====================================================
+        PAYMENT / CASH ADVANCE
+        ====================================================
+        */
+
+        setEditTransactionItems(
+            []
+        );
+
+
+        setEditTransactionAmount(
+            String(
+                Number(
+                    transaction.amount
+                ) || 0
+            )
+        );
+
+    }
+
+
+    setShowEditTransaction(
+        true
+    );
+
+};
+
+
+/*
+============================================================
+CLOSE EDIT TRANSACTION
+============================================================
+*/
+
+const closeEditTransaction =
+    () => {
+
+        if (saving) {
+
+            return;
+
+        }
+
+
+        setShowEditTransaction(
+            false
+        );
+
+
+        setEditingTransaction(
+            null
+        );
+
+
+        setEditTransactionItems(
+            []
+        );
+
+
+        setEditTransactionAmount(
+            ""
+        );
+
+
+        setEditTransactionRemarks(
+            ""
+        );
+
+
+        setEditTransactionReason(
+            ""
+        );
+
+
+        setEditProductSearch(
+            ""
+        );
+
+    };
+
+
+/*
+============================================================
+EDIT CREDIT TOTAL
+============================================================
+*/
+
+const editCreditTotal =
+    editTransactionItems.reduce(
+        (
+            total,
+            item
+        ) => {
+
+            return (
+                total +
+                (
+                    Number(
+                        item.unitPrice
+                    ) || 0
+                ) *
+                (
+                    Number(
+                        item.quantity
+                    ) || 0
+                )
+            );
+
+        },
+        0
+    );
+
+
+/*
+============================================================
+EDIT PRODUCT SEARCH
+============================================================
+*/
+
+const editFilteredProducts =
+    useMemo(
+        () => {
+
+            const query =
+                editProductSearch
+                    .trim()
+                    .toLowerCase();
+
+
+            if (!query) {
+
+                return [];
+
+            }
+
+
+            return products
+                .filter(
+                    (product) => {
+
+                        return (
+
+                            product.name
+                                .toLowerCase()
+                                .includes(
+                                    query
+                                ) ||
+
+                            product.barcode
+                                .toLowerCase()
+                                .includes(
+                                    query
+                                )
+
+                        );
+
+                    }
+                )
+                .slice(
+                    0,
+                    8
+                );
+
+        },
+        [
+            products,
+            editProductSearch,
+        ]
+    );
+
+
+/*
+============================================================
+ADD PRODUCT TO EDITED CREDIT
+============================================================
+*/
+
+const addProductToEditTransaction = (
+    product
+) => {
+
+    if (!product) {
+
+        return;
+
+    }
+
+
+    setEditTransactionItems(
+        (current) => {
+
+            const existing =
+                current.find(
+                    (item) =>
+                        item.itemType ===
+                            "PRODUCT" &&
+                        String(
+                            item.productId
+                        ) ===
+                        String(
+                            product.id
+                        )
+                );
+
+
+            if (existing) {
+
+                return current.map(
+                    (item) => {
+
+                        if (
+                            item.itemType ===
+                                "PRODUCT" &&
+                            String(
+                                item.productId
+                            ) ===
+                            String(
+                                product.id
+                            )
+                        ) {
+
+                            return {
+
+                                ...item,
+
+                                quantity:
+                                    Number(
+                                        item.quantity
+                                    ) + 1,
+
+                            };
+
+                        }
+
+
+                        return item;
+
+                    }
+                );
+
+            }
+
+
+            return [
+
+                ...current,
+
+                {
+                    cartId:
+                        `edit-product-${product.id}-${Date.now()}`,
+
+                    itemType:
+                        "PRODUCT",
+
+                    productId:
+                        product.id,
+
+                    name:
+                        product.name,
+
+                    barcode:
+                        product.barcode ||
+                        "",
+
+                    quantity:
+                        1,
+
+                    /*
+                    Backend recalculates PRODUCT price.
+                    */
+
+                    unitPrice:
+                        Number(
+                            product.price
+                        ) || 0,
+                },
+
+            ];
+
+        }
+    );
+
+
+    setEditProductSearch(
+        ""
+    );
+
+};
+
+
+/*
+============================================================
+ADD CUSTOM ITEM TO EDITED CREDIT
+============================================================
+*/
+
+const addCustomToEditTransaction =
+    () => {
+
+        setEditTransactionItems(
+            (current) => [
+
+                ...current,
+
+                {
+                    cartId:
+                        `edit-custom-${Date.now()}-${Math.random()}`,
+
+                    itemType:
+                        "CUSTOM",
+
+                    productId:
+                        null,
+
+                    name:
+                        "Grocery",
+
+                    barcode:
+                        "",
+
+                    quantity:
+                        1,
+
+                    unitPrice:
+                        1,
+                },
+
+            ]
+        );
+
+    };
+
+
+/*
+============================================================
+CHANGE EDIT ITEM QUANTITY
+============================================================
+*/
+
+const changeEditItemQuantity = (
+    cartId,
+    difference
+) => {
+
+    setEditTransactionItems(
+        (current) =>
+            current.map(
+                (item) => {
+
+                    if (
+                        item.cartId !==
+                        cartId
+                    ) {
+
+                        return item;
+
+                    }
+
+
+                    return {
+
+                        ...item,
+
+                        quantity:
+                            Math.max(
+                                1,
+                                Number(
+                                    item.quantity
+                                ) +
+                                difference
+                            ),
+
+                    };
+
+                }
+            )
+    );
+
+};
+
+
+/*
+============================================================
+CHANGE EDIT CUSTOM ITEM
+============================================================
+*/
+
+const updateEditCustomItem = (
+    cartId,
+    field,
+    value
+) => {
+
+    setEditTransactionItems(
+        (current) =>
+            current.map(
+                (item) => {
+
+                    if (
+                        item.cartId !==
+                        cartId
+                    ) {
+
+                        return item;
+
+                    }
+
+
+                    return {
+
+                        ...item,
+
+                        [field]:
+                            value,
+
+                    };
+
+                }
+            )
+    );
+
+};
+
+
+/*
+============================================================
+REMOVE EDIT ITEM
+============================================================
+*/
+
+const removeEditTransactionItem = (
+    cartId
+) => {
+
+    setEditTransactionItems(
+        (current) =>
+            current.filter(
+                (item) =>
+                    item.cartId !==
+                    cartId
+            )
+    );
+
+};
+
+
+/*
+============================================================
+SAVE EDITED TRANSACTION
+============================================================
+*/
+
+const saveEditedTransaction =
+    async () => {
+
+        if (
+            !editingTransaction ||
+            !selectedAccount
+        ) {
+
+            return;
+
+        }
+
+
+        const accountId =
+            getId(
+                selectedAccount
+            );
+
+
+        const transactionId =
+            getId(
+                editingTransaction
+            );
+
+
+        if (
+            !accountId ||
+            !transactionId
+        ) {
+
+            alert(
+                "Invalid ledger transaction."
+            );
+
+            return;
+
+        }
+
+
+        const reason =
+            editTransactionReason
+                .trim();
+
+
+        if (
+            reason.length < 3
+        ) {
+
+            alert(
+                "Please enter a reason for this correction."
+            );
+
+            return;
+
+        }
+
+
+        let payload;
+
+
+        /*
+        ====================================================
+        CREDIT
+        ====================================================
+        */
+
+        if (
+            editingTransaction.type ===
+            "CREDIT"
+        ) {
+
+            if (
+                editTransactionItems.length ===
+                0
+            ) {
+
+                alert(
+                    "A credit transaction must contain at least one item."
+                );
+
+                return;
+
+            }
+
+
+            for (
+                const item
+                of editTransactionItems
+            ) {
+
+                if (
+                    Number(
+                        item.quantity
+                    ) <= 0
+                ) {
+
+                    alert(
+                        "Every item must have a valid quantity."
+                    );
+
+                    return;
+
+                }
+
+
+                if (
+                    item.itemType ===
+                    "CUSTOM"
+                ) {
+
+                    if (
+                        !String(
+                            item.name ||
+                            ""
+                        ).trim()
+                    ) {
+
+                        alert(
+                            "Custom item name is required."
+                        );
+
+                        return;
+
+                    }
+
+
+                    if (
+                        Number(
+                            item.unitPrice
+                        ) <= 0
+                    ) {
+
+                        alert(
+                            "Custom item amount must be greater than zero."
+                        );
+
+                        return;
+
+                    }
+
+                }
+
+            }
+
+
+            payload = {
+
+                type:
+                    "CREDIT",
+
+                items:
+                    editTransactionItems.map(
+                        (item) => {
+
+                            if (
+                                item.itemType ===
+                                "CUSTOM"
+                            ) {
+
+                                return {
+
+                                    itemType:
+                                        "CUSTOM",
+
+                                    name:
+                                        String(
+                                            item.name
+                                        ).trim(),
+
+                                    quantity:
+                                        Number(
+                                            item.quantity
+                                        ),
+
+                                    unitPrice:
+                                        Number(
+                                            item.unitPrice
+                                        ),
+
+                                };
+
+                            }
+
+
+                            return {
+
+                                itemType:
+                                    "PRODUCT",
+
+                                productId:
+                                    item.productId,
+
+                                quantity:
+                                    Number(
+                                        item.quantity
+                                    ),
+
+                            };
+
+                        }
+                    ),
+
+                remarks:
+                    editTransactionRemarks
+                        .trim(),
+
+                editReason:
+                    reason,
+
+            };
+
+        }
+
+        /*
+        ====================================================
+        PAYMENT / CASH ADVANCE
+        ====================================================
+        */
+
+        else {
+
+            const amount =
+                Number(
+                    editTransactionAmount
+                );
+
+
+            if (
+                !Number.isFinite(
+                    amount
+                ) ||
+                amount <= 0
+            ) {
+
+                alert(
+                    "Enter a valid amount."
+                );
+
+                return;
+
+            }
+
+
+            payload = {
+
+                type:
+                    editingTransaction.type,
+
+                amount,
+
+                remarks:
+                    editTransactionRemarks
+                        .trim(),
+
+                editReason:
+                    reason,
+
+            };
+
+        }
+
+
+        try {
+
+            setSaving(
+                true
+            );
+
+
+            await ledgerService
+                .updateTransaction(
+                    accountId,
+                    transactionId,
+                    payload
+                );
+
+
+            closeEditTransaction();
+
+
+            /*
+            =================================================
+            REFRESH INVENTORY
+            =================================================
+            */
+
+            await loadProducts();
+
+
+            /*
+            =================================================
+            REFRESH ACCOUNT LIST
+            =================================================
+            */
+
+            await loadAccounts();
+
+
+            /*
+            =================================================
+            REFRESH OPEN ACCOUNT
+            =================================================
+            */
+
+            const result =
+                await ledgerService
+                    .getAccountById(
+                        accountId
+                    );
+
+
+            const normalized =
+                normalizeAccount(
+                    result?.data ||
+                    result
+                );
+
+
+            setSelectedAccount(
+                normalized
+            );
+
+
+            setAccounts(
+                (current) =>
+                    current.map(
+                        (account) =>
+                            String(
+                                getId(
+                                    account
+                                )
+                            ) ===
+                            String(
+                                accountId
+                            )
+                                ? normalized
+                                : account
+                    )
+            );
+
+
+            /*
+            =================================================
+            REFRESH WORKER LEDGER
+            =================================================
+            */
+
+            if (
+                normalized.type ===
+                "WORKER"
+            ) {
+
+                await loadWorkerLedgers(
+                    accountId,
+                    getId(
+                        selectedWorkerLedger
+                    )
+                );
+
+            }
+
+
+            alert(
+                "Ledger transaction updated successfully."
+            );
+
+
+        } catch (err) {
+
+            console.error(
+                "Failed to update ledger transaction:",
+                err
+            );
+
+
+            alert(
+                err.response
+                    ?.data
+                    ?.message ||
+                err.message ||
+                "Failed to update ledger transaction."
+            );
+
+
+        } finally {
+
+            setSaving(
+                false
+            );
+
+        }
+
+    };
 
     /*
     ========================================================
@@ -5194,24 +6604,39 @@ function LedgerPage() {
 
 
                             <TransactionList
-                                transactions={
-                                    selectedAccount
-                                        .transactions ||
-                                    []
-                                }
-                                expandedTransactions={
-                                    expandedTransactions
-                                }
-                                toggleTransaction={
-                                    toggleTransaction
-                                }
-                                formatMoney={
-                                    formatMoney
-                                }
-                                formatDate={
-                                    formatDate
-                                }
-                            />
+    transactions={
+        selectedAccount
+            .transactions ||
+        []
+    }
+    expandedTransactions={
+        expandedTransactions
+    }
+    toggleTransaction={
+        toggleTransaction
+    }
+    formatMoney={
+        formatMoney
+    }
+    formatDate={
+        formatDate
+    }
+
+    isAdmin={
+        isAdmin
+    }
+
+    canEditTransactions={
+        selectedAccount.type !==
+            "WORKER" ||
+        selectedWorkerLedger?.status ===
+            "OPEN"
+    }
+
+    onEditTransaction={
+        openEditTransaction
+    }
+/>
 
                         </div>
 
@@ -5245,7 +6670,7 @@ function LedgerPage() {
 
                                     {
                                         creditAccount
-                                            ? `Add products to ${creditAccount.name}'s account.`
+                                            ? `Add products or custom items to ${creditAccount.name}'s account.`
                                             : "Select an account."
                                     }
 
@@ -5416,46 +6841,35 @@ function LedgerPage() {
 
                             <div>
 
-                                <h3 className="font-semibold mb-3">
-                                    Products
-                                </h3>
+                                <div className="flex items-center justify-between gap-3 mb-3">
+
+                                    <h3 className="font-semibold">
+                                        Products
+                                    </h3>
 
 
-                                <form
-                                    onSubmit={
-                                        handleBarcodeSubmit
-                                    }
-                                    className="relative"
-                                >
-
-                                    <FaBarcode className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
-
-
-                                    <input
-                                        ref={
-                                            barcodeRef
+                                    <button
+                                        type="button"
+                                        onClick={
+                                            openCustomCredit
                                         }
-                                        type="text"
-                                        value={
-                                            barcodeInput
-                                        }
-                                        onChange={(
-                                            event
-                                        ) =>
-                                            setBarcodeInput(
-                                                event.target
-                                                    .value
-                                            )
-                                        }
-                                        placeholder="Scan barcode..."
-                                        className="input input-bordered input-sm w-full pl-9"
-                                        autoComplete="off"
-                                    />
+                                        className="btn btn-outline btn-sm"
+                                    >
 
-                                </form>
+                                        <FaPlus />
+
+                                        Grocery / Custom
+
+                                    </button>
+
+                                </div>
 
 
-                                <div className="relative mt-3">
+                                {/* ==========================================
+                                    COMBINED BARCODE + SEARCH INPUT
+                                ========================================== */}
+
+                                <div className="relative">
 
                                     <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
 
@@ -5476,7 +6890,10 @@ function LedgerPage() {
                                                     .value
                                             )
                                         }
-                                        placeholder="Search product..."
+                                        onKeyDown={
+                                            handleProductSearchKeyDown
+                                        }
+                                        placeholder="Scan barcode or search product..."
                                         className="input input-bordered input-sm w-full pl-9"
                                         autoComplete="off"
                                     />
@@ -5659,7 +7076,7 @@ function LedgerPage() {
 
 
                                         <p className="mt-3 text-sm">
-                                            No products added
+                                            No items added
                                         </p>
 
                                     </div>
@@ -5669,123 +7086,149 @@ function LedgerPage() {
                                     <div className="max-h-80 overflow-y-auto">
 
                                         {creditCart.map(
-                                            (item) => (
+                                            (item) => {
 
-                                                <div
-                                                    key={
-                                                        item.productId
-                                                    }
-                                                    className="p-3 border-b border-base-200 flex items-center gap-3"
-                                                >
-
-                                                    <div className="flex-1 min-w-0">
-
-                                                        <p className="font-semibold text-sm truncate">
-
-                                                            {
-                                                                item.name
-                                                            }
-
-                                                        </p>
+                                                const itemId =
+                                                    item.cartId ||
+                                                    item.productId;
 
 
-                                                        <p className="text-[10px] text-base-content/40">
+                                                const isCustom =
+                                                    item.itemType ===
+                                                    "CUSTOM";
+
+
+                                                return (
+
+                                                    <div
+                                                        key={
+                                                            itemId
+                                                        }
+                                                        className="p-3 border-b border-base-200 flex items-center gap-3"
+                                                    >
+
+                                                        <div className="flex-1 min-w-0">
+
+                                                            <div className="flex items-center gap-2">
+
+                                                                <p className="font-semibold text-sm truncate">
+
+                                                                    {
+                                                                        item.name
+                                                                    }
+
+                                                                </p>
+
+
+                                                                {isCustom && (
+
+                                                                    <span className="badge badge-info badge-xs">
+                                                                        Custom
+                                                                    </span>
+
+                                                                )}
+
+                                                            </div>
+
+
+                                                            <p className="text-[10px] text-base-content/40">
+
+                                                                {
+                                                                    isCustom
+                                                                        ? `${formatMoney(
+                                                                            item.price
+                                                                        )} custom amount`
+                                                                        : `${formatMoney(
+                                                                            item.price
+                                                                        )} / ${item.unit}`
+                                                                }
+
+                                                            </p>
+
+                                                        </div>
+
+
+                                                        <div className="flex items-center border border-base-200 rounded-lg">
+
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    changeCreditQuantity(
+                                                                        itemId,
+                                                                        -1
+                                                                    )
+                                                                }
+                                                                className="btn btn-ghost btn-xs btn-square"
+                                                            >
+
+                                                                <FaMinus />
+
+                                                            </button>
+
+
+                                                            <span className="w-8 text-center text-xs font-bold">
+
+                                                                {
+                                                                    item.quantity
+                                                                }
+
+                                                            </span>
+
+
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    changeCreditQuantity(
+                                                                        itemId,
+                                                                        1
+                                                                    )
+                                                                }
+                                                                disabled={
+                                                                    !isCustom &&
+                                                                    item.quantity >=
+                                                                    item.stock
+                                                                }
+                                                                className="btn btn-ghost btn-xs btn-square"
+                                                            >
+
+                                                                <FaPlus />
+
+                                                            </button>
+
+                                                        </div>
+
+
+                                                        <p className="font-bold w-24 text-right">
 
                                                             {
                                                                 formatMoney(
-                                                                    item.price
+                                                                    item.price *
+                                                                    item.quantity
                                                                 )
-                                                            }
-
-                                                            {" / "}
-
-                                                            {
-                                                                item.unit
                                                             }
 
                                                         </p>
 
-                                                    </div>
-
-
-                                                    <div className="flex items-center border border-base-200 rounded-lg">
 
                                                         <button
                                                             type="button"
                                                             onClick={() =>
-                                                                changeCreditQuantity(
-                                                                    item.productId,
-                                                                    -1
+                                                                removeCreditItem(
+                                                                    itemId
                                                                 )
                                                             }
-                                                            className="btn btn-ghost btn-xs btn-square"
+                                                            className="btn btn-ghost btn-xs btn-square text-error"
                                                         >
 
-                                                            <FaMinus />
-
-                                                        </button>
-
-
-                                                        <span className="w-8 text-center text-xs font-bold">
-
-                                                            {
-                                                                item.quantity
-                                                            }
-
-                                                        </span>
-
-
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                changeCreditQuantity(
-                                                                    item.productId,
-                                                                    1
-                                                                )
-                                                            }
-                                                            disabled={
-                                                                item.quantity >=
-                                                                item.stock
-                                                            }
-                                                            className="btn btn-ghost btn-xs btn-square"
-                                                        >
-
-                                                            <FaPlus />
+                                                            <FaTrash />
 
                                                         </button>
 
                                                     </div>
 
+                                                );
 
-                                                    <p className="font-bold w-24 text-right">
-
-                                                        {
-                                                            formatMoney(
-                                                                item.price *
-                                                                item.quantity
-                                                            )
-                                                        }
-
-                                                    </p>
-
-
-                                                    <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                            removeCreditItem(
-                                                                item.productId
-                                                            )
-                                                        }
-                                                        className="btn btn-ghost btn-xs btn-square text-error"
-                                                    >
-
-                                                        <FaTrash />
-
-                                                    </button>
-
-                                                </div>
-
-                                            )
+                                            }
                                         )}
 
                                     </div>
@@ -5903,6 +7346,216 @@ function LedgerPage() {
                                             creditCartTotal
                                         )}`
                                 }
+
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                </dialog>
+
+            )}
+
+
+            {/* ==================================================
+                CUSTOM / GROCERY CREDIT MODAL
+            ================================================== */}
+
+            {showCustomCredit && (
+
+                <dialog className="modal modal-open">
+
+                    <div className="modal-box max-w-md">
+
+                        <div className="flex items-start justify-between gap-4">
+
+                            <div>
+
+                                <h2 className="text-xl font-bold">
+                                    Grocery / Custom Item
+                                </h2>
+
+
+                                <p className="text-xs text-base-content/50 mt-1">
+                                    Add a custom amount without affecting product inventory.
+                                </p>
+
+                            </div>
+
+
+                            <button
+                                type="button"
+                                className="btn btn-ghost btn-sm btn-square"
+                                onClick={
+                                    closeCustomCredit
+                                }
+                            >
+
+                                <FaTimes />
+
+                            </button>
+
+                        </div>
+
+
+                        <div className="mt-5">
+
+                            <label className="label">
+
+                                <span className="label-text font-semibold">
+                                    Item Name
+                                </span>
+
+                            </label>
+
+
+                            <input
+                                type="text"
+                                value={
+                                    customCreditName
+                                }
+                                onChange={(
+                                    event
+                                ) =>
+                                    setCustomCreditName(
+                                        event.target.value
+                                    )
+                                }
+                                className="input input-bordered w-full"
+                                placeholder="Grocery"
+                                autoComplete="off"
+                            />
+
+                        </div>
+
+
+                        <div className="mt-4">
+
+                            <label className="label">
+
+                                <span className="label-text font-semibold">
+                                    Amount
+                                </span>
+
+                            </label>
+
+
+                            <div className="relative">
+
+                                <span className="absolute left-4 top-1/2 -translate-y-1/2 font-semibold">
+                                    ₱
+                                </span>
+
+
+                                <input
+                                    ref={
+                                        customCreditAmountRef
+                                    }
+                                    type="number"
+                                    min="0.01"
+                                    step="0.01"
+                                    value={
+                                        customCreditAmount
+                                    }
+                                    onChange={(
+                                        event
+                                    ) =>
+                                        setCustomCreditAmount(
+                                            event.target.value
+                                        )
+                                    }
+                                    onKeyDown={(
+                                        event
+                                    ) => {
+
+                                        if (
+                                            event.key ===
+                                            "Enter"
+                                        ) {
+
+                                            event.preventDefault();
+
+                                            event.stopPropagation();
+
+                                            addCustomCreditItem();
+
+                                        }
+
+
+                                        if (
+                                            event.key ===
+                                            "Escape"
+                                        ) {
+
+                                            event.preventDefault();
+
+                                            event.stopPropagation();
+
+                                            closeCustomCredit();
+
+                                        }
+
+                                    }}
+                                    className="input input-bordered w-full pl-9 text-lg font-bold"
+                                    placeholder="0.00"
+                                />
+
+                            </div>
+
+                        </div>
+
+
+                        <div className="rounded-xl bg-base-200/50 p-4 mt-5">
+
+                            <div className="flex justify-between">
+
+                                <span className="text-sm text-base-content/60">
+                                    Credit amount
+                                </span>
+
+
+                                <strong className="text-lg">
+
+                                    {
+                                        formatMoney(
+                                            customCreditAmount
+                                        )
+                                    }
+
+                                </strong>
+
+                            </div>
+
+                        </div>
+
+
+                        <div className="modal-action">
+
+                            <button
+                                type="button"
+                                className="btn"
+                                onClick={
+                                    closeCustomCredit
+                                }
+                            >
+
+                                Cancel
+
+                            </button>
+
+
+                            <button
+                                type="button"
+                                className="btn btn-primary"
+                                onClick={
+                                    addCustomCreditItem
+                                }
+                            >
+
+                                <FaPlus />
+
+                                Add Item
 
                             </button>
 
@@ -6301,13 +7954,687 @@ function LedgerPage() {
                             </button>
 
                         </div>
-
+                                
                     </div>
 
                 </dialog>
 
             )}
+            {/* ==================================================
+    EDIT TRANSACTION MODAL
+================================================== */}
 
+{showEditTransaction &&
+    editingTransaction && (
+
+    <dialog className="modal modal-open">
+
+        <div className="modal-box max-w-4xl">
+
+            {/* ==========================================
+                HEADER
+            ========================================== */}
+
+            <div className="flex items-start justify-between gap-4">
+
+                <div>
+
+                    <div className="flex items-center gap-2">
+
+                        <FaEdit className="text-primary" />
+
+
+                        <h2 className="text-xl font-bold">
+
+                            Edit{" "}
+
+                            {
+                                editingTransaction.type ===
+                                    "CREDIT"
+                                    ? "Credit Transaction"
+                                    : editingTransaction.type ===
+                                        "PAYMENT"
+                                        ? "Credit Payment"
+                                        : "Cash Advance"
+                            }
+
+                        </h2>
+
+                    </div>
+
+
+                    <p className="text-xs text-base-content/50 mt-1">
+
+                        {
+                            selectedAccount?.name
+                        }
+
+                    </p>
+
+
+                    <p className="text-[10px] text-warning mt-2">
+
+                        Administrative correction. This change will be recorded
+                        in the transaction audit history.
+
+                    </p>
+
+                </div>
+
+
+                <button
+                    type="button"
+                    onClick={
+                        closeEditTransaction
+                    }
+                    disabled={
+                        saving
+                    }
+                    className="btn btn-ghost btn-sm btn-square"
+                >
+
+                    <FaTimes />
+
+                </button>
+
+            </div>
+
+
+            {/* ==========================================
+                CREDIT EDITOR
+            ========================================== */}
+
+            {editingTransaction.type ===
+                "CREDIT" && (
+
+                <div className="mt-6">
+
+                    {/* ==================================
+                        ADD PRODUCT
+                    ================================== */}
+
+                    <div className="rounded-xl border border-base-200 p-4">
+
+                        <div className="flex items-center justify-between gap-3">
+
+                            <div>
+
+                                <h3 className="font-semibold">
+                                    Add Product
+                                </h3>
+
+
+                                <p className="text-xs text-base-content/50 mt-1">
+                                    Search a product to add it to the corrected transaction.
+                                </p>
+
+                            </div>
+
+
+                            <button
+                                type="button"
+                                onClick={
+                                    addCustomToEditTransaction
+                                }
+                                className="btn btn-outline btn-sm"
+                            >
+
+                                <FaPlus />
+
+                                Grocery / Custom
+
+                            </button>
+
+                        </div>
+
+
+                        <div className="relative mt-4">
+
+                            <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
+
+
+                            <input
+                                type="text"
+                                value={
+                                    editProductSearch
+                                }
+                                onChange={(
+                                    event
+                                ) =>
+                                    setEditProductSearch(
+                                        event.target.value
+                                    )
+                                }
+                                className="input input-bordered input-sm w-full pl-9"
+                                placeholder="Search product or barcode..."
+                            />
+
+                        </div>
+
+
+                        {editFilteredProducts.length >
+                            0 && (
+
+                            <div className="border border-base-200 rounded-lg mt-2 overflow-hidden max-h-48 overflow-y-auto">
+
+                                {editFilteredProducts.map(
+                                    (product) => (
+
+                                        <button
+                                            key={
+                                                product.id
+                                            }
+                                            type="button"
+                                            onClick={() =>
+                                                addProductToEditTransaction(
+                                                    product
+                                                )
+                                            }
+                                            className="w-full flex items-center justify-between gap-4 p-3 border-b last:border-0 border-base-200 text-left hover:bg-base-200/50"
+                                        >
+
+                                            <div>
+
+                                                <p className="text-sm font-semibold">
+                                                    {product.name}
+                                                </p>
+
+
+                                                <p className="text-[10px] text-base-content/40 mt-1">
+                                                    {product.barcode || "No barcode"}
+                                                </p>
+
+                                            </div>
+
+
+                                            <div className="text-right">
+
+                                                <p className="font-semibold">
+                                                    {formatMoney(product.price)}
+                                                </p>
+
+
+                                                <p className="text-[10px] text-base-content/40">
+                                                    Stock: {product.stock}
+                                                </p>
+
+                                            </div>
+
+                                        </button>
+
+                                    )
+                                )}
+
+                            </div>
+
+                        )}
+
+                    </div>
+
+
+                    {/* ==================================
+                        CREDIT ITEMS
+                    ================================== */}
+
+                    <div className="mt-4 border border-base-200 rounded-xl overflow-hidden">
+
+                        <div className="p-4 border-b border-base-200">
+
+                            <h3 className="font-semibold">
+                                Corrected Credit Items
+                            </h3>
+
+                        </div>
+
+
+                        {editTransactionItems.length ===
+                            0 ? (
+
+                            <div className="py-10 text-center text-sm text-base-content/50">
+
+                                No items.
+
+                            </div>
+
+                        ) : (
+
+                            <div className="divide-y divide-base-200">
+
+                                {editTransactionItems.map(
+                                    (item) => {
+
+                                        const isCustom =
+                                            item.itemType ===
+                                            "CUSTOM";
+
+
+                                        return (
+
+                                            <div
+                                                key={
+                                                    item.cartId
+                                                }
+                                                className="p-4"
+                                            >
+
+                                                <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+
+                                                    {/* NAME */}
+
+                                                    <div className="flex-1">
+
+                                                        {isCustom ? (
+
+                                                            <>
+
+                                                                <label className="text-[10px] text-base-content/50">
+                                                                    Custom Item Name
+                                                                </label>
+
+
+                                                                <input
+                                                                    type="text"
+                                                                    value={
+                                                                        item.name
+                                                                    }
+                                                                    onChange={(
+                                                                        event
+                                                                    ) =>
+                                                                        updateEditCustomItem(
+                                                                            item.cartId,
+                                                                            "name",
+                                                                            event.target.value
+                                                                        )
+                                                                    }
+                                                                    className="input input-bordered input-sm w-full mt-1"
+                                                                />
+
+                                                            </>
+
+                                                        ) : (
+
+                                                            <>
+
+                                                                <div className="flex items-center gap-2">
+
+                                                                    <FaBox className="text-base-content/30" />
+
+
+                                                                    <p className="font-semibold">
+                                                                        {item.name}
+                                                                    </p>
+
+                                                                </div>
+
+
+                                                                <p className="text-[10px] text-base-content/40 mt-1">
+                                                                    {item.barcode || "No barcode"}
+                                                                </p>
+
+                                                            </>
+
+                                                        )}
+
+                                                    </div>
+
+
+                                                    {/* CUSTOM PRICE */}
+
+                                                    {isCustom && (
+
+                                                        <div className="w-full lg:w-40">
+
+                                                            <label className="text-[10px] text-base-content/50">
+                                                                Unit Amount
+                                                            </label>
+
+
+                                                            <input
+                                                                type="number"
+                                                                min="0.01"
+                                                                step="0.01"
+                                                                value={
+                                                                    item.unitPrice
+                                                                }
+                                                                onChange={(
+                                                                    event
+                                                                ) =>
+                                                                    updateEditCustomItem(
+                                                                        item.cartId,
+                                                                        "unitPrice",
+                                                                        event.target.value
+                                                                    )
+                                                                }
+                                                                className="input input-bordered input-sm w-full mt-1"
+                                                            />
+
+                                                        </div>
+
+                                                    )}
+
+
+                                                    {/* QUANTITY */}
+
+                                                    <div>
+
+                                                        <p className="text-[10px] text-base-content/50 mb-1">
+                                                            Quantity
+                                                        </p>
+
+
+                                                        <div className="flex items-center border border-base-200 rounded-lg">
+
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    changeEditItemQuantity(
+                                                                        item.cartId,
+                                                                        -1
+                                                                    )
+                                                                }
+                                                                className="btn btn-ghost btn-xs btn-square"
+                                                            >
+
+                                                                <FaMinus />
+
+                                                            </button>
+
+
+                                                            <span className="w-10 text-center text-sm font-bold">
+
+                                                                {
+                                                                    item.quantity
+                                                                }
+
+                                                            </span>
+
+
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    changeEditItemQuantity(
+                                                                        item.cartId,
+                                                                        1
+                                                                    )
+                                                                }
+                                                                className="btn btn-ghost btn-xs btn-square"
+                                                            >
+
+                                                                <FaPlus />
+
+                                                            </button>
+
+                                                        </div>
+
+                                                    </div>
+
+
+                                                    {/* TOTAL */}
+
+                                                    <div className="w-28 text-right">
+
+                                                        <p className="text-[10px] text-base-content/50">
+                                                            Total
+                                                        </p>
+
+
+                                                        <p className="font-bold mt-1">
+
+                                                            {
+                                                                formatMoney(
+                                                                    Number(
+                                                                        item.unitPrice
+                                                                    ) *
+                                                                    Number(
+                                                                        item.quantity
+                                                                    )
+                                                                )
+                                                            }
+
+                                                        </p>
+
+                                                    </div>
+
+
+                                                    {/* DELETE */}
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            removeEditTransactionItem(
+                                                                item.cartId
+                                                            )
+                                                        }
+                                                        className="btn btn-ghost btn-sm btn-square text-error"
+                                                    >
+
+                                                        <FaTrash />
+
+                                                    </button>
+
+                                                </div>
+
+                                            </div>
+
+                                        );
+
+                                    }
+                                )}
+
+                            </div>
+
+                        )}
+
+
+                        <div className="p-4 bg-base-200/40 flex justify-between">
+
+                            <strong>
+                                Corrected Total
+                            </strong>
+
+
+                            <strong className="text-xl">
+
+                                {
+                                    formatMoney(
+                                        editCreditTotal
+                                    )
+                                }
+
+                            </strong>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            )}
+
+
+            {/* ==========================================
+                PAYMENT / CASH ADVANCE AMOUNT
+            ========================================== */}
+
+            {editingTransaction.type !==
+                "CREDIT" && (
+
+                <div className="mt-6">
+
+                    <label className="label">
+
+                        <span className="label-text font-semibold">
+
+                            {
+                                editingTransaction.type ===
+                                    "PAYMENT"
+                                    ? "Payment Amount"
+                                    : "Cash Advance Amount"
+                            }
+
+                        </span>
+
+                    </label>
+
+
+                    <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={
+                            editTransactionAmount
+                        }
+                        onChange={(
+                            event
+                        ) =>
+                            setEditTransactionAmount(
+                                event.target.value
+                            )
+                        }
+                        className="input input-bordered w-full"
+                        placeholder="0.00"
+                    />
+
+                </div>
+
+            )}
+
+
+            {/* ==========================================
+                REMARKS
+            ========================================== */}
+
+            <div className="mt-5">
+
+                <label className="label">
+
+                    <span className="label-text font-semibold">
+                        Remarks
+                    </span>
+
+                </label>
+
+
+                <textarea
+                    value={
+                        editTransactionRemarks
+                    }
+                    onChange={(
+                        event
+                    ) =>
+                        setEditTransactionRemarks(
+                            event.target.value
+                        )
+                    }
+                    rows="3"
+                    className="textarea textarea-bordered w-full"
+                    placeholder="Transaction remarks..."
+                />
+
+            </div>
+
+
+            {/* ==========================================
+                EDIT REASON
+            ========================================== */}
+
+            <div className="mt-5">
+
+                <label className="label">
+
+                    <span className="label-text font-semibold">
+                        Reason for Edit *
+                    </span>
+
+                </label>
+
+
+                <textarea
+                    value={
+                        editTransactionReason
+                    }
+                    onChange={(
+                        event
+                    ) =>
+                        setEditTransactionReason(
+                            event.target.value
+                        )
+                    }
+                    rows="3"
+                    className="textarea textarea-bordered w-full"
+                    placeholder="Example: Wrong quantity entered by cashier"
+                />
+
+
+                <p className="text-[10px] text-base-content/40 mt-1">
+
+                    This reason is permanently saved in the transaction edit history.
+
+                </p>
+
+            </div>
+
+
+            {/* ==========================================
+                ACTIONS
+            ========================================== */}
+
+            <div className="modal-action">
+
+                <button
+                    type="button"
+                    onClick={
+                        closeEditTransaction
+                    }
+                    disabled={
+                        saving
+                    }
+                    className="btn"
+                >
+
+                    Cancel
+
+                </button>
+
+
+                <button
+                    type="button"
+                    onClick={
+                        saveEditedTransaction
+                    }
+                    disabled={
+                        saving ||
+                        !editTransactionReason
+                            .trim()
+                    }
+                    className="btn btn-primary"
+                >
+
+                    {
+                        saving
+                            ? (
+                                <span className="loading loading-spinner loading-sm" />
+                            )
+                            : (
+                                <FaEdit />
+                            )
+                    }
+
+                    {
+                        saving
+                            ? "Saving..."
+                            : "Save Changes"
+                    }
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </dialog>
+
+)}  
         </div>
 
     );
@@ -6476,6 +8803,10 @@ function TransactionList({
     toggleTransaction,
     formatMoney,
     formatDate,
+
+    isAdmin,
+    canEditTransactions,
+    onEditTransaction,
 }) {
 
     if (
@@ -6594,7 +8925,39 @@ function TransactionList({
 
 
                                     <div className="flex items-center gap-3 shrink-0">
+                                            {isAdmin &&
+    canEditTransactions && (
 
+    <button
+        type="button"
+        className="btn btn-ghost btn-xs"
+        onClick={(
+            event
+        ) => {
+
+            /*
+            Prevent clicking Edit from also expanding
+            the transaction.
+            */
+
+            event.stopPropagation();
+
+
+            onEditTransaction(
+                transaction
+            );
+
+        }}
+        title="Edit transaction"
+    >
+
+        <FaEdit />
+
+        Edit
+
+    </button>
+
+)}
                                         <p
                                             className={`
                                                 font-bold

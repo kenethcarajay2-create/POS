@@ -348,6 +348,25 @@ const updateAccountSchema = Joi.object({
 ADD CREDIT
 ============================================================
 */
+/*
+============================================================
+ADD CREDIT
+============================================================
+
+Supports two item types:
+
+PRODUCT
+- Requires productId
+- Uses inventory
+- Backend deducts stock
+
+CUSTOM
+- No productId required
+- Requires custom name
+- Requires custom unitPrice
+- Does NOT affect inventory
+============================================================
+*/
 
 const addCreditSchema = Joi.object({
 
@@ -356,19 +375,143 @@ const addCreditSchema = Joi.object({
 
             Joi.object({
 
-                productId: Joi.string()
+                /*
+                ================================================
+                ITEM TYPE
+                ================================================
+                */
+
+                itemType: Joi.string()
+                    .valid(
+                        "PRODUCT",
+                        "CUSTOM"
+                    )
+                    .default(
+                        "PRODUCT"
+                    )
                     .required(),
+
+
+                /*
+                ================================================
+                PRODUCT ID
+
+                Required only for PRODUCT.
+                ================================================
+                */
+
+                productId: Joi.when(
+                    "itemType",
+                    {
+
+                        is:
+                            "PRODUCT",
+
+                        then:
+                            Joi.string()
+                                .required(),
+
+                        otherwise:
+                            Joi.alternatives()
+                                .try(
+                                    Joi.string()
+                                        .allow(""),
+
+                                    Joi.valid(null)
+                                )
+                                .optional(),
+
+                    }
+                ),
+
+
+                /*
+                ================================================
+                CUSTOM ITEM NAME
+
+                Required only for CUSTOM.
+                ================================================
+                */
+
+                name: Joi.when(
+                    "itemType",
+                    {
+
+                        is:
+                            "CUSTOM",
+
+                        then:
+                            Joi.string()
+                                .trim()
+                                .min(1)
+                                .max(100)
+                                .required(),
+
+                        otherwise:
+                            Joi.string()
+                                .trim()
+                                .max(100)
+                                .optional(),
+
+                    }
+                ),
+
+
+                /*
+                ================================================
+                QUANTITY
+                ================================================
+                */
 
                 quantity: Joi.number()
                     .integer()
                     .min(1)
                     .required(),
 
-            }).required()
+
+                /*
+                ================================================
+                UNIT PRICE
+
+                Required only for CUSTOM.
+
+                PRODUCT pricing is still determined by backend
+                from Product.pricing / costPrice.
+                ================================================
+                */
+
+                unitPrice: Joi.when(
+                    "itemType",
+                    {
+
+                        is:
+                            "CUSTOM",
+
+                        then:
+                            Joi.number()
+                                .positive()
+                                .required(),
+
+                        otherwise:
+                            Joi.number()
+                                .optional(),
+
+                    }
+                ),
+
+            })
+            .required()
 
         )
         .min(1)
         .required(),
+
+
+    /*
+    --------------------------------------------------------
+    REMARKS
+    --------------------------------------------------------
+    */
 
     remarks: Joi.string()
         .trim()
@@ -378,7 +521,320 @@ const addCreditSchema = Joi.object({
 
 });
 
+/*
+============================================================
+UPDATE LEDGER TRANSACTION
+============================================================
 
+ADMIN ONLY.
+
+Supports editing:
+
+CREDIT
+- Product items
+- Custom/open-price items
+- Remarks
+
+PAYMENT
+- Amount
+- Remarks
+
+CASH_ADVANCE
+- Amount
+- Remarks
+
+IMPORTANT:
+
+The transaction type itself cannot actually be changed.
+The backend compares this value against the existing
+transaction.
+
+editReason is required so every historical correction
+has an audit reason.
+============================================================
+*/
+
+
+/*
+------------------------------------------------------------
+EDIT CREDIT ITEM
+------------------------------------------------------------
+*/
+
+const updateCreditItemSchema =
+    Joi.object({
+
+        /*
+        ====================================================
+        ITEM TYPE
+        ====================================================
+        */
+
+        itemType: Joi.string()
+            .valid(
+                "PRODUCT",
+                "CUSTOM"
+            )
+            .required(),
+
+
+        /*
+        ====================================================
+        PRODUCT ID
+
+        PRODUCT
+        → required
+
+        CUSTOM
+        → null / empty / omitted
+        ====================================================
+        */
+
+        productId: Joi.when(
+            "itemType",
+            {
+
+                is:
+                    "PRODUCT",
+
+                then:
+                    Joi.string()
+                        .trim()
+                        .required(),
+
+                otherwise:
+                    Joi.alternatives()
+                        .try(
+
+                            Joi.string()
+                                .allow(""),
+
+                            Joi.valid(null)
+
+                        )
+                        .optional(),
+
+            }
+        ),
+
+
+        /*
+        ====================================================
+        CUSTOM ITEM NAME
+
+        CUSTOM
+        → required
+
+        PRODUCT
+        → optional
+        ====================================================
+        */
+
+        name: Joi.when(
+            "itemType",
+            {
+
+                is:
+                    "CUSTOM",
+
+                then:
+                    Joi.string()
+                        .trim()
+                        .min(1)
+                        .max(100)
+                        .required(),
+
+                otherwise:
+                    Joi.string()
+                        .trim()
+                        .max(100)
+                        .optional(),
+
+            }
+        ),
+
+
+        /*
+        ====================================================
+        QUANTITY
+        ====================================================
+        */
+
+        quantity: Joi.number()
+            .integer()
+            .min(1)
+            .required(),
+
+
+        /*
+        ====================================================
+        UNIT PRICE
+
+        CUSTOM
+        → required
+
+        PRODUCT
+        → backend determines price from product pricing
+        ====================================================
+        */
+
+        unitPrice: Joi.when(
+            "itemType",
+            {
+
+                is:
+                    "CUSTOM",
+
+                then:
+                    Joi.number()
+                        .positive()
+                        .required(),
+
+                otherwise:
+                    Joi.number()
+                        .optional(),
+
+            }
+        ),
+
+    });
+
+
+/*
+------------------------------------------------------------
+UPDATE TRANSACTION
+------------------------------------------------------------
+*/
+
+const updateTransactionSchema =
+    Joi.object({
+
+        /*
+        ====================================================
+        TRANSACTION TYPE
+        ====================================================
+
+        The frontend sends this so validation knows which
+        fields are expected.
+
+        The service still prevents changing an existing
+        transaction from one type to another.
+        ====================================================
+        */
+
+        type: Joi.string()
+            .valid(
+                "CREDIT",
+                "PAYMENT",
+                "CASH_ADVANCE"
+            )
+            .required(),
+
+
+        /*
+        ====================================================
+        CREDIT ITEMS
+        ====================================================
+
+        Required only when editing CREDIT.
+        ====================================================
+        */
+
+        items: Joi.when(
+            "type",
+            {
+
+                is:
+                    "CREDIT",
+
+                then:
+                    Joi.array()
+                        .items(
+                            updateCreditItemSchema
+                        )
+                        .min(1)
+                        .required(),
+
+                otherwise:
+                    Joi.forbidden(),
+
+            }
+        ),
+
+
+        /*
+        ====================================================
+        AMOUNT
+        ====================================================
+
+        PAYMENT / CASH_ADVANCE
+        → required
+
+        CREDIT
+        → forbidden because backend calculates it from items.
+        ====================================================
+        */
+
+        amount: Joi.when(
+            "type",
+            {
+
+                is:
+                    "CREDIT",
+
+                then:
+                    Joi.forbidden(),
+
+                otherwise:
+                    Joi.number()
+                        .positive()
+                        .required(),
+
+            }
+        ),
+
+
+        /*
+        ====================================================
+        DESCRIPTION
+        ====================================================
+        */
+
+        description: Joi.string()
+            .trim()
+            .max(200)
+            .allow("")
+            .optional(),
+
+
+        /*
+        ====================================================
+        REMARKS
+        ====================================================
+        */
+
+        remarks: Joi.string()
+            .trim()
+            .max(500)
+            .allow("")
+            .optional(),
+
+
+        /*
+        ====================================================
+        EDIT REASON
+
+        REQUIRED FOR EVERY ADMIN CORRECTION.
+        ====================================================
+        */
+
+        editReason: Joi.string()
+            .trim()
+            .min(3)
+            .max(500)
+            .required(),
+
+    });
 /*
 ============================================================
 ADD PAYMENT
@@ -464,6 +920,11 @@ const payWorkerSchema = Joi.object({
 EXPORT
 ============================================================
 */
+/*
+============================================================
+EXPORT
+============================================================
+*/
 
 export default {
 
@@ -472,6 +933,12 @@ export default {
     updateAccountSchema,
 
     addCreditSchema,
+
+    /*
+    Admin historical transaction correction
+    */
+
+    updateTransactionSchema,
 
     addPaymentSchema,
 

@@ -1064,13 +1064,79 @@ const reprintWorkerSalaryReceipt = async (
 
 };
 
+/*
+============================================================
+UPDATE LEDGER TRANSACTION
+============================================================
+
+PATCH /api/ledger/:id/transactions/:transactionId
+
+ADMIN ONLY.
+
+Supports editing:
+
+CREDIT
+- product items
+- quantities
+- custom/open-price items
+- remarks
+
+PAYMENT
+- amount
+- remarks
+
+CASH_ADVANCE
+- amount
+- remarks
+
+The service handles:
+- inventory reversal/reapply
+- worker ledger recalculation
+- customer balance recalculation
+- edit history
+============================================================
+*/
+
+const updateTransaction = async (
+    req,
+    res,
+    next
+) => {
+
+    try {
+
+        const result =
+            await ledgerService
+                .updateTransaction(
+                    req.params.id,
+                    req.params.transactionId,
+                    req.body,
+                    req.user.id
+                );
+
+
+        res.status(200).json(
+            new ApiResponse(
+                true,
+                "Ledger transaction updated successfully",
+                result
+            )
+        );
+
+
+    } catch (error) {
+
+        next(error);
+
+    }
+
+};
 
 /*
 ============================================================
 EXPORT
 ============================================================
 */
-
 export default {
 
     /*
@@ -1100,6 +1166,8 @@ export default {
 
     getTransactions,
 
+    updateTransaction,
+
 
     /*
     Worker pay periods
@@ -1122,6 +1190,7 @@ export default {
 
     payWorker,
 
+
     /*
     Legacy compatibility only
     */
@@ -1134,5 +1203,7 @@ export default {
     */
 
     printLedger,
-    reprintWorkerSalaryReceipt
+
+    reprintWorkerSalaryReceipt,
+
 };

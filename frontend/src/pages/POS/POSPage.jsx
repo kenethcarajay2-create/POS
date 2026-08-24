@@ -15,9 +15,9 @@ import CheckoutModal from "../../components/pos/CheckoutModal";
 import ReceiptModal from "../../components/pos/ReceiptModal";
 
 import saleService from "../../services/sale.service";
-
 import useCartStore from "../../store/cart.store";
 import useAuthStore from "../../store/auth.store";
+import useProductStore from "../../store/product.store";
 
 
 function POSPage() {
@@ -101,6 +101,19 @@ function POSPage() {
         lastSale,
         setLastSale,
     ] = useState(null);
+
+
+    /*
+============================================================
+PRODUCT SEARCH
+============================================================
+*/
+
+const setSearch =
+    useProductStore(
+        (state) =>
+            state.setSearch
+    );
 
 
     /*
@@ -602,22 +615,37 @@ useEffect(
                     =================================================
                     */
 
-                    if (
-                        activeElement &&
-                        (
-                            activeElement
-                                .tagName ===
-                                "INPUT" ||
+                   /*
+=================================================
+IGNORE SHORTCUTS WHILE TYPING
 
-                            activeElement
-                                .tagName ===
-                                "TEXTAREA"
-                        )
-                    ) {
+F4 is allowed because it clears the search field.
+=================================================
+*/
 
-                        return;
+if (
+    activeElement &&
+    (
+        activeElement
+            .tagName ===
+            "INPUT" ||
 
-                    }
+        activeElement
+            .tagName ===
+            "TEXTAREA"
+    )
+) {
+
+    if (
+        event.key !==
+        "F4"
+    ) {
+
+        return;
+
+    }
+
+}
 
 
                     switch (
@@ -651,6 +679,23 @@ useEffect(
 
 
                             break;
+
+                            /*
+=================================================
+F4 CLEAR SEARCH
+=================================================
+*/
+case "F4":
+
+    event.preventDefault();
+
+    /*
+    Clear product search.
+    */
+
+    setSearch("");
+
+    break;
 
 
                         /*
@@ -797,14 +842,15 @@ useEffect(
 
         },
         [
-            items,
-            clearCart,
-            holdCart,
-            resumeLatestCart,
-            user,
-            toggleWholesale,
-            openPriceOpen,
-        ]
+    items,
+    clearCart,
+    holdCart,
+    resumeLatestCart,
+    user,
+    toggleWholesale,
+    openPriceOpen,
+    setSearch,
+]
     );
 
 

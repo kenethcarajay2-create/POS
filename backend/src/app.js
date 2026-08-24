@@ -13,6 +13,7 @@ import printerRoutes
     from "./routes/printer.routes.js";
 
 import ledgerRoutes from "./routes/ledger.routes.js";
+import syncRoutes from "./routes/sync.routes.js";
 
 const app = express();
 
@@ -59,6 +60,10 @@ app.get("/api/profile", protect, (req, res) => {
 
 
 app.use("/api/auth", authRoutes);
+app.use(
+    "/api/sync",
+    syncRoutes
+);
 
 app.use(errorHandler);
 

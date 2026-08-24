@@ -67,7 +67,7 @@ import LedgerPage from "../pages/Ledger/LedgerPage";
 import WorkersPage from "../pages/Workers/WorkersPage";
 
 import UsersPage from "../pages/Users/UsersPage";
-
+import SettingsPage from "../pages/Settings/SettingsPage";
 
 /*
 ============================================================
@@ -519,6 +519,26 @@ function AppRoutes() {
                         }
                     />
 
+                    
+{/* ======================================
+    SETTINGS
+====================================== */}
+
+<Route
+    path="/settings"
+    element={
+
+        <PermissionRoute
+            permission="settings"
+        >
+
+            <SettingsPage />
+
+        </PermissionRoute>
+
+    }
+    />
+
 
                     {/* ======================================
                         NO ACCESS
@@ -547,6 +567,8 @@ function AppRoutes() {
                         />
                     }
                 />
+
+               
 
             </Routes>
 
