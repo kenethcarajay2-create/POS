@@ -174,6 +174,194 @@ const twoColumns = (
 
 /*
 ============================================================
+WRAP TEXT
+============================================================
+
+Used primarily for Grocery / Open Price notes.
+
+Example:
+
+"Grocery ingredients for dinner"
+
+can safely wrap across multiple receipt lines
+instead of being cut off.
+
+============================================================
+*/
+
+const wrapText = (
+    value,
+    width = PRINTER_WIDTH
+) => {
+
+    const text =
+        String(
+            value ??
+            ""
+        )
+            .replace(
+                /\s+/g,
+                " "
+            )
+            .trim();
+
+
+    if (
+        !text
+    ) {
+
+        return [];
+
+    }
+
+
+    const safeWidth =
+        Math.max(
+            1,
+            Number(
+                width
+            ) ||
+            PRINTER_WIDTH
+        );
+
+
+    const words =
+        text.split(
+            " "
+        );
+
+
+    const lines =
+        [];
+
+
+    let currentLine =
+        "";
+
+
+    for (
+        const word
+        of words
+    ) {
+
+        /*
+        ----------------------------------------------------
+        WORD LONGER THAN ENTIRE LINE
+        ----------------------------------------------------
+        */
+
+        if (
+            word.length >
+            safeWidth
+        ) {
+
+            if (
+                currentLine
+            ) {
+
+                lines.push(
+                    currentLine
+                );
+
+                currentLine =
+                    "";
+
+            }
+
+
+            let remaining =
+                word;
+
+
+            while (
+                remaining.length >
+                safeWidth
+            ) {
+
+                lines.push(
+                    remaining.substring(
+                        0,
+                        safeWidth
+                    )
+                );
+
+
+                remaining =
+                    remaining.substring(
+                        safeWidth
+                    );
+
+            }
+
+
+            if (
+                remaining
+            ) {
+
+                currentLine =
+                    remaining;
+
+            }
+
+
+            continue;
+
+        }
+
+
+        const candidate =
+            currentLine
+                ? `${currentLine} ${word}`
+                : word;
+
+
+        if (
+            candidate.length <=
+            safeWidth
+        ) {
+
+            currentLine =
+                candidate;
+
+        } else {
+
+            if (
+                currentLine
+            ) {
+
+                lines.push(
+                    currentLine
+                );
+
+            }
+
+
+            currentLine =
+                word;
+
+        }
+
+    }
+
+
+    if (
+        currentLine
+    ) {
+
+        lines.push(
+            currentLine
+        );
+
+    }
+
+
+    return lines;
+
+};
+
+
+/*
+============================================================
 FORMAT DATE
 ============================================================
 */
@@ -619,7 +807,7 @@ const printSale = (
         const remainingQuantity =
             Math.max(
                 quantity -
-                refundedQuantity,
+                    refundedQuantity,
                 0
             );
 
@@ -667,7 +855,7 @@ const printSale = (
     let currentTotal =
         Math.max(
             currentSubtotal -
-            discount,
+                discount,
             0
         );
 
@@ -866,6 +1054,39 @@ const printSale = (
             ).trim();
 
 
+        /*
+        ----------------------------------------------------
+        OPEN PRICE NOTE
+        ----------------------------------------------------
+
+        Optional description stored with Grocery.
+
+        Example:
+
+        Grocery
+        Vegetables
+        Open Price
+        1 x P 125.00          P 125.00
+
+        ----------------------------------------------------
+        */
+
+        const note =
+            String(
+                item.note ||
+                ""
+            )
+                .replace(
+                    /\s+/g,
+                    " "
+                )
+                .trim()
+                .slice(
+                    0,
+                    80
+                );
+
+
         const quantity =
             Number(
                 item.quantity ||
@@ -883,7 +1104,7 @@ const printSale = (
         const remainingQuantity =
             Math.max(
                 quantity -
-                refundedQuantity,
+                    refundedQuantity,
                 0
             );
 
@@ -915,6 +1136,12 @@ const printSale = (
             unitPrice;
 
 
+        /*
+        ----------------------------------------------------
+        ITEM NAME
+        ----------------------------------------------------
+        */
+
         receipt +=
             name.substring(
                 0,
@@ -922,6 +1149,73 @@ const printSale = (
             ) +
             "\n";
 
+
+        /*
+        ----------------------------------------------------
+        GROCERY / OPEN PRICE NOTE
+        ----------------------------------------------------
+
+        Print only when:
+
+        1. item is open-price
+        2. note contains actual text
+
+        The note is indented with "> " to clearly distinguish
+        it from the product name and pricing information.
+        ----------------------------------------------------
+        */
+
+        if (
+            item.isOpenPrice ===
+                true &&
+            note
+        ) {
+
+            const notePrefix =
+                "> ";
+
+
+            const noteWidth =
+                PRINTER_WIDTH -
+                notePrefix.length;
+
+
+            const noteLines =
+                wrapText(
+                    note,
+                    noteWidth
+                );
+
+
+            for (
+                let index = 0;
+                index <
+                noteLines.length;
+                index++
+            ) {
+
+                receipt +=
+                    (
+                        index ===
+                        0
+                            ? notePrefix
+                            : "  "
+                    ) +
+                    noteLines[
+                        index
+                    ] +
+                    "\n";
+
+            }
+
+        }
+
+
+        /*
+        ----------------------------------------------------
+        OPEN PRICE LABEL
+        ----------------------------------------------------
+        */
 
         if (
             item.isOpenPrice ===
@@ -934,6 +1228,12 @@ const printSale = (
         }
 
 
+        /*
+        ----------------------------------------------------
+        QUANTITY / PRICE
+        ----------------------------------------------------
+        */
+
         receipt +=
             twoColumns(
                 `${quantity} x ${formatMoney(
@@ -945,6 +1245,12 @@ const printSale = (
             ) +
             "\n";
 
+
+        /*
+        ----------------------------------------------------
+        REFUND INFORMATION
+        ----------------------------------------------------
+        */
 
         if (
             refundedQuantity >
@@ -1856,8 +2162,8 @@ const printLedger = (
         const remainingSalary =
             Math.max(
                 salary -
-                creditBalance -
-                cashAdvance,
+                    creditBalance -
+                    cashAdvance,
                 0
             );
 
@@ -2084,8 +2390,8 @@ const printWorkerSalaryReceipt = (
             workerLedger.remainingSalary ??
             Math.max(
                 salary -
-                totalCredits -
-                totalCashAdvances,
+                    totalCredits -
+                    totalCashAdvances,
                 0
             )
         );

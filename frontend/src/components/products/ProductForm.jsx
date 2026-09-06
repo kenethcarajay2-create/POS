@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import {
+    useEffect,
+    useRef,
+    useState,
+} from "react";
+
+import productService from "../../services/product.service";
+
 
 const DEFAULT_PRODUCT = {
     barcode: "",
@@ -13,6 +20,7 @@ const DEFAULT_PRODUCT = {
     minimumStock: "5",
 };
 
+
 function ProductForm({
     initialValues = DEFAULT_PRODUCT,
     onSubmit,
@@ -20,93 +28,356 @@ function ProductForm({
     loading = false,
 }) {
 
-    const barcodeRef = useRef(null);
+    /*
+    ============================================================
+    REFS
+    ============================================================
+    */
 
-    const [showBulkPricing, setShowBulkPricing] =
-        useState(false);
-
-    const [form, setForm] =
-        useState(DEFAULT_PRODUCT);
+    const barcodeRef =
+        useRef(null);
 
 
-    // =========================================
-    // LOAD PRODUCT
-    // =========================================
+    const productNameRef =
+        useRef(null);
+
+
+    /*
+    ============================================================
+    LOCAL STATE
+    ============================================================
+    */
+
+    const [
+        showBulkPricing,
+        setShowBulkPricing,
+    ] = useState(false);
+
+
+    const [
+        form,
+        setForm,
+    ] = useState(
+        DEFAULT_PRODUCT
+    );
+
+
+    const [
+        generatingBarcode,
+        setGeneratingBarcode,
+    ] = useState(false);
+
+
+    /*
+    ============================================================
+    LOAD PRODUCT
+    ============================================================
+    */
 
     useEffect(() => {
 
         const basePrice =
             initialValues?.pricing?.find(
-                (p) => p.quantity === 1
+                (price) =>
+                    Number(
+                        price.quantity
+                    ) === 1
             );
 
+
         setForm({
+
             ...DEFAULT_PRODUCT,
 
             ...initialValues,
 
+            barcode:
+                initialValues?.barcode ??
+                "",
+
+            name:
+                initialValues?.name ??
+                "",
+
+            description:
+                initialValues?.description ??
+                "",
+
+            category:
+                initialValues?.category ??
+                "Others",
+
+            baseUnit:
+                initialValues?.baseUnit ??
+                "Piece",
+
             costPrice:
-                initialValues?.costPrice?.toString() ?? "",
+                initialValues?.costPrice !==
+                    undefined &&
+                initialValues?.costPrice !==
+                    null
+                    ? String(
+                        initialValues.costPrice
+                    )
+                    : "",
 
             sellingPrice:
-                basePrice?.price?.toString() ?? "",
+                basePrice?.price !==
+                    undefined &&
+                basePrice?.price !==
+                    null
+                    ? String(
+                        basePrice.price
+                    )
+                    : "",
 
             stock:
-                initialValues?.stock !== undefined
-                    ? initialValues.stock.toString()
+                initialValues?.stock !==
+                    undefined &&
+                initialValues?.stock !==
+                    null
+                    ? String(
+                        initialValues.stock
+                    )
                     : "",
 
             minimumStock:
-                initialValues?.minimumStock !== undefined
-                    ? initialValues.minimumStock.toString()
+                initialValues?.minimumStock !==
+                    undefined &&
+                initialValues?.minimumStock !==
+                    null
+                    ? String(
+                        initialValues.minimumStock
+                    )
                     : "5",
 
             pricing:
                 initialValues?.pricing
                     ?.filter(
-                        (p) => p.quantity !== 1
+                        (price) =>
+                            Number(
+                                price.quantity
+                            ) !== 1
                     )
-                    .map((p) => ({
-                        quantity:
-                            p.quantity.toString(),
+                    .map(
+                        (price) => ({
 
-                        price:
-                            p.price.toString(),
-                    })) ?? [],
+                            quantity:
+                                String(
+                                    price.quantity
+                                ),
+
+                            price:
+                                String(
+                                    price.price
+                                ),
+
+                        })
+                    ) ??
+                [],
+
         });
 
-        setTimeout(() => {
-            barcodeRef.current?.focus();
-        }, 100);
 
         setShowBulkPricing(
-            (initialValues?.pricing?.length ?? 0) > 1
+            (
+                initialValues
+                    ?.pricing
+                    ?.length ??
+                0
+            ) > 1
         );
 
-    }, [initialValues]);
+
+        setTimeout(() => {
+
+            barcodeRef
+                .current
+                ?.focus();
+
+        }, 100);
+
+    }, [
+        initialValues,
+    ]);
 
 
-    // =========================================
-    // FORM CHANGE
-    // =========================================
+    /*
+    ============================================================
+    FORM CHANGE
+    ============================================================
+    */
 
-    const handleChange = (e) => {
+    const handleChange = (
+        event
+    ) => {
 
         const {
             name,
             value,
-        } = e.target;
+        } =
+            event.target;
 
-        setForm((prev) => ({
-            ...prev,
-            [name]: value,
-        }));
+
+        setForm(
+            (
+                previous
+            ) => ({
+
+                ...previous,
+
+                [name]:
+                    value,
+
+            })
+        );
+
     };
 
 
-    // =========================================
-    // BULK PRICING
-    // =========================================
+    /*
+    ============================================================
+    GENERATE UNIQUE BARCODE
+    ============================================================
+    */
+
+    const handleGenerateBarcode =
+        async () => {
+
+            if (
+                generatingBarcode ||
+                loading
+            ) {
+
+                return;
+
+            }
+
+
+            const existingBarcode =
+                String(
+                    form.barcode ||
+                    ""
+                )
+                    .trim();
+
+
+            /*
+            --------------------------------------------------------
+            DO NOT SILENTLY REPLACE EXISTING BARCODE
+            --------------------------------------------------------
+            */
+
+            if (
+                existingBarcode
+            ) {
+
+                const shouldReplace =
+                    window.confirm(
+                        "A barcode is already entered. Replace it with a generated barcode?"
+                    );
+
+
+                if (
+                    !shouldReplace
+                ) {
+
+                    return;
+
+                }
+
+            }
+
+
+            try {
+
+                setGeneratingBarcode(
+                    true
+                );
+
+
+                const barcode =
+                    await productService
+                        .generateBarcode();
+
+
+                if (
+                    !barcode
+                ) {
+
+                    throw new Error(
+                        "The server did not return a barcode."
+                    );
+
+                }
+
+
+                setForm(
+                    (
+                        previous
+                    ) => ({
+
+                        ...previous,
+
+                        barcode:
+                            String(
+                                barcode
+                            ),
+
+                    })
+                );
+
+
+                /*
+                --------------------------------------------------------
+                MOVE TO PRODUCT NAME
+                --------------------------------------------------------
+                */
+
+                setTimeout(() => {
+
+                    productNameRef
+                        .current
+                        ?.focus();
+
+                }, 50);
+
+
+            } catch (
+                error
+            ) {
+
+                console.error(
+                    "Failed to generate barcode:",
+                    error
+                );
+
+
+                alert(
+                    error?.response
+                        ?.data
+                        ?.message ||
+                    error?.message ||
+                    "Failed to generate barcode."
+                );
+
+
+            } finally {
+
+                setGeneratingBarcode(
+                    false
+                );
+
+            }
+
+        };
+
+
+    /*
+    ============================================================
+    BULK PRICING
+    ============================================================
+    */
 
     const handlePricingChange = (
         index,
@@ -114,150 +385,592 @@ function ProductForm({
         value
     ) => {
 
-        const pricing = [...form.pricing];
+        setForm(
+            (
+                previous
+            ) => {
 
-        pricing[index][field] = value;
+                const pricing =
+                    previous.pricing
+                        .map(
+                            (
+                                tier,
+                                tierIndex
+                            ) => {
 
-        setForm((prev) => ({
-            ...prev,
-            pricing,
-        }));
+                                if (
+                                    tierIndex !==
+                                    index
+                                ) {
+
+                                    return tier;
+
+                                }
+
+
+                                return {
+
+                                    ...tier,
+
+                                    [field]:
+                                        value,
+
+                                };
+
+                            }
+                        );
+
+
+                return {
+
+                    ...previous,
+
+                    pricing,
+
+                };
+
+            }
+        );
+
     };
 
 
-    const addPricingRow = () => {
+    const addPricingRow =
+        () => {
 
-        setShowBulkPricing(true);
+            setShowBulkPricing(
+                true
+            );
 
-        setForm((prev) => ({
-            ...prev,
 
-            pricing: [
-                ...prev.pricing,
+            setForm(
+                (
+                    previous
+                ) => ({
 
-                {
-                    quantity: "",
-                    price: "",
-                },
-            ],
-        }));
+                    ...previous,
+
+                    pricing: [
+
+                        ...previous
+                            .pricing,
+
+                        {
+                            quantity:
+                                "",
+
+                            price:
+                                "",
+                        },
+
+                    ],
+
+                })
+            );
+
+        };
+
+
+    const removePricingRow = (
+        index
+    ) => {
+
+        setForm(
+            (
+                previous
+            ) => {
+
+                const pricing =
+                    previous.pricing
+                        .filter(
+                            (
+                                _,
+                                tierIndex
+                            ) =>
+                                tierIndex !==
+                                index
+                        );
+
+
+                return {
+
+                    ...previous,
+
+                    pricing,
+
+                };
+
+            }
+        );
+
     };
 
 
-    const removePricingRow = (index) => {
+    /*
+    ============================================================
+    SUBMIT
+    ============================================================
+    */
 
-        setForm((prev) => ({
-            ...prev,
+    const handleSubmit = (
+        event
+    ) => {
 
-            pricing:
-                prev.pricing.filter(
-                    (_, i) => i !== index
-                ),
-        }));
-    };
-
-
-    // =========================================
-    // SUBMIT
-    // =========================================
-
-    const handleSubmit = (e) => {
-
-        e.preventDefault();
-
-        const pricing = [
-
-            {
-                quantity: 1,
-
-                price: Number(
-                    form.sellingPrice
-                ),
-            },
-
-            ...form.pricing.map((tier) => ({
-                quantity: Number(
-                    tier.quantity
-                ),
-
-                price: Number(
-                    tier.price
-                ),
-            })),
-
-        ];
+        event.preventDefault();
 
 
-        const quantities =
-            pricing.map(
-                (p) => p.quantity
+        /*
+        --------------------------------------------------------
+        BASIC BARCODE VALIDATION
+        --------------------------------------------------------
+        */
+
+        const barcode =
+            String(
+                form.barcode ||
+                ""
+            )
+                .trim();
+
+
+        if (
+            !barcode
+        ) {
+
+            alert(
+                "Barcode is required."
+            );
+
+
+            barcodeRef
+                .current
+                ?.focus();
+
+
+            return;
+
+        }
+
+
+        /*
+        --------------------------------------------------------
+        PRODUCT NAME
+        --------------------------------------------------------
+        */
+
+        const name =
+            String(
+                form.name ||
+                ""
+            )
+                .trim();
+
+
+        if (
+            !name
+        ) {
+
+            alert(
+                "Product name is required."
+            );
+
+
+            productNameRef
+                .current
+                ?.focus();
+
+
+            return;
+
+        }
+
+
+        /*
+        --------------------------------------------------------
+        BASE PRICE
+        --------------------------------------------------------
+        */
+
+        const sellingPrice =
+            Number(
+                form.sellingPrice
             );
 
 
         if (
-            new Set(quantities).size !==
+            !Number.isFinite(
+                sellingPrice
+            ) ||
+            sellingPrice <
+                0
+        ) {
+
+            alert(
+                "Enter a valid selling price."
+            );
+
+
+            return;
+
+        }
+
+
+        /*
+        --------------------------------------------------------
+        COST PRICE
+        --------------------------------------------------------
+        */
+
+        const costPrice =
+            Number(
+                form.costPrice
+            );
+
+
+        if (
+            !Number.isFinite(
+                costPrice
+            ) ||
+            costPrice <
+                0
+        ) {
+
+            alert(
+                "Enter a valid cost price."
+            );
+
+
+            return;
+
+        }
+
+
+        /*
+        --------------------------------------------------------
+        STOCK
+        --------------------------------------------------------
+        */
+
+        const stock =
+            form.stock ===
+                ""
+                ? 0
+                : Number(
+                    form.stock
+                );
+
+
+        if (
+            !Number.isFinite(
+                stock
+            ) ||
+            stock <
+                0
+        ) {
+
+            alert(
+                "Initial stock cannot be negative."
+            );
+
+
+            return;
+
+        }
+
+
+        /*
+        --------------------------------------------------------
+        MINIMUM STOCK
+        --------------------------------------------------------
+        */
+
+        const minimumStock =
+            form.minimumStock ===
+                ""
+                ? 0
+                : Number(
+                    form.minimumStock
+                );
+
+
+        if (
+            !Number.isFinite(
+                minimumStock
+            ) ||
+            minimumStock <
+                0
+        ) {
+
+            alert(
+                "Minimum stock cannot be negative."
+            );
+
+
+            return;
+
+        }
+
+
+        /*
+        --------------------------------------------------------
+        BUILD PRICING
+        --------------------------------------------------------
+        */
+
+        const pricing = [
+
+            {
+                quantity:
+                    1,
+
+                price:
+                    sellingPrice,
+            },
+
+            ...form.pricing
+                .map(
+                    (
+                        tier
+                    ) => ({
+
+                        quantity:
+                            Number(
+                                tier.quantity
+                            ),
+
+                        price:
+                            Number(
+                                tier.price
+                            ),
+
+                    })
+                ),
+
+        ];
+
+
+        /*
+        --------------------------------------------------------
+        VALIDATE BULK TIERS
+        --------------------------------------------------------
+        */
+
+        for (
+            const tier of
+            pricing
+        ) {
+
+            if (
+                !Number.isFinite(
+                    tier.quantity
+                ) ||
+                tier.quantity <
+                    1
+            ) {
+
+                alert(
+                    "Every pricing quantity must be at least 1."
+                );
+
+
+                return;
+
+            }
+
+
+            if (
+                !Number.isFinite(
+                    tier.price
+                ) ||
+                tier.price <
+                    0
+            ) {
+
+                alert(
+                    "Every pricing tier must have a valid price."
+                );
+
+
+                return;
+
+            }
+
+        }
+
+
+        /*
+        --------------------------------------------------------
+        QUANTITY 1 IS RESERVED FOR BASE PRICE
+        --------------------------------------------------------
+        */
+
+        const invalidBulkTier =
+            form.pricing
+                .some(
+                    (
+                        tier
+                    ) =>
+                        Number(
+                            tier.quantity
+                        ) <
+                        2
+                );
+
+
+        if (
+            invalidBulkTier
+        ) {
+
+            alert(
+                "Bulk pricing quantities must be 2 or greater."
+            );
+
+
+            return;
+
+        }
+
+
+        /*
+        --------------------------------------------------------
+        NO DUPLICATE QUANTITIES
+        --------------------------------------------------------
+        */
+
+        const quantities =
+            pricing.map(
+                (
+                    price
+                ) =>
+                    price.quantity
+            );
+
+
+        if (
+            new Set(
+                quantities
+            ).size !==
             quantities.length
         ) {
 
             alert(
-                "Each quantity must be unique."
+                "Each pricing quantity must be unique."
             );
 
+
             return;
+
         }
 
 
         pricing.sort(
-            (a, b) =>
-                a.quantity - b.quantity
+            (
+                first,
+                second
+            ) =>
+                first.quantity -
+                second.quantity
         );
 
 
-        onSubmit({
+        /*
+        --------------------------------------------------------
+        CLEAN PAYLOAD
+        --------------------------------------------------------
+        */
 
-            ...form,
+        const payload = {
 
-            costPrice:
-                Number(form.costPrice),
+            barcode,
 
-            sellingPrice:
-                Number(form.sellingPrice),
+            name,
 
-            stock:
-                Number(form.stock),
+            description:
+                String(
+                    form.description ||
+                    ""
+                )
+                    .trim(),
 
-            minimumStock:
-                Number(form.minimumStock),
+            category:
+                form.category ||
+                "Others",
+
+            baseUnit:
+                String(
+                    form.baseUnit ||
+                    "Piece"
+                )
+                    .trim() ||
+                "Piece",
+
+            costPrice,
+
+            sellingPrice,
+
+            stock,
+
+            minimumStock,
 
             pricing,
 
-        });
+        };
+
+
+        onSubmit(
+            payload
+        );
+
     };
 
 
-    // =========================================
-    // PROFIT
-    // =========================================
+    /*
+    ============================================================
+    PROFIT
+    ============================================================
+    */
 
     const cost =
-        Number(form.costPrice) || 0;
+        Number(
+            form.costPrice
+        ) ||
+        0;
+
 
     const selling =
-        Number(form.sellingPrice) || 0;
+        Number(
+            form.sellingPrice
+        ) ||
+        0;
+
 
     const profit =
-        selling - cost;
+        selling -
+        cost;
+
 
     const profitPercent =
         cost > 0
-            ? (profit / cost) * 100
+            ? (
+                profit /
+                cost
+            ) *
+            100
             : 0;
 
+
+    /*
+    ============================================================
+    RENDER
+    ============================================================
+    */
 
     return (
 
         <form
-            onSubmit={handleSubmit}
+            onSubmit={
+                handleSubmit
+            }
             className="flex flex-col max-h-[92vh]"
         >
 
@@ -293,17 +1006,33 @@ function ProductForm({
                             text-lg
                         "
                     >
+
                         🛍️
+
                     </div>
+
 
                     <div>
 
                         <h3 className="text-xl font-bold">
-                            Add Product
+
+                            {
+                                initialValues?._id
+                                    ? "Edit Product"
+                                    : "Add Product"
+                            }
+
                         </h3>
 
+
                         <p className="text-xs text-base-content/60">
-                            Add a new product to your inventory
+
+                            {
+                                initialValues?._id
+                                    ? "Update product information"
+                                    : "Add a new product to your inventory"
+                            }
+
                         </p>
 
                     </div>
@@ -314,9 +1043,17 @@ function ProductForm({
                 <button
                     type="button"
                     className="btn btn-ghost btn-sm btn-circle"
-                    onClick={onCancel}
+                    onClick={
+                        onCancel
+                    }
+                    disabled={
+                        loading ||
+                        generatingBarcode
+                    }
                 >
+
                     ✕
+
                 </button>
 
             </div>
@@ -357,7 +1094,9 @@ function ProductForm({
                     </h4>
 
 
-                    {/* BARCODE */}
+                    {/* =================================
+                        BARCODE
+                    ================================= */}
 
                     <div>
 
@@ -365,27 +1104,96 @@ function ProductForm({
                             Barcode
                         </label>
 
-                        <input
-                            ref={barcodeRef}
-                            className="
-                                input
-                                input-bordered
-                                input-sm
-                                w-full
-                                mt-1
-                            "
-                            name="barcode"
-                            value={form.barcode}
-                            onChange={handleChange}
-                            placeholder="Scan or enter barcode"
-                            autoComplete="off"
-                            required
-                        />
+
+                        <div className="flex gap-2 mt-1">
+
+                            <input
+                                ref={
+                                    barcodeRef
+                                }
+                                className="
+                                    input
+                                    input-bordered
+                                    input-sm
+                                    flex-1
+                                    min-w-0
+                                "
+                                name="barcode"
+                                value={
+                                    form.barcode
+                                }
+                                onChange={
+                                    handleChange
+                                }
+                                placeholder="Scan or enter barcode"
+                                autoComplete="off"
+                                required
+                                disabled={
+                                    loading ||
+                                    generatingBarcode
+                                }
+                            />
+
+
+                            <button
+                                type="button"
+                                className="
+                                    btn
+                                    btn-sm
+                                    btn-outline
+                                    btn-primary
+                                    whitespace-nowrap
+                                "
+                                onClick={
+                                    handleGenerateBarcode
+                                }
+                                disabled={
+                                    loading ||
+                                    generatingBarcode
+                                }
+                            >
+
+                                {generatingBarcode ? (
+
+                                    <>
+
+                                        <span className="loading loading-spinner loading-xs" />
+
+                                        Generating
+
+                                    </>
+
+                                ) : (
+
+                                    <>
+
+                                        <span>
+                                            ▦
+                                        </span>
+
+                                        Generate
+
+                                    </>
+
+                                )}
+
+                            </button>
+
+                        </div>
+
+
+                        <p className="text-[10px] text-base-content/50 mt-1">
+
+                            Scan an existing barcode or generate a unique internal barcode.
+
+                        </p>
 
                     </div>
 
 
-                    {/* PRODUCT NAME */}
+                    {/* =================================
+                        PRODUCT NAME
+                    ================================= */}
 
                     <div>
 
@@ -393,7 +1201,11 @@ function ProductForm({
                             Product Name
                         </label>
 
+
                         <input
+                            ref={
+                                productNameRef
+                            }
                             className="
                                 input
                                 input-bordered
@@ -402,22 +1214,32 @@ function ProductForm({
                                 mt-1
                             "
                             name="name"
-                            value={form.name}
-                            onChange={handleChange}
+                            value={
+                                form.name
+                            }
+                            onChange={
+                                handleChange
+                            }
                             placeholder="Enter product name"
                             required
+                            disabled={
+                                loading
+                            }
                         />
 
                     </div>
 
 
-                    {/* DESCRIPTION */}
+                    {/* =================================
+                        DESCRIPTION
+                    ================================= */}
 
                     <div>
 
                         <label className="text-xs font-semibold">
                             Description
                         </label>
+
 
                         <textarea
                             className="
@@ -431,15 +1253,24 @@ function ProductForm({
                                 text-sm
                             "
                             name="description"
-                            value={form.description}
-                            onChange={handleChange}
+                            value={
+                                form.description
+                            }
+                            onChange={
+                                handleChange
+                            }
                             placeholder="Optional description"
+                            disabled={
+                                loading
+                            }
                         />
 
                     </div>
 
 
-                    {/* CATEGORY + UNIT */}
+                    {/* =================================
+                        CATEGORY + UNIT
+                    ================================= */}
 
                     <div className="grid grid-cols-2 gap-3">
 
@@ -448,6 +1279,7 @@ function ProductForm({
                             <label className="text-xs font-semibold">
                                 Category
                             </label>
+
 
                             <select
                                 className="
@@ -458,17 +1290,44 @@ function ProductForm({
                                     mt-1
                                 "
                                 name="category"
-                                value={form.category}
-                                onChange={handleChange}
+                                value={
+                                    form.category
+                                }
+                                onChange={
+                                    handleChange
+                                }
+                                disabled={
+                                    loading
+                                }
                             >
 
-                                <option>Beverages</option>
-                                <option>Snacks</option>
-                                <option>Canned Goods</option>
-                                <option>Frozen</option>
-                                <option>Household</option>
-                                <option>Personal Care</option>
-                                <option>Others</option>
+                                <option>
+                                    Beverages
+                                </option>
+
+                                <option>
+                                    Snacks
+                                </option>
+
+                                <option>
+                                    Canned Goods
+                                </option>
+
+                                <option>
+                                    Frozen
+                                </option>
+
+                                <option>
+                                    Household
+                                </option>
+
+                                <option>
+                                    Personal Care
+                                </option>
+
+                                <option>
+                                    Others
+                                </option>
 
                             </select>
 
@@ -481,6 +1340,7 @@ function ProductForm({
                                 Base Unit
                             </label>
 
+
                             <input
                                 className="
                                     input
@@ -490,10 +1350,17 @@ function ProductForm({
                                     mt-1
                                 "
                                 name="baseUnit"
-                                value={form.baseUnit}
-                                onChange={handleChange}
+                                value={
+                                    form.baseUnit
+                                }
+                                onChange={
+                                    handleChange
+                                }
                                 placeholder="Piece"
                                 required
+                                disabled={
+                                    loading
+                                }
                             />
 
                         </div>
@@ -501,7 +1368,9 @@ function ProductForm({
                     </div>
 
 
-                    {/* PRICES */}
+                    {/* =================================
+                        PRICES
+                    ================================= */}
 
                     <div className="grid grid-cols-2 gap-3">
 
@@ -510,6 +1379,7 @@ function ProductForm({
                             <label className="text-xs font-semibold">
                                 Cost Price
                             </label>
+
 
                             <label
                                 className="
@@ -527,16 +1397,26 @@ function ProductForm({
                                     ₱
                                 </span>
 
+
                                 <input
                                     type="number"
                                     className="grow"
                                     name="costPrice"
-                                    value={form.costPrice}
-                                    onChange={handleChange}
-                                    min={0}
+                                    value={
+                                        form.costPrice
+                                    }
+                                    onChange={
+                                        handleChange
+                                    }
+                                    min={
+                                        0
+                                    }
                                     step="0.01"
                                     placeholder="0.00"
                                     required
+                                    disabled={
+                                        loading
+                                    }
                                 />
 
                             </label>
@@ -550,6 +1430,7 @@ function ProductForm({
                                 Selling Price
                             </label>
 
+
                             <label
                                 className="
                                     input
@@ -566,16 +1447,26 @@ function ProductForm({
                                     ₱
                                 </span>
 
+
                                 <input
                                     type="number"
                                     className="grow"
                                     name="sellingPrice"
-                                    value={form.sellingPrice}
-                                    onChange={handleChange}
-                                    min={0}
+                                    value={
+                                        form.sellingPrice
+                                    }
+                                    onChange={
+                                        handleChange
+                                    }
+                                    min={
+                                        0
+                                    }
                                     step="0.01"
                                     placeholder="0.00"
                                     required
+                                    disabled={
+                                        loading
+                                    }
                                 />
 
                             </label>
@@ -598,7 +1489,9 @@ function ProductForm({
                     "
                 >
 
-                    {/* INVENTORY */}
+                    {/* =================================
+                        INVENTORY
+                    ================================= */}
 
                     <div
                         className="
@@ -613,6 +1506,7 @@ function ProductForm({
                             📦 Inventory
                         </h4>
 
+
                         <div className="grid grid-cols-2 gap-3">
 
                             <div>
@@ -620,6 +1514,7 @@ function ProductForm({
                                 <label className="text-xs font-semibold">
                                     Initial Stock
                                 </label>
+
 
                                 <input
                                     type="number"
@@ -631,10 +1526,19 @@ function ProductForm({
                                         mt-1
                                     "
                                     name="stock"
-                                    value={form.stock}
+                                    value={
+                                        form.stock
+                                    }
                                     placeholder="0"
-                                    onChange={handleChange}
-                                    min={0}
+                                    onChange={
+                                        handleChange
+                                    }
+                                    min={
+                                        0
+                                    }
+                                    disabled={
+                                        loading
+                                    }
                                 />
 
                             </div>
@@ -646,6 +1550,7 @@ function ProductForm({
                                     Minimum Stock
                                 </label>
 
+
                                 <input
                                     type="number"
                                     className="
@@ -656,10 +1561,19 @@ function ProductForm({
                                         mt-1
                                     "
                                     name="minimumStock"
-                                    value={form.minimumStock}
+                                    value={
+                                        form.minimumStock
+                                    }
                                     placeholder="5"
-                                    onChange={handleChange}
-                                    min={0}
+                                    onChange={
+                                        handleChange
+                                    }
+                                    min={
+                                        0
+                                    }
+                                    disabled={
+                                        loading
+                                    }
                                 />
 
                             </div>
@@ -669,7 +1583,9 @@ function ProductForm({
                     </div>
 
 
-                    {/* BULK PRICING */}
+                    {/* =================================
+                        BULK PRICING
+                    ================================= */}
 
                     <div
                         className="
@@ -688,11 +1604,13 @@ function ProductForm({
                                     Bulk Pricing
                                 </h4>
 
+
                                 <p className="text-[10px] text-base-content/50">
                                     Optional quantity discounts
                                 </p>
 
                             </div>
+
 
                             {!showBulkPricing && (
 
@@ -704,9 +1622,16 @@ function ProductForm({
                                         btn-xs
                                         btn-outline
                                     "
-                                    onClick={addPricingRow}
+                                    onClick={
+                                        addPricingRow
+                                    }
+                                    disabled={
+                                        loading
+                                    }
                                 >
+
                                     + Add Tier
+
                                 </button>
 
                             )}
@@ -719,10 +1644,15 @@ function ProductForm({
                             <div className="mt-3 space-y-2">
 
                                 {form.pricing.map(
-                                    (tier, index) => (
+                                    (
+                                        tier,
+                                        index
+                                    ) => (
 
                                         <div
-                                            key={index}
+                                            key={
+                                                index
+                                            }
                                             className="
                                                 grid
                                                 grid-cols-[1fr_1fr_auto]
@@ -737,23 +1667,33 @@ function ProductForm({
                                                     Quantity
                                                 </label>
 
+
                                                 <input
                                                     type="number"
-                                                    min={2}
+                                                    min={
+                                                        2
+                                                    }
                                                     className="
                                                         input
                                                         input-bordered
                                                         input-xs
                                                         w-full
                                                     "
-                                                    value={tier.quantity}
+                                                    value={
+                                                        tier.quantity
+                                                    }
                                                     placeholder="6"
-                                                    onChange={(e) =>
+                                                    onChange={(
+                                                        event
+                                                    ) =>
                                                         handlePricingChange(
                                                             index,
                                                             "quantity",
-                                                            e.target.value
+                                                            event.target.value
                                                         )
+                                                    }
+                                                    disabled={
+                                                        loading
                                                     }
                                                 />
 
@@ -765,6 +1705,7 @@ function ProductForm({
                                                 <label className="text-[10px]">
                                                     Price
                                                 </label>
+
 
                                                 <label
                                                     className="
@@ -779,19 +1720,29 @@ function ProductForm({
 
                                                     ₱
 
+
                                                     <input
                                                         type="number"
-                                                        min={0}
+                                                        min={
+                                                            0
+                                                        }
                                                         step="0.01"
                                                         className="grow"
-                                                        value={tier.price}
+                                                        value={
+                                                            tier.price
+                                                        }
                                                         placeholder="0.00"
-                                                        onChange={(e) =>
+                                                        onChange={(
+                                                            event
+                                                        ) =>
                                                             handlePricingChange(
                                                                 index,
                                                                 "price",
-                                                                e.target.value
+                                                                event.target.value
                                                             )
+                                                        }
+                                                        disabled={
+                                                            loading
                                                         }
                                                     />
 
@@ -808,10 +1759,17 @@ function ProductForm({
                                                     btn-xs
                                                 "
                                                 onClick={() =>
-                                                    removePricingRow(index)
+                                                    removePricingRow(
+                                                        index
+                                                    )
+                                                }
+                                                disabled={
+                                                    loading
                                                 }
                                             >
+
                                                 ✕
+
                                             </button>
 
                                         </div>
@@ -829,9 +1787,16 @@ function ProductForm({
                                         btn-outline
                                         w-full
                                     "
-                                    onClick={addPricingRow}
+                                    onClick={
+                                        addPricingRow
+                                    }
+                                    disabled={
+                                        loading
+                                    }
                                 >
+
                                     + Add Another Tier
+
                                 </button>
 
                             </div>
@@ -841,7 +1806,9 @@ function ProductForm({
                     </div>
 
 
-                    {/* PRICING SUMMARY */}
+                    {/* =================================
+                        PRICING SUMMARY
+                    ================================= */}
 
                     <div
                         className="
@@ -864,8 +1831,16 @@ function ProductForm({
                                 Unit Price
                             </span>
 
+
                             <span className="font-semibold">
-                                ₱{selling.toFixed(2)}
+
+                                ₱
+                                {
+                                    selling.toFixed(
+                                        2
+                                    )
+                                }
+
                             </span>
 
                         </div>
@@ -877,8 +1852,16 @@ function ProductForm({
                                 Cost Price
                             </span>
 
+
                             <span>
-                                ₱{cost.toFixed(2)}
+
+                                ₱
+                                {
+                                    cost.toFixed(
+                                        2
+                                    )
+                                }
+
                             </span>
 
                         </div>
@@ -893,22 +1876,42 @@ function ProductForm({
                                 Profit
                             </span>
 
+
                             <span
                                 className={`
                                     font-bold
                                     text-sm
+
                                     ${
-                                        profit >= 0
+                                        profit >=
+                                        0
                                             ? "text-success"
                                             : "text-error"
                                     }
                                 `}
                             >
-                                ₱{profit.toFixed(2)}
+
+                                ₱
+                                {
+                                    profit.toFixed(
+                                        2
+                                    )
+                                }
+
                                 {" "}
+
                                 <span className="text-xs">
-                                    ({profitPercent.toFixed(0)}%)
+
+                                    (
+                                    {
+                                        profitPercent.toFixed(
+                                            0
+                                        )
+                                    }
+                                    %)
+
                                 </span>
+
                             </span>
 
                         </div>
@@ -940,23 +1943,37 @@ function ProductForm({
                 <button
                     type="button"
                     className="btn btn-sm btn-outline"
-                    onClick={onCancel}
+                    onClick={
+                        onCancel
+                    }
+                    disabled={
+                        loading ||
+                        generatingBarcode
+                    }
                 >
+
                     Cancel
+
                 </button>
 
 
                 <button
                     type="submit"
                     className="btn btn-sm btn-primary px-6"
-                    disabled={loading}
+                    disabled={
+                        loading ||
+                        generatingBarcode
+                    }
                 >
 
                     {loading ? (
 
                         <>
+
                             <span className="loading loading-spinner loading-xs" />
+
                             Saving...
+
                         </>
 
                     ) : (
@@ -970,7 +1987,10 @@ function ProductForm({
             </div>
 
         </form>
+
     );
+
 }
+
 
 export default ProductForm;

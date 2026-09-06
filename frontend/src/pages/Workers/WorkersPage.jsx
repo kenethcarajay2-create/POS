@@ -1,4 +1,5 @@
 import React, {
+    useCallback,
     useEffect,
     useMemo,
     useState,
@@ -8,6 +9,31 @@ import {
     useNavigate,
 } from "react-router-dom";
 
+import {
+    FaUserPlus,
+    FaUsers,
+    FaCalendarCheck,
+    FaExclamationTriangle,
+    FaMoneyBillWave,
+    FaSearch,
+    FaFilter,
+    FaBook,
+    FaHistory,
+    FaEdit,
+    FaUserSlash,
+    FaUserCheck,
+    FaEllipsisV,
+    FaWallet,
+    FaClock,
+    FaCalendarDay,
+    FaReceipt,
+    FaPrint,
+    FaTimes,
+    FaCheck,
+    FaSyncAlt,
+    FaInfoCircle,
+} from "react-icons/fa";
+
 import ledgerService from "../../services/ledger.service";
 
 
@@ -16,38 +42,39 @@ import ledgerService from "../../services/ledger.service";
 WORKERS & SALARY PAGE
 ============================================================
 
-RESPONSIBILITIES
+FRONTEND RESPONSIBILITIES
 
 - Create workers
 - Edit workers
-- Weekly / Monthly salary schedules
+- Weekly / monthly salary schedules
 - Payday configuration
+- Payroll due / overdue visibility
 - Open worker ledger
 - Pay worker
-- View salary history
-- View previous salary details
-- Reprint previous salary receipts
-- Deactivate workers
+- Salary history
+- Salary details
+- Receipt reprint
+- Deactivate / reactivate workers
 
 IMPORTANT
 
-Salary payment happens here.
+The backend must still guarantee that paying a worker is atomic
+and idempotent.
 
-LedgerPage does NOT mark workers as paid.
+The frontend cannot prevent duplicate payroll payments caused by:
 
-FLOW:
+- multiple browser tabs
+- multiple devices
+- retries after timeout
+- duplicated network requests
 
-OPEN LEDGER
-    ↓
-PAY WORKER
-    ↓
-PAID
-    ↓
-PRINT RECEIPT
-    ↓
-AVAILABLE IN SALARY HISTORY
-    ↓
-REPRINT ANY TIME
+Backend rule should be:
+
+OPEN ledger
+    ↓ atomic update
+PAID ledger
+
+Any later payment attempt must return 409 / already paid.
 ============================================================
 */
 
@@ -59,23 +86,14 @@ DEFAULT WORKER
 */
 
 const DEFAULT_WORKER = {
-
     name: "",
-
     phone: "",
-
     type: "WORKER",
-
     salary: "",
-
     payFrequency: "MONTHLY",
-
     payDay: "",
-
     payDayOfWeek: "",
-
     salaryPeriod: "",
-
 };
 
 
@@ -86,42 +104,34 @@ WEEK DAYS
 */
 
 const WEEK_DAYS = [
-
     {
         value: "0",
         label: "Sunday",
     },
-
     {
         value: "1",
         label: "Monday",
     },
-
     {
         value: "2",
         label: "Tuesday",
     },
-
     {
         value: "3",
         label: "Wednesday",
     },
-
     {
         value: "4",
         label: "Thursday",
     },
-
     {
         value: "5",
         label: "Friday",
     },
-
     {
         value: "6",
         label: "Saturday",
     },
-
 ];
 
 
@@ -144,6 +154,8 @@ const formatCurrency = (
         {
             style: "currency",
             currency: "PHP",
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
         }
     ).format(
         amount
@@ -163,16 +175,12 @@ const formatDate = (
 ) => {
 
     if (!value) {
-
         return "—";
-
     }
 
 
     const date =
-        new Date(
-            value
-        );
+        new Date(value);
 
 
     if (
@@ -180,9 +188,7 @@ const formatDate = (
             date.getTime()
         )
     ) {
-
         return "—";
-
     }
 
 
@@ -211,16 +217,12 @@ const formatDateTime = (
 ) => {
 
     if (!value) {
-
         return "—";
-
     }
 
 
     const date =
-        new Date(
-            value
-        );
+        new Date(value);
 
 
     if (
@@ -228,9 +230,7 @@ const formatDateTime = (
             date.getTime()
         )
     ) {
-
         return "—";
-
     }
 
 
@@ -246,6 +246,63 @@ const formatDateTime = (
     ).format(
         date
     );
+
+};
+
+
+/*
+============================================================
+PARSE LOCAL INPUT DATE
+============================================================
+*/
+
+const parseLocalInputDate = (
+    value
+) => {
+
+    if (!value) {
+        return null;
+    }
+
+
+    const parts =
+        String(value)
+            .split("-")
+            .map(Number);
+
+
+    if (
+        parts.length !== 3
+    ) {
+        return null;
+    }
+
+
+    const [
+        year,
+        month,
+        day,
+    ] = parts;
+
+
+    const date =
+        new Date(
+            year,
+            month - 1,
+            day
+        );
+
+
+    if (
+        Number.isNaN(
+            date.getTime()
+        )
+    ) {
+        return null;
+    }
+
+
+    return date;
 
 };
 
@@ -285,6 +342,33 @@ const getTodayInputValue = () => {
 
 
     return `${year}-${month}-${day}`;
+
+};
+
+
+/*
+============================================================
+START OF DAY
+============================================================
+*/
+
+const startOfDay = (
+    value
+) => {
+
+    const date =
+        new Date(value);
+
+
+    date.setHours(
+        0,
+        0,
+        0,
+        0
+    );
+
+
+    return date;
 
 };
 
@@ -339,18 +423,14 @@ const getOrdinalSuffix = (
 ) => {
 
     const value =
-        Number(
-            number
-        );
+        Number(number);
 
 
     if (
         value >= 11 &&
         value <= 13
     ) {
-
         return "th";
-
     }
 
 
@@ -436,6 +516,201 @@ const getPaydayText = (
 
 /*
 ============================================================
+SAFE MONTHLY PAYDAY
+============================================================
+
+If worker is configured for 29 / 30 / 31 and the month
+does not contain that date, use the final calendar day.
+
+Examples:
+
+31st in February
+→ February 28 / 29
+
+31st in April
+→ April 30
+============================================================
+*/
+
+const getSafeMonthlyDate = (
+    year,
+    monthIndex,
+    payDay
+) => {
+
+    const lastDay =
+        new Date(
+            year,
+            monthIndex + 1,
+            0
+        ).getDate();
+
+
+    const safeDay =
+        Math.min(
+            Math.max(
+                Number(payDay) || 1,
+                1
+            ),
+            lastDay
+        );
+
+
+    return new Date(
+        year,
+        monthIndex,
+        safeDay
+    );
+
+};
+
+
+/*
+============================================================
+CALCULATE LEDGER DUE DATE
+============================================================
+*/
+
+const getLedgerDueDate = (
+    worker,
+    ledger
+) => {
+
+    if (
+        ledger?.scheduledPayDate
+    ) {
+
+        const scheduled =
+            new Date(
+                ledger.scheduledPayDate
+            );
+
+
+        if (
+            !Number.isNaN(
+                scheduled.getTime()
+            )
+        ) {
+            return scheduled;
+        }
+
+    }
+
+
+    /*
+    --------------------------------------------------------
+    MONTHLY
+    --------------------------------------------------------
+    */
+
+    if (
+        worker?.payFrequency ===
+        "MONTHLY" &&
+        worker?.payDay
+    ) {
+
+        const reference =
+            ledger?.periodEnd
+                ? new Date(
+                    ledger.periodEnd
+                )
+                : new Date();
+
+
+        if (
+            !Number.isNaN(
+                reference.getTime()
+            )
+        ) {
+
+            return getSafeMonthlyDate(
+                reference.getFullYear(),
+                reference.getMonth(),
+                Number(
+                    worker.payDay
+                )
+            );
+
+        }
+
+    }
+
+
+    /*
+    --------------------------------------------------------
+    WEEKLY
+    --------------------------------------------------------
+    */
+
+    if (
+        worker?.payFrequency ===
+            "WEEKLY" &&
+        worker?.payDayOfWeek !==
+            undefined &&
+        worker?.payDayOfWeek !==
+            null &&
+        worker?.payDayOfWeek !==
+            ""
+    ) {
+
+        const targetDay =
+            Number(
+                worker.payDayOfWeek
+            );
+
+
+        let reference =
+            ledger?.periodStart
+                ? startOfDay(
+                    ledger.periodStart
+                )
+                : startOfDay(
+                    new Date()
+                );
+
+
+        /*
+        Find the target weekday beginning
+        from the ledger period start.
+        */
+
+        for (
+            let index = 0;
+            index < 7;
+            index++
+        ) {
+
+            const candidate =
+                new Date(
+                    reference
+                );
+
+
+            candidate.setDate(
+                reference.getDate() +
+                index
+            );
+
+
+            if (
+                candidate.getDay() ===
+                targetDay
+            ) {
+                return candidate;
+            }
+
+        }
+
+    }
+
+
+    return null;
+
+};
+
+
+/*
+============================================================
 LEDGER PERIOD LABEL
 ============================================================
 */
@@ -445,18 +720,14 @@ const getLedgerPeriodLabel = (
 ) => {
 
     if (!ledger) {
-
         return "Unknown Period";
-
     }
 
 
     if (
         ledger.label
     ) {
-
         return ledger.label;
-
     }
 
 
@@ -494,7 +765,7 @@ const getLedgerPeriodLabel = (
         ) {
 
             return start.toLocaleDateString(
-                "en-US",
+                "en-PH",
                 {
                     month: "long",
                     year: "numeric",
@@ -520,7 +791,7 @@ const getLedgerPeriodLabel = (
             ) - 1,
             1
         ).toLocaleDateString(
-            "en-US",
+            "en-PH",
             {
                 month: "long",
                 year: "numeric",
@@ -537,6 +808,327 @@ const getLedgerPeriodLabel = (
             1
         }`
     );
+
+};
+
+
+/*
+============================================================
+LEDGER SALARY
+============================================================
+*/
+
+const getLedgerSalary = (
+    worker,
+    ledger
+) => {
+
+    return (
+        Number(
+            ledger?.salary ??
+            worker?.salary ??
+            0
+        ) || 0
+    );
+
+};
+
+
+/*
+============================================================
+LEDGER CREDITS
+============================================================
+*/
+
+const getLedgerCredits = (
+    ledger
+) => {
+
+    return (
+        Number(
+            ledger?.totalCredits
+        ) || 0
+    );
+
+};
+
+
+/*
+============================================================
+LEDGER CASH ADVANCES
+============================================================
+*/
+
+const getLedgerCashAdvances = (
+    ledger
+) => {
+
+    return (
+        Number(
+            ledger?.totalCashAdvances
+        ) || 0
+    );
+
+};
+
+
+/*
+============================================================
+NET PAY
+============================================================
+*/
+
+const calculateLedgerNetPay = (
+    worker,
+    ledger
+) => {
+
+    if (!ledger) {
+        return 0;
+    }
+
+
+    const salary =
+        getLedgerSalary(
+            worker,
+            ledger
+        );
+
+
+    const credits =
+        getLedgerCredits(
+            ledger
+        );
+
+
+    const advances =
+        getLedgerCashAdvances(
+            ledger
+        );
+
+
+    return Math.max(
+        salary -
+        credits -
+        advances,
+        0
+    );
+
+};
+
+
+/*
+============================================================
+EXCESS DEDUCTIONS
+============================================================
+*/
+
+const calculateExcessDeductions = (
+    worker,
+    ledger
+) => {
+
+    if (!ledger) {
+        return 0;
+    }
+
+
+    const salary =
+        getLedgerSalary(
+            worker,
+            ledger
+        );
+
+
+    const deductions =
+        getLedgerCredits(
+            ledger
+        ) +
+        getLedgerCashAdvances(
+            ledger
+        );
+
+
+    return Math.max(
+        deductions - salary,
+        0
+    );
+
+};
+
+
+/*
+============================================================
+PAYROLL STATUS
+============================================================
+*/
+
+const getWorkerPayrollStatus = (
+    worker
+) => {
+
+    if (
+        worker?.isActive ===
+        false
+    ) {
+
+        return {
+            value:
+                "INACTIVE",
+
+            label:
+                "Inactive",
+
+            className:
+                "badge badge-ghost badge-sm",
+        };
+
+    }
+
+
+    const current =
+        worker?.currentWorkerLedger;
+
+
+    if (
+        current &&
+        current.status ===
+            "OPEN"
+    ) {
+
+        const dueDate =
+            getLedgerDueDate(
+                worker,
+                current
+            );
+
+
+        if (!dueDate) {
+
+            return {
+                value:
+                    "OPEN",
+
+                label:
+                    "Open",
+
+                className:
+                    "badge badge-warning badge-sm",
+            };
+
+        }
+
+
+        const today =
+            startOfDay(
+                new Date()
+            );
+
+
+        const due =
+            startOfDay(
+                dueDate
+            );
+
+
+        if (
+            due.getTime() <
+            today.getTime()
+        ) {
+
+            const daysOverdue =
+                Math.floor(
+                    (
+                        today.getTime() -
+                        due.getTime()
+                    ) /
+                    86400000
+                );
+
+
+            return {
+                value:
+                    "OVERDUE",
+
+                label:
+                    daysOverdue ===
+                    1
+                        ? "1 Day Overdue"
+                        : `${daysOverdue} Days Overdue`,
+
+                className:
+                    "badge badge-error badge-sm",
+            };
+
+        }
+
+
+        if (
+            due.getTime() ===
+            today.getTime()
+        ) {
+
+            return {
+                value:
+                    "DUE",
+
+                label:
+                    "Due Today",
+
+                className:
+                    "badge badge-warning badge-sm",
+            };
+
+        }
+
+
+        return {
+            value:
+                "UPCOMING",
+
+            label:
+                "Upcoming",
+
+            className:
+                "badge badge-info badge-sm",
+        };
+
+    }
+
+
+    const latest =
+        worker?.latestWorkerLedger;
+
+
+    if (
+        latest?.status ===
+        "PAID"
+    ) {
+
+        return {
+            value:
+                "PAID",
+
+            label:
+                "Paid",
+
+            className:
+                "badge badge-success badge-sm",
+        };
+
+    }
+
+
+    return {
+        value:
+            "NO_LEDGER",
+
+        label:
+            "No Ledger",
+
+        className:
+            "badge badge-ghost badge-sm",
+    };
 
 };
 
@@ -589,6 +1181,12 @@ const WorkersPage = () => {
     ] = useState(false);
 
 
+    const [
+        refreshing,
+        setRefreshing,
+    ] = useState(false);
+
+
     /*
     ========================================================
     FILTER STATE
@@ -604,13 +1202,25 @@ const WorkersPage = () => {
     const [
         statusFilter,
         setStatusFilter,
-    ] = useState("ACTIVE");
+    ] = useState(
+        "ACTIVE"
+    );
 
 
     const [
         frequencyFilter,
         setFrequencyFilter,
-    ] = useState("ALL");
+    ] = useState(
+        "ALL"
+    );
+
+
+    const [
+        payrollFilter,
+        setPayrollFilter,
+    ] = useState(
+        "ALL"
+    );
 
 
     /*
@@ -634,9 +1244,9 @@ const WorkersPage = () => {
     const [
         form,
         setForm,
-    ] = useState(
-        DEFAULT_WORKER
-    );
+    ] = useState({
+        ...DEFAULT_WORKER,
+    });
 
 
     /*
@@ -648,6 +1258,12 @@ const WorkersPage = () => {
     const [
         showPayModal,
         setShowPayModal,
+    ] = useState(false);
+
+
+    const [
+        showFinalPayConfirm,
+        setShowFinalPayConfirm,
     ] = useState(false);
 
 
@@ -774,59 +1390,81 @@ const WorkersPage = () => {
     */
 
     const loadWorkers =
-        async () => {
+        useCallback(
+            async (
+                manual = false
+            ) => {
 
-            try {
+                try {
 
-                setLoading(
-                    true
-                );
+                    if (manual) {
 
-                setError("");
+                        setRefreshing(
+                            true
+                        );
 
+                    } else {
 
-                const accounts =
-                    await ledgerService
-                        .getAccounts({
-                            type:
-                                "WORKER",
-                        });
+                        setLoading(
+                            true
+                        );
 
-
-                setWorkers(
-                    Array.isArray(
-                        accounts
-                    )
-                        ? accounts
-                        : []
-                );
+                    }
 
 
-            } catch (err) {
-
-                console.error(
-                    "Failed to load workers:",
-                    err
-                );
+                    setError("");
 
 
-                setError(
-                    err.response
-                        ?.data
-                        ?.message ||
-                    "Failed to load workers."
-                );
+                    const accounts =
+                        await ledgerService
+                            .getAccounts({
+                                type:
+                                    "WORKER",
+                            });
 
 
-            } finally {
+                    setWorkers(
+                        Array.isArray(
+                            accounts
+                        )
+                            ? accounts
+                            : []
+                    );
 
-                setLoading(
-                    false
-                );
 
-            }
+                } catch (err) {
 
-        };
+                    console.error(
+                        "Failed to load workers:",
+                        err
+                    );
+
+
+                    setError(
+                        err?.response
+                            ?.data
+                            ?.message ||
+                        err?.message ||
+                        "Failed to load workers."
+                    );
+
+
+                } finally {
+
+                    setLoading(
+                        false
+                    );
+
+
+                    setRefreshing(
+                        false
+                    );
+
+                }
+
+            },
+            []
+        );
 
 
     useEffect(
@@ -835,7 +1473,9 @@ const WorkersPage = () => {
             loadWorkers();
 
         },
-        []
+        [
+            loadWorkers,
+        ]
     );
 
 
@@ -904,10 +1544,25 @@ const WorkersPage = () => {
                                   frequencyFilter;
 
 
+                        const payrollStatus =
+                            getWorkerPayrollStatus(
+                                worker
+                            );
+
+
+                        const matchesPayroll =
+                            payrollFilter ===
+                            "ALL"
+                                ? true
+                                : payrollStatus.value ===
+                                  payrollFilter;
+
+
                         return (
                             matchesSearch &&
                             matchesStatus &&
-                            matchesFrequency
+                            matchesFrequency &&
+                            matchesPayroll
                         );
 
                     }
@@ -919,6 +1574,7 @@ const WorkersPage = () => {
                 search,
                 statusFilter,
                 frequencyFilter,
+                payrollFilter,
             ]
         );
 
@@ -1023,9 +1679,7 @@ const WorkersPage = () => {
         () => {
 
             if (saving) {
-
                 return;
-
             }
 
 
@@ -1336,9 +1990,10 @@ const WorkersPage = () => {
 
 
                 setError(
-                    err.response
+                    err?.response
                         ?.data
                         ?.message ||
+                    err?.message ||
                     "Failed to save worker."
                 );
 
@@ -1372,6 +2027,23 @@ const WorkersPage = () => {
 
 
             if (!id) {
+                return;
+            }
+
+
+            /*
+            Prevent casual deactivation of a worker who
+            still has an open payroll ledger.
+            */
+
+            if (
+                worker?.currentWorkerLedger?.status ===
+                "OPEN"
+            ) {
+
+                window.alert(
+                    `${worker.name} still has an OPEN payroll ledger. Settle or review the ledger before deactivating this worker.`
+                );
 
                 return;
 
@@ -1380,14 +2052,12 @@ const WorkersPage = () => {
 
             const confirmed =
                 window.confirm(
-                    `Deactivate ${worker.name}?`
+                    `Deactivate ${worker.name}?\n\nThey will no longer appear in the Active Workers list.`
                 );
 
 
             if (!confirmed) {
-
                 return;
-
             }
 
 
@@ -1411,10 +2081,132 @@ const WorkersPage = () => {
 
 
                 window.alert(
-                    err.response
+                    err?.response
                         ?.data
                         ?.message ||
+                    err?.message ||
                     "Failed to deactivate worker."
+                );
+
+            }
+
+        };
+
+
+    /*
+    ========================================================
+    REACTIVATE WORKER
+    ========================================================
+
+    Uses the existing updateAccount service.
+
+    If your backend has a dedicated reactivateAccount()
+    endpoint later, replace only this function.
+    ========================================================
+    */
+
+    const handleReactivate =
+        async (
+            worker
+        ) => {
+
+            const id =
+                getAccountId(
+                    worker
+                );
+
+
+            if (!id) {
+                return;
+            }
+
+
+            const confirmed =
+                window.confirm(
+                    `Reactivate ${worker.name}?`
+                );
+
+
+            if (!confirmed) {
+                return;
+            }
+
+
+            try {
+
+                const payload = {
+
+                    name:
+                        worker.name ||
+                        "",
+
+                    phone:
+                        worker.phone ||
+                        "",
+
+                    type:
+                        "WORKER",
+
+                    salary:
+                        Number(
+                            worker.salary
+                        ) || 0,
+
+                    payFrequency:
+                        worker.payFrequency ||
+                        "MONTHLY",
+
+                    payDay:
+                        worker.payFrequency ===
+                        "MONTHLY"
+                            ? Number(
+                                worker.payDay
+                            ) ||
+                              null
+                            : null,
+
+                    payDayOfWeek:
+                        worker.payFrequency ===
+                        "WEEKLY"
+                            ? Number(
+                                worker.payDayOfWeek
+                            )
+                            : null,
+
+                    salaryPeriod:
+                        worker.salaryPeriod ||
+                        "",
+
+                    isActive:
+                        true,
+
+                };
+
+
+                await ledgerService
+                    .updateAccount(
+                        id,
+                        payload
+                    );
+
+
+                await loadWorkers();
+
+
+            } catch (err) {
+
+                console.error(
+                    "Failed to reactivate worker:",
+                    err
+                );
+
+
+                window.alert(
+                    err?.response
+                        ?.data
+                        ?.message ||
+                    err?.message ||
+                    "Failed to reactivate worker."
                 );
 
             }
@@ -1440,9 +2232,7 @@ const WorkersPage = () => {
 
 
             if (!workerId) {
-
                 return;
-
             }
 
 
@@ -1462,6 +2252,11 @@ const WorkersPage = () => {
 
 
             setPayError("");
+
+
+            setShowFinalPayConfirm(
+                false
+            );
 
 
             setShowPayModal(
@@ -1559,9 +2354,10 @@ const WorkersPage = () => {
 
 
                 setPayError(
-                    err.response
+                    err?.response
                         ?.data
                         ?.message ||
+                    err?.message ||
                     "Failed to load worker payment information."
                 );
 
@@ -1587,13 +2383,16 @@ const WorkersPage = () => {
         () => {
 
             if (paying) {
-
                 return;
-
             }
 
 
             setShowPayModal(
+                false
+            );
+
+
+            setShowFinalPayConfirm(
                 false
             );
 
@@ -1625,59 +2424,243 @@ const WorkersPage = () => {
     */
 
     const ledgerSalary =
-        Number(
+        getLedgerSalary(
+            selectedWorker,
             currentLedger
-                ?.salary ??
-            selectedWorker
-                ?.salary ??
-            0
-        ) || 0;
+        );
 
 
     const ledgerCredits =
-        Number(
+        getLedgerCredits(
             currentLedger
-                ?.totalCredits
-        ) || 0;
+        );
 
 
     const ledgerCashAdvances =
-        Number(
+        getLedgerCashAdvances(
             currentLedger
-                ?.totalCashAdvances
-        ) || 0;
+        );
 
 
     const calculatedSalaryRelease =
-        Math.max(
-            ledgerSalary -
-            ledgerCredits -
-            ledgerCashAdvances,
-            0
+        calculateLedgerNetPay(
+            selectedWorker,
+            currentLedger
         );
+
+
+    const excessDeductions =
+        calculateExcessDeductions(
+            selectedWorker,
+            currentLedger
+        );
+
+
+    const currentWorkerSalary =
+        Number(
+            selectedWorker?.salary
+        ) || 0;
+
+
+    const hasSalarySnapshotDifference =
+        Boolean(
+            currentLedger &&
+            currentLedger.salary !==
+                undefined &&
+            Number(
+                currentLedger.salary
+            ) !==
+                currentWorkerSalary
+        );
+
+
+    /*
+    ========================================================
+    VALIDATE PAYMENT
+    ========================================================
+    */
+
+    const validatePayment =
+        () => {
+
+            if (
+                !selectedWorker
+            ) {
+
+                setPayError(
+                    "Worker is missing."
+                );
+
+                return false;
+
+            }
+
+
+            if (
+                !currentLedger
+            ) {
+
+                setPayError(
+                    "This worker does not have an OPEN ledger to pay."
+                );
+
+                return false;
+
+            }
+
+
+            if (
+                currentLedger.status &&
+                currentLedger.status !==
+                "OPEN"
+            ) {
+
+                setPayError(
+                    "This payroll ledger is no longer OPEN."
+                );
+
+                return false;
+
+            }
+
+
+            if (
+                !paymentDate
+            ) {
+
+                setPayError(
+                    "Please select the payment date."
+                );
+
+                return false;
+
+            }
+
+
+            const payment =
+                parseLocalInputDate(
+                    paymentDate
+                );
+
+
+            if (!payment) {
+
+                setPayError(
+                    "The payment date is invalid."
+                );
+
+                return false;
+
+            }
+
+
+            const today =
+                startOfDay(
+                    new Date()
+                );
+
+
+            if (
+                payment.getTime() >
+                today.getTime()
+            ) {
+
+                setPayError(
+                    "Payment date cannot be in the future."
+                );
+
+                return false;
+
+            }
+
+
+            if (
+                currentLedger.periodStart
+            ) {
+
+                const periodStart =
+                    startOfDay(
+                        currentLedger.periodStart
+                    );
+
+
+                if (
+                    payment.getTime() <
+                    periodStart.getTime()
+                ) {
+
+                    setPayError(
+                        "Payment date cannot be before the payroll period started."
+                    );
+
+                    return false;
+
+                }
+
+            }
+
+
+            setPayError(
+                ""
+            );
+
+
+            return true;
+
+        };
 
 
     /*
     ========================================================
     PAY WORKER
     ========================================================
+
+    First click opens the final confirmation.
+    ========================================================
     */
 
     const handlePayWorker =
+        () => {
+
+            if (
+                !validatePayment()
+            ) {
+                return;
+            }
+
+
+            setShowFinalPayConfirm(
+                true
+            );
+
+        };
+
+
+    /*
+    ========================================================
+    EXECUTE PAY WORKER
+    ========================================================
+    */
+
+    const executePayWorker =
         async () => {
 
             if (
-                !selectedWorker
+                !validatePayment()
             ) {
-
                 return;
-
             }
 
 
             const workerId =
                 getAccountId(
                     selectedWorker
+                );
+
+
+            const ledgerId =
+                getLedgerId(
+                    currentLedger
                 );
 
 
@@ -1692,58 +2675,11 @@ const WorkersPage = () => {
             }
 
 
-            if (
-                !currentLedger
-            ) {
-
-                setPayError(
-                    "This worker does not have an OPEN ledger to pay."
-                );
-
-                return;
-
-            }
-
-
-            const ledgerId =
-                getLedgerId(
-                    currentLedger
-                );
-
-
             if (!ledgerId) {
 
                 setPayError(
                     "Worker ledger ID is missing."
                 );
-
-                return;
-
-            }
-
-
-            if (
-                !paymentDate
-            ) {
-
-                setPayError(
-                    "Please select the payment date."
-                );
-
-                return;
-
-            }
-
-
-            const confirmed =
-                window.confirm(
-                    `Pay ${selectedWorker.name} ${formatCurrency(
-                        calculatedSalaryRelease
-                    )}?`
-                );
-
-
-            if (!confirmed) {
 
                 return;
 
@@ -1760,19 +2696,33 @@ const WorkersPage = () => {
                 setPayError("");
 
 
+                /*
+                IMPORTANT:
+
+                Backend should atomically verify:
+
+                status === OPEN
+
+                before changing this ledger to PAID.
+                */
+
                 const result =
                     await ledgerService
                         .payWorker(
                             workerId,
                             {
                                 ledgerId,
-
                                 paymentDate,
                             }
                         );
 
 
                 await loadWorkers();
+
+
+                setShowFinalPayConfirm(
+                    false
+                );
 
 
                 setShowPayModal(
@@ -1790,12 +2740,6 @@ const WorkersPage = () => {
                 );
 
 
-                /*
-                ------------------------------------------------
-                PRINT STATUS
-                ------------------------------------------------
-                */
-
                 if (
                     result?.printSuccess ===
                     false
@@ -1808,7 +2752,7 @@ const WorkersPage = () => {
                 } else {
 
                     window.alert(
-                        "Worker payment completed and receipt printed successfully."
+                        "Worker payment completed successfully."
                     );
 
                 }
@@ -1822,10 +2766,16 @@ const WorkersPage = () => {
                 );
 
 
+                setShowFinalPayConfirm(
+                    false
+                );
+
+
                 setPayError(
-                    err.response
+                    err?.response
                         ?.data
                         ?.message ||
+                    err?.message ||
                     "Failed to pay worker."
                 );
 
@@ -1858,9 +2808,7 @@ const WorkersPage = () => {
 
 
         if (!workerId) {
-
             return;
-
         }
 
 
@@ -1889,9 +2837,7 @@ const WorkersPage = () => {
 
 
             if (!workerId) {
-
                 return;
-
             }
 
 
@@ -1952,12 +2898,6 @@ const WorkersPage = () => {
                         : [];
 
 
-                /*
-                ------------------------------------------------
-                ONLY PREVIOUS PAID SALARIES
-                ------------------------------------------------
-                */
-
                 const paidLedgers =
                     ledgers
                         .filter(
@@ -2014,9 +2954,10 @@ const WorkersPage = () => {
 
 
                 setHistoryError(
-                    err.response
+                    err?.response
                         ?.data
                         ?.message ||
+                    err?.message ||
                     "Failed to load salary history."
                 );
 
@@ -2046,9 +2987,7 @@ const WorkersPage = () => {
                 loadingHistoryDetails ||
                 reprintingLedgerId
             ) {
-
                 return;
-
             }
 
 
@@ -2104,9 +3043,7 @@ const WorkersPage = () => {
                 !historyWorker ||
                 !ledger
             ) {
-
                 return;
-
             }
 
 
@@ -2126,9 +3063,7 @@ const WorkersPage = () => {
                 !workerId ||
                 !ledgerId
             ) {
-
                 return;
-
             }
 
 
@@ -2223,9 +3158,10 @@ const WorkersPage = () => {
 
 
                 setHistoryError(
-                    err.response
+                    err?.response
                         ?.data
                         ?.message ||
+                    err?.message ||
                     "Failed to load salary details."
                 );
 
@@ -2254,9 +3190,7 @@ const WorkersPage = () => {
                 loadingHistoryDetails ||
                 reprintingLedgerId
             ) {
-
                 return;
-
             }
 
 
@@ -2291,9 +3225,7 @@ const WorkersPage = () => {
             if (
                 !historyWorker
             ) {
-
                 return;
-
             }
 
 
@@ -2332,9 +3264,7 @@ const WorkersPage = () => {
 
 
             if (!confirmed) {
-
                 return;
-
             }
 
 
@@ -2366,9 +3296,10 @@ const WorkersPage = () => {
 
 
                 window.alert(
-                    err.response
+                    err?.response
                         ?.data
                         ?.message ||
+                    err?.message ||
                     "Failed to reprint salary receipt."
                 );
 
@@ -2390,38 +3321,94 @@ const WorkersPage = () => {
     ========================================================
     */
 
-    const activeWorkers =
-        workers.filter(
-            (
-                worker
-            ) =>
-                worker.isActive !==
-                false
-        ).length;
+    const payrollSummary =
+        useMemo(
+            () => {
+
+                let activeWorkers =
+                    0;
 
 
-    const weeklyWorkers =
-        workers.filter(
-            (
-                worker
-            ) =>
-                worker.isActive !==
-                    false &&
-                worker.payFrequency ===
-                    "WEEKLY"
-        ).length;
+                let dueToday =
+                    0;
 
 
-    const monthlyWorkers =
-        workers.filter(
-            (
-                worker
-            ) =>
-                worker.isActive !==
-                    false &&
-                worker.payFrequency ===
-                    "MONTHLY"
-        ).length;
+                let overdue =
+                    0;
+
+
+                let payrollDue =
+                    0;
+
+
+                for (
+                    const worker
+                    of workers
+                ) {
+
+                    if (
+                        worker.isActive ===
+                        false
+                    ) {
+                        continue;
+                    }
+
+
+                    activeWorkers++;
+
+
+                    const payrollStatus =
+                        getWorkerPayrollStatus(
+                            worker
+                        );
+
+
+                    if (
+                        payrollStatus.value ===
+                        "DUE"
+                    ) {
+                        dueToday++;
+                    }
+
+
+                    if (
+                        payrollStatus.value ===
+                        "OVERDUE"
+                    ) {
+                        overdue++;
+                    }
+
+
+                    if (
+                        worker
+                            ?.currentWorkerLedger
+                            ?.status ===
+                        "OPEN"
+                    ) {
+
+                        payrollDue +=
+                            calculateLedgerNetPay(
+                                worker,
+                                worker.currentWorkerLedger
+                            );
+
+                    }
+
+                }
+
+
+                return {
+                    activeWorkers,
+                    dueToday,
+                    overdue,
+                    payrollDue,
+                };
+
+            },
+            [
+                workers,
+            ]
+        );
 
 
     /*
@@ -2432,14 +3419,14 @@ const WorkersPage = () => {
 
     return (
 
-        <div className="p-4 md:p-6">
+        <div className="space-y-6 p-4 md:p-6">
 
 
             {/* ==================================================
                 HEADER
             ================================================== */}
 
-            <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
 
                 <div>
 
@@ -2449,54 +3436,123 @@ const WorkersPage = () => {
 
 
                     <p className="mt-1 text-sm text-base-content/60">
-                        Manage workers, salary schedules, payments and salary history.
+                        Manage workers, payroll schedules, deductions, salary payments and salary history.
                     </p>
 
                 </div>
 
 
-                <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={
-                        handleAddWorker
-                    }
-                >
+                <div className="flex flex-wrap gap-2">
 
-                    + Add Worker
+                    <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() =>
+                            loadWorkers(
+                                true
+                            )
+                        }
+                        disabled={
+                            refreshing
+                        }
+                    >
 
-                </button>
+                        <FaSyncAlt
+                            className={
+                                refreshing
+                                    ? "animate-spin"
+                                    : ""
+                            }
+                        />
+
+
+                        {refreshing
+                            ? "Refreshing"
+                            : "Refresh"}
+
+                    </button>
+
+
+                    <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={
+                            handleAddWorker
+                        }
+                    >
+
+                        <FaUserPlus />
+
+                        Add Worker
+
+                    </button>
+
+                </div>
 
             </div>
 
 
             {/* ==================================================
-                SUMMARY
+                PAYROLL SUMMARY
             ================================================== */}
 
-            <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
 
                 <SummaryCard
                     label="Active Workers"
                     value={
-                        activeWorkers
+                        payrollSummary
+                            .activeWorkers
                     }
+                    description="Currently active workers"
+                    icon={
+                        FaUsers
+                    }
+                    iconClass="bg-primary/10 text-primary"
                 />
 
 
                 <SummaryCard
-                    label="Weekly Workers"
+                    label="Due Today"
                     value={
-                        weeklyWorkers
+                        payrollSummary
+                            .dueToday
                     }
+                    description="Payroll scheduled for today"
+                    icon={
+                        FaCalendarCheck
+                    }
+                    iconClass="bg-warning/10 text-warning"
                 />
 
 
                 <SummaryCard
-                    label="Monthly Workers"
+                    label="Overdue Payroll"
                     value={
-                        monthlyWorkers
+                        payrollSummary
+                            .overdue
                     }
+                    description="Workers past their scheduled payday"
+                    icon={
+                        FaExclamationTriangle
+                    }
+                    iconClass="bg-error/10 text-error"
+                />
+
+
+                <SummaryCard
+                    label="Payroll Amount Due"
+                    value={
+                        formatCurrency(
+                            payrollSummary
+                                .payrollDue
+                        )
+                    }
+                    description="Net amount on all open ledgers"
+                    icon={
+                        FaMoneyBillWave
+                    }
+                    iconClass="bg-success/10 text-success"
                 />
 
             </div>
@@ -2510,7 +3566,7 @@ const WorkersPage = () => {
                 !showWorkerModal &&
                 !showPayModal && (
 
-                <div className="alert alert-error mb-4">
+                <div className="alert alert-error">
 
                     <span>
                         {error}
@@ -2525,85 +3581,161 @@ const WorkersPage = () => {
                 FILTERS
             ================================================== */}
 
-            <div className="mb-4 flex flex-col gap-3 rounded-xl border border-base-300 bg-base-100 p-4 lg:flex-row">
+            <div className="rounded-xl border border-base-300 bg-base-100 p-4 shadow-sm">
 
-                <div className="flex-1">
+                <div className="mb-3 flex items-center gap-2">
 
-                    <input
-                        type="text"
-                        className="input input-bordered w-full"
-                        placeholder="Search worker..."
-                        value={
-                            search
-                        }
-                        onChange={(
-                            event
-                        ) =>
-                            setSearch(
-                                event.target.value
-                            )
-                        }
-                    />
+                    <FaFilter className="text-base-content/40" />
+
+                    <span className="text-sm font-semibold">
+                        Filters
+                    </span>
 
                 </div>
 
 
-                <select
-                    className="select select-bordered"
-                    value={
-                        statusFilter
-                    }
-                    onChange={(
-                        event
-                    ) =>
-                        setStatusFilter(
-                            event.target.value
-                        )
-                    }
-                >
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
 
-                    <option value="ACTIVE">
-                        Active Workers
-                    </option>
+                    <div className="relative">
 
-                    <option value="INACTIVE">
-                        Inactive Workers
-                    </option>
-
-                    <option value="ALL">
-                        All Workers
-                    </option>
-
-                </select>
+                        <FaSearch
+                            className="
+                                absolute
+                                left-3
+                                top-1/2
+                                -translate-y-1/2
+                                text-sm
+                                text-base-content/35
+                            "
+                        />
 
 
-                <select
-                    className="select select-bordered"
-                    value={
-                        frequencyFilter
-                    }
-                    onChange={(
-                        event
-                    ) =>
-                        setFrequencyFilter(
-                            event.target.value
-                        )
-                    }
-                >
+                        <input
+                            type="text"
+                            className="input input-bordered w-full pl-9"
+                            placeholder="Search worker or phone..."
+                            value={
+                                search
+                            }
+                            onChange={(
+                                event
+                            ) =>
+                                setSearch(
+                                    event
+                                        .target
+                                        .value
+                                )
+                            }
+                        />
 
-                    <option value="ALL">
-                        All Pay Frequencies
-                    </option>
+                    </div>
 
-                    <option value="WEEKLY">
-                        Weekly
-                    </option>
 
-                    <option value="MONTHLY">
-                        Monthly
-                    </option>
+                    <select
+                        className="select select-bordered w-full"
+                        value={
+                            statusFilter
+                        }
+                        onChange={(
+                            event
+                        ) =>
+                            setStatusFilter(
+                                event
+                                    .target
+                                    .value
+                            )
+                        }
+                    >
 
-                </select>
+                        <option value="ACTIVE">
+                            Active Workers
+                        </option>
+
+                        <option value="INACTIVE">
+                            Inactive Workers
+                        </option>
+
+                        <option value="ALL">
+                            All Workers
+                        </option>
+
+                    </select>
+
+
+                    <select
+                        className="select select-bordered w-full"
+                        value={
+                            frequencyFilter
+                        }
+                        onChange={(
+                            event
+                        ) =>
+                            setFrequencyFilter(
+                                event
+                                    .target
+                                    .value
+                            )
+                        }
+                    >
+
+                        <option value="ALL">
+                            All Pay Frequencies
+                        </option>
+
+                        <option value="WEEKLY">
+                            Weekly
+                        </option>
+
+                        <option value="MONTHLY">
+                            Monthly
+                        </option>
+
+                    </select>
+
+
+                    <select
+                        className="select select-bordered w-full"
+                        value={
+                            payrollFilter
+                        }
+                        onChange={(
+                            event
+                        ) =>
+                            setPayrollFilter(
+                                event
+                                    .target
+                                    .value
+                            )
+                        }
+                    >
+
+                        <option value="ALL">
+                            All Payroll Statuses
+                        </option>
+
+                        <option value="DUE">
+                            Due Today
+                        </option>
+
+                        <option value="OVERDUE">
+                            Overdue
+                        </option>
+
+                        <option value="UPCOMING">
+                            Upcoming
+                        </option>
+
+                        <option value="PAID">
+                            Paid
+                        </option>
+
+                        <option value="NO_LEDGER">
+                            No Ledger
+                        </option>
+
+                    </select>
+
+                </div>
 
             </div>
 
@@ -2612,7 +3744,7 @@ const WorkersPage = () => {
                 COUNT
             ================================================== */}
 
-            <div className="mb-3 text-sm text-base-content/60">
+            <div className="text-sm text-base-content/60">
 
                 Showing{" "}
 
@@ -2640,7 +3772,7 @@ const WorkersPage = () => {
                 WORKERS TABLE
             ================================================== */}
 
-            <div className="overflow-x-auto rounded-xl border border-base-300 bg-base-100">
+            <div className="overflow-x-auto rounded-xl border border-base-300 bg-base-100 shadow-sm">
 
                 <table className="table">
 
@@ -2653,10 +3785,6 @@ const WorkersPage = () => {
                             </th>
 
                             <th>
-                                Phone
-                            </th>
-
-                            <th>
                                 Salary
                             </th>
 
@@ -2665,15 +3793,19 @@ const WorkersPage = () => {
                             </th>
 
                             <th>
-                                Payday
+                                Current Period
                             </th>
 
                             <th>
-                                Ledger
+                                Due Date
                             </th>
 
                             <th>
-                                Status
+                                Net Pay Due
+                            </th>
+
+                            <th>
+                                Payroll Status
                             </th>
 
                             <th className="text-right">
@@ -2693,7 +3825,7 @@ const WorkersPage = () => {
 
                                 <td
                                     colSpan="8"
-                                    className="py-12 text-center"
+                                    className="py-14 text-center"
                                 >
 
                                     <span className="loading loading-spinner loading-md" />
@@ -2714,21 +3846,19 @@ const WorkersPage = () => {
 
                                 <td
                                     colSpan="8"
-                                    className="py-12 text-center"
+                                    className="py-14 text-center"
                                 >
 
-                                    <div className="text-4xl">
-                                        👷
-                                    </div>
+                                    <FaUsers className="mx-auto text-4xl text-base-content/15" />
 
 
-                                    <div className="mt-2 font-semibold">
+                                    <div className="mt-3 font-semibold">
                                         No workers found
                                     </div>
 
 
                                     <div className="mt-1 text-sm text-base-content/60">
-                                        Add a worker to get started.
+                                        Try changing the filters or add a new worker.
                                     </div>
 
                                 </td>
@@ -2747,9 +3877,28 @@ const WorkersPage = () => {
                                             .currentWorkerLedger;
 
 
-                                    const latest =
-                                        worker
-                                            .latestWorkerLedger;
+                                    const payrollStatus =
+                                        getWorkerPayrollStatus(
+                                            worker
+                                        );
+
+
+                                    const dueDate =
+                                        current
+                                            ? getLedgerDueDate(
+                                                worker,
+                                                current
+                                            )
+                                            : null;
+
+
+                                    const netPay =
+                                        current
+                                            ? calculateLedgerNetPay(
+                                                worker,
+                                                current
+                                            )
+                                            : 0;
 
 
                                     return (
@@ -2783,8 +3932,7 @@ const WorkersPage = () => {
                                                                     .charAt(
                                                                         0
                                                                     )
-                                                                    .toUpperCase()
-                                                                }
+                                                                    .toUpperCase()}
 
                                                             </span>
 
@@ -2796,12 +3944,21 @@ const WorkersPage = () => {
                                                     <div>
 
                                                         <div className="font-semibold">
-                                                            {worker.name}
+
+                                                            {
+                                                                worker.name
+                                                            }
+
                                                         </div>
 
 
-                                                        <div className="text-xs text-base-content/50">
-                                                            Worker
+                                                        <div className="text-xs text-base-content/45">
+
+                                                            {
+                                                                worker.phone ||
+                                                                "No phone"
+                                                            }
+
                                                         </div>
 
                                                     </div>
@@ -2811,23 +3968,11 @@ const WorkersPage = () => {
                                             </td>
 
 
-                                            {/* PHONE */}
-
-                                            <td>
-
-                                                {
-                                                    worker.phone ||
-                                                    "—"
-                                                }
-
-                                            </td>
-
-
                                             {/* SALARY */}
 
                                             <td>
 
-                                                <span className="font-semibold">
+                                                <div className="font-semibold">
 
                                                     {
                                                         formatCurrency(
@@ -2835,7 +3980,18 @@ const WorkersPage = () => {
                                                         )
                                                     }
 
-                                                </span>
+                                                </div>
+
+
+                                                <div className="mt-1 text-[10px] text-base-content/40">
+
+                                                    {
+                                                        getPaydayText(
+                                                            worker
+                                                        )
+                                                    }
+
+                                                </div>
 
                                             </td>
 
@@ -2862,40 +4018,104 @@ const WorkersPage = () => {
                                             </td>
 
 
-                                            {/* PAYDAY */}
-
-                                            <td>
-
-                                                {
-                                                    getPaydayText(
-                                                        worker
-                                                    )
-                                                }
-
-                                            </td>
-
-
-                                            {/* LEDGER */}
+                                            {/* CURRENT PERIOD */}
 
                                             <td>
 
                                                 {current ? (
 
-                                                    <span className="badge badge-warning">
-                                                        OPEN
+                                                    <>
+
+                                                        <div className="text-sm font-medium">
+
+                                                            {
+                                                                getLedgerPeriodLabel(
+                                                                    current
+                                                                )
+                                                            }
+
+                                                        </div>
+
+
+                                                        <div className="mt-1 text-[10px] text-base-content/40">
+                                                            OPEN ledger
+                                                        </div>
+
+                                                    </>
+
+                                                ) : (
+
+                                                    <span className="text-sm text-base-content/40">
+                                                        —
                                                     </span>
 
-                                                ) : latest?.status ===
-                                                    "PAID" ? (
+                                                )}
 
-                                                    <span className="badge badge-success">
-                                                        PAID
+                                            </td>
+
+
+                                            {/* DUE DATE */}
+
+                                            <td>
+
+                                                {dueDate ? (
+
+                                                    <>
+
+                                                        <div className="text-sm font-medium">
+
+                                                            {
+                                                                formatDate(
+                                                                    dueDate
+                                                                )
+                                                            }
+
+                                                        </div>
+
+
+                                                        <div className="mt-1 text-[10px] text-base-content/40">
+
+                                                            {
+                                                                getPaydayText(
+                                                                    worker
+                                                                )
+                                                            }
+
+                                                        </div>
+
+                                                    </>
+
+                                                ) : (
+
+                                                    <span className="text-sm text-base-content/40">
+                                                        —
+                                                    </span>
+
+                                                )}
+
+                                            </td>
+
+
+                                            {/* NET PAY */}
+
+                                            <td>
+
+                                                {current ? (
+
+                                                    <span className="font-bold text-success">
+
+                                                        {
+                                                            formatCurrency(
+                                                                netPay
+                                                            )
+                                                        }
+
                                                     </span>
 
                                                 ) : (
 
-                                                    <span className="badge badge-ghost">
-                                                        No Ledger
+                                                    <span className="text-base-content/40">
+                                                        —
                                                     </span>
 
                                                 )}
@@ -2907,20 +4127,17 @@ const WorkersPage = () => {
 
                                             <td>
 
-                                                {worker.isActive !==
-                                                    false ? (
+                                                <span
+                                                    className={
+                                                        payrollStatus.className
+                                                    }
+                                                >
 
-                                                    <span className="badge badge-success badge-outline">
-                                                        Active
-                                                    </span>
+                                                    {
+                                                        payrollStatus.label
+                                                    }
 
-                                                ) : (
-
-                                                    <span className="badge badge-error badge-outline">
-                                                        Inactive
-                                                    </span>
-
-                                                )}
+                                                </span>
 
                                             </td>
 
@@ -2929,7 +4146,29 @@ const WorkersPage = () => {
 
                                             <td>
 
-                                                <div className="flex flex-wrap justify-end gap-2">
+                                                <div className="flex items-center justify-end gap-2">
+
+                                                    {worker.isActive !==
+                                                        false &&
+                                                        current && (
+
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-sm btn-success"
+                                                            onClick={() =>
+                                                                handleOpenPayWorker(
+                                                                    worker
+                                                                )
+                                                            }
+                                                        >
+
+                                                            <FaWallet />
+
+                                                            Pay
+
+                                                        </button>
+
+                                                    )}
 
 
                                                     <button
@@ -2941,70 +4180,129 @@ const WorkersPage = () => {
                                                             )
                                                         }
                                                     >
+
+                                                        <FaBook />
+
                                                         Ledger
+
                                                     </button>
 
 
-                                                    <button
-                                                        type="button"
-                                                        className="btn btn-sm btn-outline btn-info"
-                                                        onClick={() =>
-                                                            handleOpenHistory(
-                                                                worker
-                                                            )
-                                                        }
-                                                    >
-                                                        History
-                                                    </button>
+                                                    <details className="dropdown dropdown-end">
+
+                                                        <summary className="btn btn-sm btn-ghost btn-square">
+
+                                                            <FaEllipsisV />
+
+                                                        </summary>
 
 
-                                                    {worker.isActive !==
-                                                        false && (
-
-                                                        <button
-                                                            type="button"
-                                                            className="btn btn-sm btn-success"
-                                                            onClick={() =>
-                                                                handleOpenPayWorker(
-                                                                    worker
-                                                                )
-                                                            }
+                                                        <ul
+                                                            className="
+                                                                menu
+                                                                dropdown-content
+                                                                z-[20]
+                                                                mt-2
+                                                                w-52
+                                                                rounded-box
+                                                                border
+                                                                border-base-300
+                                                                bg-base-100
+                                                                p-2
+                                                                shadow-xl
+                                                            "
                                                         >
-                                                            Pay Worker
-                                                        </button>
 
-                                                    )}
+                                                            <li>
+
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        handleOpenHistory(
+                                                                            worker
+                                                                        )
+                                                                    }
+                                                                >
+
+                                                                    <FaHistory />
+
+                                                                    Salary History
+
+                                                                </button>
+
+                                                            </li>
 
 
-                                                    <button
-                                                        type="button"
-                                                        className="btn btn-sm btn-outline"
-                                                        onClick={() =>
-                                                            handleEditWorker(
-                                                                worker
-                                                            )
-                                                        }
-                                                    >
-                                                        Edit
-                                                    </button>
+                                                            <li>
+
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        handleEditWorker(
+                                                                            worker
+                                                                        )
+                                                                    }
+                                                                >
+
+                                                                    <FaEdit />
+
+                                                                    Edit Worker
+
+                                                                </button>
+
+                                                            </li>
 
 
-                                                    {worker.isActive !==
-                                                        false && (
+                                                            {worker.isActive !==
+                                                            false ? (
 
-                                                        <button
-                                                            type="button"
-                                                            className="btn btn-sm btn-error btn-outline"
-                                                            onClick={() =>
-                                                                handleDeactivate(
-                                                                    worker
-                                                                )
-                                                            }
-                                                        >
-                                                            Deactivate
-                                                        </button>
+                                                                <li>
 
-                                                    )}
+                                                                    <button
+                                                                        type="button"
+                                                                        className="text-error"
+                                                                        onClick={() =>
+                                                                            handleDeactivate(
+                                                                                worker
+                                                                            )
+                                                                        }
+                                                                    >
+
+                                                                        <FaUserSlash />
+
+                                                                        Deactivate
+
+                                                                    </button>
+
+                                                                </li>
+
+                                                            ) : (
+
+                                                                <li>
+
+                                                                    <button
+                                                                        type="button"
+                                                                        className="text-success"
+                                                                        onClick={() =>
+                                                                            handleReactivate(
+                                                                                worker
+                                                                            )
+                                                                        }
+                                                                    >
+
+                                                                        <FaUserCheck />
+
+                                                                        Reactivate
+
+                                                                    </button>
+
+                                                                </li>
+
+                                                            )}
+
+                                                        </ul>
+
+                                                    </details>
 
                                                 </div>
 
@@ -3039,26 +4337,50 @@ const WorkersPage = () => {
 
                     <div className="modal-box max-w-lg">
 
-                        <h3 className="text-xl font-bold">
+                        <div className="flex items-start justify-between">
 
-                            {
-                                editingWorker
-                                    ? "Edit Worker"
-                                    : "Add Worker"
-                            }
+                            <div>
 
-                        </h3>
+                                <h3 className="text-xl font-bold">
+
+                                    {
+                                        editingWorker
+                                            ? "Edit Worker"
+                                            : "Add Worker"
+                                    }
+
+                                </h3>
 
 
-                        <p className="mt-1 text-sm text-base-content/60">
+                                <p className="mt-1 text-sm text-base-content/60">
 
-                            {
-                                editingWorker
-                                    ? "Update worker information and salary schedule."
-                                    : "Create a worker and configure their salary schedule."
-                            }
+                                    {
+                                        editingWorker
+                                            ? "Update worker information and payroll schedule."
+                                            : "Create a worker and configure their payroll schedule."
+                                    }
 
-                        </p>
+                                </p>
+
+                            </div>
+
+
+                            <button
+                                type="button"
+                                className="btn btn-sm btn-circle btn-ghost"
+                                onClick={
+                                    closeWorkerModal
+                                }
+                                disabled={
+                                    saving
+                                }
+                            >
+
+                                <FaTimes />
+
+                            </button>
+
+                        </div>
 
 
                         {error && (
@@ -3292,6 +4614,13 @@ const WorkersPage = () => {
 
                                     </select>
 
+
+                                    <div className="mt-2 rounded-lg bg-base-200 px-3 py-2 text-xs text-base-content/60">
+
+                                        For months without the selected date, payroll falls on the final calendar day of that month.
+
+                                    </div>
+
                                 </div>
 
                             )}
@@ -3388,6 +4717,27 @@ const WorkersPage = () => {
                             </div>
 
 
+                            {editingWorker &&
+                                editingWorker
+                                    ?.currentWorkerLedger
+                                    ?.status ===
+                                "OPEN" && (
+
+                                <div className="alert alert-warning">
+
+                                    <FaInfoCircle />
+
+                                    <span className="text-sm">
+
+                                        This worker already has an OPEN payroll ledger. Changing the worker's current salary should not change that ledger's salary snapshot.
+
+                                    </span>
+
+                                </div>
+
+                            )}
+
+
                             <div className="modal-action">
 
                                 <button
@@ -3400,7 +4750,9 @@ const WorkersPage = () => {
                                         saving
                                     }
                                 >
+
                                     Cancel
+
                                 </button>
 
 
@@ -3454,16 +4806,40 @@ const WorkersPage = () => {
                     className="modal modal-open"
                 >
 
-                    <div className="modal-box max-w-lg">
+                    <div className="modal-box max-w-xl">
 
-                        <h3 className="text-xl font-bold">
-                            Pay Worker
-                        </h3>
+                        <div className="flex items-start justify-between gap-4">
+
+                            <div>
+
+                                <h3 className="text-xl font-bold">
+                                    Pay Worker
+                                </h3>
 
 
-                        <p className="mt-1 text-sm text-base-content/60">
-                            Review the salary deductions before releasing payment.
-                        </p>
+                                <p className="mt-1 text-sm text-base-content/60">
+                                    Review payroll details before payment.
+                                </p>
+
+                            </div>
+
+
+                            <button
+                                type="button"
+                                className="btn btn-sm btn-circle btn-ghost"
+                                onClick={
+                                    closePayModal
+                                }
+                                disabled={
+                                    paying
+                                }
+                            >
+
+                                <FaTimes />
+
+                            </button>
+
+                        </div>
 
 
                         <div className="mt-5 rounded-xl border border-base-300 bg-base-200 p-4">
@@ -3509,12 +4885,14 @@ const WorkersPage = () => {
 
                             <>
 
+                                {/* LEDGER INFORMATION */}
+
                                 <div className="mt-4 rounded-xl border border-base-300 p-4">
 
                                     <div className="mb-3 flex items-center justify-between">
 
                                         <div className="font-semibold">
-                                            Current Ledger
+                                            Current Payroll Ledger
                                         </div>
 
 
@@ -3538,20 +4916,79 @@ const WorkersPage = () => {
                                     <InfoRow
                                         label="Scheduled Payday"
                                         value={
-                                            currentLedger
-                                                .scheduledPayDate
-                                                ? formatDate(
+                                            formatDate(
+                                                getLedgerDueDate(
+                                                    selectedWorker,
                                                     currentLedger
-                                                        .scheduledPayDate
                                                 )
-                                                : getPaydayText(
-                                                    selectedWorker
-                                                )
+                                            )
+                                        }
+                                    />
+
+
+                                    <InfoRow
+                                        label="Current Worker Salary"
+                                        value={
+                                            formatCurrency(
+                                                currentWorkerSalary
+                                            )
+                                        }
+                                    />
+
+
+                                    <InfoRow
+                                        label="Ledger Salary Snapshot"
+                                        value={
+                                            formatCurrency(
+                                                ledgerSalary
+                                            )
                                         }
                                     />
 
                                 </div>
 
+
+                                {/* SALARY SNAPSHOT WARNING */}
+
+                                {hasSalarySnapshotDifference && (
+
+                                    <div className="alert alert-warning mt-4">
+
+                                        <FaExclamationTriangle />
+
+
+                                        <span className="text-sm">
+
+                                            The worker's current salary is{" "}
+
+                                            <strong>
+                                                {
+                                                    formatCurrency(
+                                                        currentWorkerSalary
+                                                    )
+                                                }
+                                            </strong>
+
+                                            , but this payroll period uses the saved ledger salary of{" "}
+
+                                            <strong>
+                                                {
+                                                    formatCurrency(
+                                                        ledgerSalary
+                                                    )
+                                                }
+                                            </strong>
+
+                                            . The ledger amount will be used for this payment.
+
+                                        </span>
+
+                                    </div>
+
+                                )}
+
+
+                                {/* SALARY CALCULATION */}
 
                                 <div className="mt-4 overflow-hidden rounded-xl border border-base-300">
 
@@ -3615,6 +5052,48 @@ const WorkersPage = () => {
                                 </div>
 
 
+                                {/* EXCESS DEDUCTIONS */}
+
+                                {excessDeductions >
+                                    0 && (
+
+                                    <div className="alert alert-warning mt-4">
+
+                                        <FaExclamationTriangle />
+
+
+                                        <div>
+
+                                            <div className="font-semibold">
+                                                Deductions exceed salary
+                                            </div>
+
+
+                                            <div className="mt-1 text-sm">
+
+                                                Excess deductions:{" "}
+
+                                                <strong>
+                                                    {
+                                                        formatCurrency(
+                                                            excessDeductions
+                                                        )
+                                                    }
+                                                </strong>
+
+                                                . Salary release is therefore ₱0.00. Your backend should explicitly define whether this excess balance carries forward.
+
+                                            </div>
+
+                                        </div>
+
+                                    </div>
+
+                                )}
+
+
+                                {/* PAYMENT DATE */}
+
                                 <div className="mt-4">
 
                                     <label className="label">
@@ -3632,13 +5111,23 @@ const WorkersPage = () => {
                                         value={
                                             paymentDate
                                         }
+                                        max={
+                                            getTodayInputValue()
+                                        }
                                         onChange={(
                                             event
-                                        ) =>
+                                        ) => {
+
                                             setPaymentDate(
                                                 event.target.value
-                                            )
-                                        }
+                                            );
+
+
+                                            setPayError(
+                                                ""
+                                            );
+
+                                        }}
                                     />
 
                                 </div>
@@ -3646,9 +5135,12 @@ const WorkersPage = () => {
 
                                 <div className="alert alert-info mt-4">
 
+                                    <FaReceipt />
+
+
                                     <span className="text-sm">
 
-                                        The salary receipt will automatically print on the XPrinter after payment succeeds.
+                                        After the backend confirms payment, the salary receipt will be sent to the configured XPrinter. Failed receipts can be reprinted from Salary History.
 
                                     </span>
 
@@ -3660,10 +5152,11 @@ const WorkersPage = () => {
 
                             <div className="alert alert-warning mt-4">
 
+                                <FaExclamationTriangle />
+
+
                                 <span>
-
                                     This worker does not have an OPEN ledger to pay.
-
                                 </span>
 
                             </div>
@@ -3696,7 +5189,9 @@ const WorkersPage = () => {
                                     paying
                                 }
                             >
+
                                 Cancel
+
                             </button>
 
 
@@ -3713,6 +5208,225 @@ const WorkersPage = () => {
                                 }
                             >
 
+                                <FaCheck />
+
+
+                                {calculatedSalaryRelease >
+                                0
+                                    ? `Review Payment ${formatCurrency(
+                                        calculatedSalaryRelease
+                                    )}`
+                                    : "Review Payroll Close ₱0.00"}
+
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                </dialog>
+
+            )}
+
+
+            {/* ==================================================
+                FINAL PAY CONFIRMATION
+            ================================================== */}
+
+            {showFinalPayConfirm &&
+                selectedWorker &&
+                currentLedger && (
+
+                <dialog
+                    open
+                    className="modal modal-open"
+                >
+
+                    <div className="modal-box max-w-md">
+
+                        <div className="flex items-start justify-between gap-4">
+
+                            <div>
+
+                                <h3 className="text-xl font-bold">
+                                    Confirm Payroll Payment
+                                </h3>
+
+
+                                <p className="mt-1 text-sm text-base-content/60">
+                                    Verify these details carefully. This action records the payroll as paid.
+                                </p>
+
+                            </div>
+
+
+                            <button
+                                type="button"
+                                className="btn btn-sm btn-circle btn-ghost"
+                                disabled={
+                                    paying
+                                }
+                                onClick={() =>
+                                    setShowFinalPayConfirm(
+                                        false
+                                    )
+                                }
+                            >
+
+                                <FaTimes />
+
+                            </button>
+
+                        </div>
+
+
+                        <div className="mt-5 space-y-2 rounded-xl border border-base-300 p-4">
+
+                            <InfoRow
+                                label="Worker"
+                                value={
+                                    selectedWorker.name
+                                }
+                            />
+
+
+                            <InfoRow
+                                label="Period"
+                                value={
+                                    getLedgerPeriodLabel(
+                                        currentLedger
+                                    )
+                                }
+                            />
+
+
+                            <InfoRow
+                                label="Salary"
+                                value={
+                                    formatCurrency(
+                                        ledgerSalary
+                                    )
+                                }
+                            />
+
+
+                            <InfoRow
+                                label="Credits"
+                                value={
+                                    `-${formatCurrency(
+                                        ledgerCredits
+                                    )}`
+                                }
+                            />
+
+
+                            <InfoRow
+                                label="Cash Advances"
+                                value={
+                                    `-${formatCurrency(
+                                        ledgerCashAdvances
+                                    )}`
+                                }
+                            />
+
+
+                            <InfoRow
+                                label="Payment Date"
+                                value={
+                                    formatDate(
+                                        parseLocalInputDate(
+                                            paymentDate
+                                        )
+                                    )
+                                }
+                            />
+
+                        </div>
+
+
+                        <div className="mt-4 rounded-xl bg-success/10 p-4">
+
+                            <div className="text-sm text-base-content/60">
+                                Salary to Release
+                            </div>
+
+
+                            <div className="mt-1 text-3xl font-bold text-success">
+
+                                {
+                                    formatCurrency(
+                                        calculatedSalaryRelease
+                                    )
+                                }
+
+                            </div>
+
+                        </div>
+
+
+                        {calculatedSalaryRelease ===
+                            0 && (
+
+                            <div className="alert alert-warning mt-4">
+
+                                <FaInfoCircle />
+
+
+                                <span className="text-sm">
+
+                                    This payroll will close with no cash salary release because deductions consume the full salary amount.
+
+                                </span>
+
+                            </div>
+
+                        )}
+
+
+                        {payError && (
+
+                            <div className="alert alert-error mt-4">
+
+                                <span>
+                                    {payError}
+                                </span>
+
+                            </div>
+
+                        )}
+
+
+                        <div className="modal-action">
+
+                            <button
+                                type="button"
+                                className="btn"
+                                disabled={
+                                    paying
+                                }
+                                onClick={() =>
+                                    setShowFinalPayConfirm(
+                                        false
+                                    )
+                                }
+                            >
+
+                                Back
+
+                            </button>
+
+
+                            <button
+                                type="button"
+                                className="btn btn-success"
+                                disabled={
+                                    paying
+                                }
+                                onClick={
+                                    executePayWorker
+                                }
+                            >
+
                                 {paying ? (
 
                                     <>
@@ -3723,12 +5437,16 @@ const WorkersPage = () => {
                                 ) : (
 
                                     <>
-                                        Pay{" "}
-                                        {
-                                            formatCurrency(
+
+                                        <FaCheck />
+
+                                        {calculatedSalaryRelease >
+                                        0
+                                            ? `Confirm ${formatCurrency(
                                                 calculatedSalaryRelease
-                                            )
-                                        }
+                                            )}`
+                                            : "Close Payroll"}
+
                                     </>
 
                                 )}
@@ -3756,7 +5474,7 @@ const WorkersPage = () => {
                     className="modal modal-open"
                 >
 
-                    <div className="modal-box max-w-5xl">
+                    <div className="modal-box max-w-6xl">
 
                         <div className="flex items-start justify-between gap-4">
 
@@ -3795,7 +5513,9 @@ const WorkersPage = () => {
                                     closeHistoryModal
                                 }
                             >
-                                ✕
+
+                                <FaTimes />
+
                             </button>
 
                         </div>
@@ -3825,9 +5545,7 @@ const WorkersPage = () => {
 
                             <div className="py-16 text-center">
 
-                                <div className="text-4xl">
-                                    🧾
-                                </div>
+                                <FaReceipt className="mx-auto text-4xl text-base-content/15" />
 
 
                                 <h4 className="mt-3 font-semibold">
@@ -3872,7 +5590,7 @@ const WorkersPage = () => {
                                             </th>
 
                                             <th>
-                                                Paid
+                                                Payment
                                             </th>
 
                                             <th className="text-right">
@@ -3992,12 +5710,31 @@ const WorkersPage = () => {
                                                             <div className="mt-1 text-xs text-base-content/50">
 
                                                                 {
-                                                                    formatDate(
+                                                                    formatDateTime(
                                                                         ledger.paidAt
                                                                     )
                                                                 }
 
                                                             </div>
+
+
+                                                            {ledger.paidBy && (
+
+                                                                <div className="mt-1 text-[10px] text-base-content/40">
+
+                                                                    Paid by:{" "}
+
+                                                                    {
+                                                                        ledger.paidBy
+                                                                            ?.name ||
+                                                                        ledger.paidBy
+                                                                            ?.username ||
+                                                                        ledger.paidBy
+                                                                    }
+
+                                                                </div>
+
+                                                            )}
 
                                                         </td>
 
@@ -4018,7 +5755,9 @@ const WorkersPage = () => {
                                                                         loadingHistoryDetails
                                                                     }
                                                                 >
+
                                                                     View
+
                                                                 </button>
 
 
@@ -4046,7 +5785,10 @@ const WorkersPage = () => {
 
                                                                     ) : (
 
-                                                                        "Reprint Receipt"
+                                                                        <>
+                                                                            <FaPrint />
+                                                                            Reprint
+                                                                        </>
 
                                                                     )}
 
@@ -4081,7 +5823,9 @@ const WorkersPage = () => {
                                     closeHistoryModal
                                 }
                             >
+
                                 Close
+
                             </button>
 
                         </div>
@@ -4150,7 +5894,9 @@ const WorkersPage = () => {
                                     closeHistoryDetails
                                 }
                             >
-                                ✕
+
+                                <FaTimes />
+
                             </button>
 
                         </div>
@@ -4219,6 +5965,76 @@ const WorkersPage = () => {
                                 </div>
 
 
+                                {/* PAYMENT METADATA */}
+
+                                <div className="mt-5 rounded-xl border border-base-300 p-4">
+
+                                    <h4 className="font-bold">
+                                        Payment Information
+                                    </h4>
+
+
+                                    <div className="mt-3">
+
+                                        <InfoRow
+                                            label="Paid At"
+                                            value={
+                                                formatDateTime(
+                                                    selectedHistoryLedger
+                                                        .paidAt
+                                                )
+                                            }
+                                        />
+
+
+                                        {selectedHistoryLedger
+                                            .paymentDate && (
+
+                                            <InfoRow
+                                                label="Payment Date"
+                                                value={
+                                                    formatDate(
+                                                        selectedHistoryLedger
+                                                            .paymentDate
+                                                    )
+                                                }
+                                            />
+
+                                        )}
+
+
+                                        {selectedHistoryLedger
+                                            .referenceNumber && (
+
+                                            <InfoRow
+                                                label="Reference"
+                                                value={
+                                                    selectedHistoryLedger
+                                                        .referenceNumber
+                                                }
+                                            />
+
+                                        )}
+
+
+                                        {selectedHistoryLedger
+                                            .receiptNumber && (
+
+                                            <InfoRow
+                                                label="Receipt #"
+                                                value={
+                                                    selectedHistoryLedger
+                                                        .receiptNumber
+                                                }
+                                            />
+
+                                        )}
+
+                                    </div>
+
+                                </div>
+
+
                                 {/* CREDIT ITEMS */}
 
                                 <div className="mt-6">
@@ -4233,7 +6049,7 @@ const WorkersPage = () => {
                                     </p>
 
 
-                                    <div className="mt-3 rounded-xl border border-base-300 overflow-hidden">
+                                    <div className="mt-3 overflow-hidden rounded-xl border border-base-300">
 
                                         <HistoryCreditTransactions
                                             transactions={
@@ -4255,7 +6071,7 @@ const WorkersPage = () => {
                                     </h4>
 
 
-                                    <div className="mt-3 rounded-xl border border-base-300 overflow-hidden">
+                                    <div className="mt-3 overflow-hidden rounded-xl border border-base-300">
 
                                         <HistoryCashAdvances
                                             transactions={
@@ -4350,7 +6166,9 @@ const WorkersPage = () => {
                                     closeHistoryDetails
                                 }
                             >
+
                                 Back
+
                             </button>
 
 
@@ -4378,7 +6196,10 @@ const WorkersPage = () => {
 
                                 ) : (
 
-                                    "Reprint Receipt"
+                                    <>
+                                        <FaPrint />
+                                        Reprint Receipt
+                                    </>
 
                                 )}
 
@@ -4408,19 +6229,52 @@ SUMMARY CARD
 const SummaryCard = ({
     label,
     value,
+    description,
+    icon: Icon,
+    iconClass,
 }) => {
 
     return (
 
-        <div className="rounded-xl border border-base-300 bg-base-100 p-4">
+        <div className="rounded-xl border border-base-300 bg-base-100 p-5 shadow-sm">
 
-            <div className="text-sm text-base-content/60">
-                {label}
+            <div className="flex items-start justify-between gap-3">
+
+                <div>
+
+                    <div className="text-xs text-base-content/50">
+                        {label}
+                    </div>
+
+
+                    <div className="mt-2 text-2xl font-bold">
+                        {value}
+                    </div>
+
+                </div>
+
+
+                <div
+                    className={`
+                        flex
+                        h-10
+                        w-10
+                        items-center
+                        justify-center
+                        rounded-xl
+                        ${iconClass}
+                    `}
+                >
+
+                    <Icon />
+
+                </div>
+
             </div>
 
 
-            <div className="mt-1 text-2xl font-bold">
-                {value}
+            <div className="mt-3 text-[11px] text-base-content/45">
+                {description}
             </div>
 
         </div>

@@ -20,6 +20,7 @@ OPEN PRICE:
 {
     isOpenPrice: true,
     name: "Grocery",
+    note: "Vegetables",
     quantity: 1,
     unitPrice: 125
 }
@@ -58,6 +59,7 @@ const checkoutItemSchema = Joi.object({
                 .strip(),
 
             otherwise: Joi.string()
+                .trim()
                 .required(),
         }
     ),
@@ -82,6 +84,44 @@ const checkoutItemSchema = Joi.object({
                 .min(1)
                 .max(100)
                 .required(),
+
+            otherwise: Joi.any()
+                .strip(),
+        }
+    ),
+
+
+    /*
+    ========================================================
+    OPEN PRICE NOTE
+    ========================================================
+
+    Optional description of what was sold.
+
+    Examples:
+
+    Rice
+    Vegetables
+    Ice
+    Candy
+    Cooking ingredients
+
+    Only valid for open-price items.
+
+    Normal product requests have this field stripped.
+    ========================================================
+    */
+
+    note: Joi.when(
+        "isOpenPrice",
+        {
+            is: true,
+
+            then: Joi.string()
+                .trim()
+                .allow("")
+                .max(80)
+                .default(""),
 
             otherwise: Joi.any()
                 .strip(),
@@ -131,6 +171,16 @@ const checkoutItemSchema = Joi.object({
 ============================================================
 CHECKOUT
 ============================================================
+
+Supports:
+
+- normal checkout
+- walk-in customer
+- registered customer
+- loyalty point redemption
+- open-price Grocery items
+- optional Grocery/open-price notes
+============================================================
 */
 
 const checkoutSchema = Joi.object({
@@ -147,6 +197,65 @@ const checkoutSchema = Joi.object({
         )
         .min(1)
         .required(),
+
+
+    /*
+    ========================================================
+    CUSTOMER
+    ========================================================
+
+    Optional.
+
+    null / missing
+    → Walk-in customer
+
+    Object ID string
+    → Registered customer
+
+    The service performs the actual customer lookup.
+    ========================================================
+    */
+
+    customerId: Joi.alternatives()
+        .try(
+
+            Joi.string()
+                .trim()
+                .min(1),
+
+            Joi.valid(
+                null
+            )
+
+        )
+        .optional(),
+
+
+    /*
+    ========================================================
+    LOYALTY POINTS TO REDEEM
+    ========================================================
+
+    0
+    → no redemption
+
+    Example:
+    40
+    → request to redeem 40 points
+
+    The service handles the real rules:
+
+    - minimum 10
+    - multiples of 10
+    - enough available points
+    - maximum 50% of purchase
+    ========================================================
+    */
+
+    loyaltyPointsToRedeem: Joi.number()
+        .integer()
+        .min(0)
+        .default(0),
 
 
     /*
@@ -187,16 +296,35 @@ const checkoutSchema = Joi.object({
 
 });
 
+
+/*
+============================================================
+REFUND
+============================================================
+
+Supports refund by:
+
+- embedded sale item ID
+- product ID
+
+Open-price items should normally be refunded using saleItemId
+because they do not have a Product document.
+============================================================
+*/
+
 const refundSchema = Joi.object({
 
     items: Joi.array()
         .items(
+
             Joi.object({
 
                 saleItemId: Joi.string()
+                    .trim()
                     .optional(),
 
                 productId: Joi.string()
+                    .trim()
                     .optional(),
 
                 quantity: Joi.number()
@@ -209,15 +337,24 @@ const refundSchema = Joi.object({
                 "saleItemId",
                 "productId"
             )
+
         )
         .min(1)
         .required(),
 
 });
 
+
+/*
+============================================================
+EXPORT
+============================================================
+*/
+
 export default {
 
     checkoutSchema,
-    refundSchema
+
+    refundSchema,
 
 };

@@ -15,6 +15,7 @@ import CheckoutModal from "../../components/pos/CheckoutModal";
 import ReceiptModal from "../../components/pos/ReceiptModal";
 
 import saleService from "../../services/sale.service";
+
 import useCartStore from "../../store/cart.store";
 import useAuthStore from "../../store/auth.store";
 import useProductStore from "../../store/product.store";
@@ -50,9 +51,32 @@ function POSPage() {
 
         resumeLatestCart,
 
+
+        /*
+        --------------------------------------------------------
+        CART ITEM CONTROL
+        --------------------------------------------------------
+        */
+
+        addItem,
+
+        increaseQuantity,
+
+        decreaseQuantity,
+
+        removeItem,
+
+
+        /*
+        --------------------------------------------------------
+        WHOLESALE
+        --------------------------------------------------------
+        */
+
         wholesaleMode,
 
         toggleWholesale,
+
 
         /*
         --------------------------------------------------------
@@ -61,6 +85,7 @@ function POSPage() {
         */
 
         pendingMultiplier,
+
 
         /*
         --------------------------------------------------------
@@ -71,6 +96,19 @@ function POSPage() {
         addOpenPriceItem,
 
     } = useCartStore();
+
+
+    /*
+    ============================================================
+    PRODUCT SEARCH
+    ============================================================
+    */
+
+    const setSearch =
+        useProductStore(
+            (state) =>
+                state.setSearch
+        );
 
 
     /*
@@ -104,16 +142,57 @@ function POSPage() {
 
 
     /*
-============================================================
-PRODUCT SEARCH
-============================================================
-*/
+    ============================================================
+    KEYBOARD NAVIGATION ZONE
+    ============================================================
+    */
 
-const setSearch =
-    useProductStore(
-        (state) =>
-            state.setSearch
+    const [
+        keyboardZone,
+        setKeyboardZone,
+    ] = useState(
+        "products"
     );
+
+
+    /*
+    ============================================================
+    SELECTED PRODUCT
+    ============================================================
+    */
+
+    const [
+        selectedProductIndex,
+        setSelectedProductIndex,
+    ] = useState(
+        0
+    );
+
+
+    /*
+    ============================================================
+    SELECTED CART ITEM
+    ============================================================
+    */
+
+    const [
+        selectedCartIndex,
+        setSelectedCartIndex,
+    ] = useState(
+        0
+    );
+
+
+    /*
+    ============================================================
+    CURRENT FILTERED PRODUCTS
+    ============================================================
+    */
+
+    const [
+        keyboardProducts,
+        setKeyboardProducts,
+    ] = useState([]);
 
 
     /*
@@ -134,7 +213,17 @@ const setSearch =
     ] = useState("");
 
 
+    const [
+        openPriceNote,
+        setOpenPriceNote,
+    ] = useState("");
+
+
     const openPriceInputRef =
+        useRef(null);
+
+
+    const openPriceNoteInputRef =
         useRef(null);
 
 
@@ -170,35 +259,129 @@ const setSearch =
 
     /*
     ============================================================
+    KEEP PRODUCT SELECTION VALID
+    ============================================================
+    */
+
+    useEffect(
+        () => {
+
+            if (
+                keyboardProducts.length ===
+                0
+            ) {
+
+                setSelectedProductIndex(
+                    0
+                );
+
+                return;
+
+            }
+
+
+            setSelectedProductIndex(
+                (
+                    previous
+                ) =>
+                    Math.min(
+                        Math.max(
+                            previous,
+                            0
+                        ),
+                        keyboardProducts.length -
+                            1
+                    )
+            );
+
+        },
+        [
+            keyboardProducts.length,
+        ]
+    );
+
+
+    /*
+    ============================================================
+    KEEP CART SELECTION VALID
+    ============================================================
+    */
+
+    useEffect(
+        () => {
+
+            if (
+                items.length ===
+                0
+            ) {
+
+                setSelectedCartIndex(
+                    0
+                );
+
+                return;
+
+            }
+
+
+            setSelectedCartIndex(
+                (
+                    previous
+                ) =>
+                    Math.min(
+                        Math.max(
+                            previous,
+                            0
+                        ),
+                        items.length -
+                            1
+                    )
+            );
+
+        },
+        [
+            items.length,
+        ]
+    );
+
+
+    /*
+    ============================================================
     OPEN F6 OPEN PRICE
     ============================================================
     */
-const openOpenPrice = () => {
 
-    /*
-    Remove focus from POS search / barcode inputs first.
-    */
+    const openOpenPrice =
+        () => {
 
-    if (
-        document.activeElement instanceof
-        HTMLElement
-    ) {
+            if (
+                document.activeElement
+                    instanceof
+                    HTMLElement
+            ) {
 
-        document.activeElement.blur();
+                document.activeElement
+                    .blur();
 
-    }
-
-
-    setOpenPriceValue(
-        ""
-    );
+            }
 
 
-    setOpenPriceOpen(
-        true
-    );
+            setOpenPriceValue(
+                ""
+            );
 
-};
+
+            setOpenPriceNote(
+                ""
+            );
+
+
+            setOpenPriceOpen(
+                true
+            );
+
+        };
+
 
     /*
     ============================================================
@@ -215,6 +398,11 @@ const openOpenPrice = () => {
 
 
             setOpenPriceValue(
+                ""
+            );
+
+
+            setOpenPriceNote(
                 ""
             );
 
@@ -248,17 +436,30 @@ const openOpenPrice = () => {
             }
 
 
+            const note =
+                String(
+                    openPriceNote ||
+                    ""
+                )
+                    .trim();
+
+
             const success =
                 addOpenPriceItem({
+
                     name:
                         "Grocery",
 
                     amount,
+
+                    note,
+
                 });
 
 
             if (
-                success === false
+                success ===
+                false
             ) {
 
                 return;
@@ -276,67 +477,179 @@ const openOpenPrice = () => {
     AUTO FOCUS OPEN PRICE INPUT
     ============================================================
     */
-useEffect(
-    () => {
 
-        if (
-            !openPriceOpen
-        ) {
+    useEffect(
+        () => {
 
-            return;
+            if (
+                !openPriceOpen
+            ) {
 
-        }
+                return;
 
-
-        const timer =
-            setTimeout(
-                () => {
-
-                    const input =
-                        openPriceInputRef.current;
+            }
 
 
-                    if (!input) {
+            const timer =
+                setTimeout(
+                    () => {
 
-                        return;
-
-                    }
-
-
-                    input.focus();
-
-
-                    /*
-                    Put cursor at the end.
-                    */
-
-                    const length =
-                        input.value.length;
+                        const input =
+                            openPriceInputRef
+                                .current;
 
 
-                    input.setSelectionRange(
-                        length,
-                        length
-                    );
+                        if (
+                            !input
+                        ) {
 
-                },
-                50
+                            return;
+
+                        }
+
+
+                        input.focus();
+
+
+                        const length =
+                            input.value
+                                .length;
+
+
+                        input.setSelectionRange(
+                            length,
+                            length
+                        );
+
+                    },
+                    50
+                );
+
+
+            return () => {
+
+                clearTimeout(
+                    timer
+                );
+
+            };
+
+        },
+        [
+            openPriceOpen,
+        ]
+    );
+
+
+    /*
+    ============================================================
+    SWITCH TO PRODUCTS
+    ============================================================
+    */
+
+    const activateProducts =
+        () => {
+
+            if (
+                document.activeElement
+                    instanceof
+                    HTMLElement
+            ) {
+
+                document.activeElement
+                    .blur();
+
+            }
+
+
+            setKeyboardZone(
+                "products"
             );
 
 
-        return () => {
+            if (
+                keyboardProducts.length >
+                0
+            ) {
 
-            clearTimeout(
-                timer
-            );
+                setSelectedProductIndex(
+                    (
+                        previous
+                    ) =>
+                        Math.min(
+                            Math.max(
+                                previous,
+                                0
+                            ),
+                            keyboardProducts.length -
+                                1
+                        )
+                );
+
+            }
 
         };
 
-    },
-    [
-        openPriceOpen,
-    ]
-);
+
+    /*
+    ============================================================
+    SWITCH TO CART
+    ============================================================
+    */
+
+    const activateCart =
+        () => {
+
+            if (
+                document.activeElement
+                    instanceof
+                    HTMLElement
+            ) {
+
+                document.activeElement
+                    .blur();
+
+            }
+
+
+            setKeyboardZone(
+                "cart"
+            );
+
+
+            if (
+                items.length >
+                0
+            ) {
+
+                setSelectedCartIndex(
+                    (
+                        previous
+                    ) => {
+
+                        if (
+                            previous >= 0 &&
+                            previous <
+                                items.length
+                        ) {
+
+                            return previous;
+
+                        }
+
+
+                        return (
+                            items.length -
+                            1
+                        );
+
+                    }
+                );
+
+            }
+
+        };
+
 
     /*
     ============================================================
@@ -351,25 +664,26 @@ useEffect(
 
             try {
 
-                /*
-                ====================================================
-                BUILD CHECKOUT PAYLOAD
-                ====================================================
-
-                NORMAL PRODUCTS:
-                productId + quantity
-
-                OPEN PRICE ITEMS:
-                manual line data
-
-                NOTE:
-                Your backend must also support open-price items.
-                ====================================================
-                */
-
                 const checkoutData = {
 
+                    customerId:
+
+                        paymentInfo.customerId ||
+
+                        null,
+
+
+                    loyaltyPointsToRedeem:
+
+                        Number(
+                            paymentInfo
+                                .loyaltyPointsToRedeem
+                        ) ||
+                        0,
+
+
                     items:
+
                         items.map(
                             (
                                 item
@@ -377,7 +691,7 @@ useEffect(
 
                                 /*
                                 ------------------------------------
-                                OPEN PRICE / GROCERY
+                                OPEN PRICE
                                 ------------------------------------
                                 */
 
@@ -392,6 +706,10 @@ useEffect(
 
                                         name:
                                             item.name,
+
+                                        note:
+                                            item.note ||
+                                            "",
 
                                         quantity:
                                             item.quantity,
@@ -428,12 +746,18 @@ useEffect(
                             }
                         ),
 
+
                     discount:
                         0,
 
+
                     payment:
-                        paymentInfo
-                            .cashReceived,
+
+                        Number(
+                            paymentInfo
+                                .cashReceived
+                        ),
+
 
                     paymentMethod:
                         "Cash",
@@ -441,11 +765,11 @@ useEffect(
                 };
 
 
-                /*
-                ====================================================
-                COMPLETE SALE
-                ====================================================
-                */
+                console.log(
+                    "CHECKOUT DATA SENT TO BACKEND:",
+                    checkoutData
+                );
+
 
                 const sale =
                     await saleService
@@ -479,7 +803,7 @@ useEffect(
 
                 /*
                 ====================================================
-                AUTOMATIC PRINT
+                PRINT RECEIPT
                 ====================================================
                 */
 
@@ -517,6 +841,11 @@ useEffect(
                 */
 
                 clearCart();
+
+
+                setSelectedCartIndex(
+                    0
+                );
 
 
                 setCheckoutOpen(
@@ -566,17 +895,13 @@ useEffect(
 
                     /*
                     =================================================
-                    F6 POPUP IS OPEN
+                    F6 POPUP HAS CONTROL
                     =================================================
                     */
 
                     if (
                         openPriceOpen
                     ) {
-
-                        /*
-                        ESCAPE
-                        */
 
                         if (
                             event.key ===
@@ -585,20 +910,29 @@ useEffect(
 
                             event.preventDefault();
 
-                            closeOpenPrice();
 
-                            return;
+                            closeOpenPrice();
 
                         }
 
 
-                        /*
-                        Let the amount input handle:
-                        - digits
-                        - decimal point
-                        - backspace
-                        - Enter
-                        */
+                        return;
+
+                    }
+
+
+                    if (
+                        checkoutOpen
+                    ) {
+
+                        return;
+
+                    }
+
+
+                    if (
+                        receiptOpen
+                    ) {
 
                         return;
 
@@ -609,54 +943,158 @@ useEffect(
                         document.activeElement;
 
 
-                    /*
-                    =================================================
-                    IGNORE SHORTCUTS WHILE TYPING
-                    =================================================
-                    */
+                    const typing =
 
-                   /*
-=================================================
-IGNORE SHORTCUTS WHILE TYPING
+                        activeElement &&
 
-F4 is allowed because it clears the search field.
-=================================================
-*/
+                        (
+                            activeElement
+                                .tagName ===
+                                "INPUT" ||
 
-if (
-    activeElement &&
-    (
-        activeElement
-            .tagName ===
-            "INPUT" ||
+                            activeElement
+                                .tagName ===
+                                "TEXTAREA" ||
 
-        activeElement
-            .tagName ===
-            "TEXTAREA"
-    )
-) {
+                            activeElement
+                                .tagName ===
+                                "SELECT" ||
 
-    if (
-        event.key !==
-        "F4"
-    ) {
+                            activeElement
+                                .isContentEditable
+                        );
 
-        return;
 
-    }
+                    const previousKeys = [
 
-}
+                        "MediaTrackPrevious",
+
+                        "MediaPreviousTrack",
+
+                        "BrowserBack",
+
+                    ];
+
+
+                    const nextKeys = [
+
+                        "MediaTrackNext",
+
+                        "MediaNextTrack",
+
+                        "BrowserForward",
+
+                    ];
+
+
+                    const previousCodes = [
+
+                        "MediaTrackPrevious",
+
+                        "MediaPreviousTrack",
+
+                        "BrowserBack",
+
+                    ];
+
+
+                    const nextCodes = [
+
+                        "MediaTrackNext",
+
+                        "MediaNextTrack",
+
+                        "BrowserForward",
+
+                    ];
+
+
+                    if (
+                        previousKeys.includes(
+                            event.key
+                        ) ||
+
+                        previousCodes.includes(
+                            event.code
+                        )
+                    ) {
+
+                        event.preventDefault();
+
+                        event.stopPropagation();
+
+
+                        activateProducts();
+
+
+                        return;
+
+                    }
+
+
+                    if (
+                        nextKeys.includes(
+                            event.key
+                        ) ||
+
+                        nextCodes.includes(
+                            event.code
+                        )
+                    ) {
+
+                        event.preventDefault();
+
+                        event.stopPropagation();
+
+
+                        activateCart();
+
+
+                        return;
+
+                    }
+
+
+                    if (
+                        typing
+                    ) {
+
+                        const allowedWhileTyping = [
+
+                            "F2",
+
+                            "F4",
+
+                            "F6",
+
+                            "F8",
+
+                            "F9",
+
+                            "F10",
+
+                            "F11",
+
+                        ];
+
+
+                        if (
+                            !allowedWhileTyping
+                                .includes(
+                                    event.key
+                                )
+                        ) {
+
+                            return;
+
+                        }
+
+                    }
 
 
                     switch (
                         event.key
                     ) {
-
-                        /*
-                        =================================================
-                        F2 CHECKOUT
-                        =================================================
-                        */
 
                         case "F2":
 
@@ -678,31 +1116,31 @@ if (
                             );
 
 
-                            break;
-
-                            /*
-=================================================
-F4 CLEAR SEARCH
-=================================================
-*/
-case "F4":
-
-    event.preventDefault();
-
-    /*
-    Clear product search.
-    */
-
-    setSearch("");
-
-    break;
+                            return;
 
 
-                        /*
-                        =================================================
-                        F6 OPEN PRICE
-                        =================================================
-                        */
+                        case "F4":
+
+                            event.preventDefault();
+
+
+                            setSearch(
+                                ""
+                            );
+
+
+                            setSelectedProductIndex(
+                                0
+                            );
+
+
+                            setKeyboardZone(
+                                "products"
+                            );
+
+
+                            return;
+
 
                         case "F6":
 
@@ -712,14 +1150,8 @@ case "F4":
                             openOpenPrice();
 
 
-                            break;
+                            return;
 
-
-                        /*
-                        =================================================
-                        F8 HOLD
-                        =================================================
-                        */
 
                         case "F8":
 
@@ -732,17 +1164,16 @@ case "F4":
 
                                 holdCart();
 
+
+                                setSelectedCartIndex(
+                                    0
+                                );
+
                             }
 
 
-                            break;
+                            return;
 
-
-                        /*
-                        =================================================
-                        F9 RESUME
-                        =================================================
-                        */
 
                         case "F9":
 
@@ -756,17 +1187,21 @@ case "F4":
 
                                 resumeLatestCart();
 
+
+                                setKeyboardZone(
+                                    "cart"
+                                );
+
+
+                                setSelectedCartIndex(
+                                    0
+                                );
+
                             }
 
 
-                            break;
+                            return;
 
-
-                        /*
-                        =================================================
-                        F10 CLEAR
-                        =================================================
-                        */
 
                         case "F10":
 
@@ -782,17 +1217,21 @@ case "F4":
 
                                 clearCart();
 
+
+                                setSelectedCartIndex(
+                                    0
+                                );
+
+
+                                setKeyboardZone(
+                                    "products"
+                                );
+
                             }
 
 
-                            break;
+                            return;
 
-
-                        /*
-                        =================================================
-                        F11 WHOLESALE
-                        =================================================
-                        */
 
                         case "F11":
 
@@ -808,6 +1247,7 @@ case "F4":
                                     "Only an admin can use wholesale pricing."
                                 );
 
+
                                 return;
 
                             }
@@ -816,12 +1256,323 @@ case "F4":
                             toggleWholesale();
 
 
-                            break;
+                            return;
 
 
                         default:
 
                             break;
+
+                    }
+
+
+                    /*
+                    =================================================
+                    PRODUCTS ZONE
+                    =================================================
+                    */
+
+                    if (
+                        keyboardZone ===
+                        "products"
+                    ) {
+
+                        if (
+                            keyboardProducts.length ===
+                            0
+                        ) {
+
+                            return;
+
+                        }
+
+
+                        if (
+                            event.key ===
+                            "ArrowDown"
+                        ) {
+
+                            event.preventDefault();
+
+
+                            setSelectedProductIndex(
+                                (
+                                    previous
+                                ) =>
+                                    Math.min(
+                                        previous +
+                                            1,
+                                        keyboardProducts.length -
+                                            1
+                                    )
+                            );
+
+
+                            return;
+
+                        }
+
+
+                        if (
+                            event.key ===
+                            "ArrowUp"
+                        ) {
+
+                            event.preventDefault();
+
+
+                            setSelectedProductIndex(
+                                (
+                                    previous
+                                ) =>
+                                    Math.max(
+                                        previous -
+                                            1,
+                                        0
+                                    )
+                            );
+
+
+                            return;
+
+                        }
+
+
+                        if (
+                            event.key ===
+                            "Enter"
+                        ) {
+
+                            event.preventDefault();
+
+
+                            const product =
+                                keyboardProducts[
+                                    selectedProductIndex
+                                ];
+
+
+                            if (
+                                !product
+                            ) {
+
+                                return;
+
+                            }
+
+
+                            addItem(
+                                product
+                            );
+
+
+                            return;
+
+                        }
+
+
+                        return;
+
+                    }
+
+
+                    /*
+                    =================================================
+                    CART ZONE
+                    =================================================
+                    */
+
+                    if (
+                        keyboardZone ===
+                        "cart"
+                    ) {
+
+                        if (
+                            items.length ===
+                            0
+                        ) {
+
+                            return;
+
+                        }
+
+
+                        const safeIndex =
+                            Math.min(
+                                Math.max(
+                                    selectedCartIndex,
+                                    0
+                                ),
+                                items.length -
+                                    1
+                            );
+
+
+                        const selectedItem =
+                            items[
+                                safeIndex
+                            ];
+
+
+                        if (
+                            !selectedItem
+                        ) {
+
+                            return;
+
+                        }
+
+
+                        if (
+                            event.key ===
+                            "ArrowDown"
+                        ) {
+
+                            event.preventDefault();
+
+
+                            setSelectedCartIndex(
+                                (
+                                    previous
+                                ) =>
+                                    Math.min(
+                                        previous +
+                                            1,
+                                        items.length -
+                                            1
+                                    )
+                            );
+
+
+                            return;
+
+                        }
+
+
+                        if (
+                            event.key ===
+                            "ArrowUp"
+                        ) {
+
+                            event.preventDefault();
+
+
+                            setSelectedCartIndex(
+                                (
+                                    previous
+                                ) =>
+                                    Math.max(
+                                        previous -
+                                            1,
+                                        0
+                                    )
+                            );
+
+
+                            return;
+
+                        }
+
+
+                        if (
+                            event.key ===
+                            "ArrowRight"
+                        ) {
+
+                            event.preventDefault();
+
+
+                            increaseQuantity(
+                                selectedItem._id
+                            );
+
+
+                            return;
+
+                        }
+
+
+                        if (
+                            event.key ===
+                            "ArrowLeft"
+                        ) {
+
+                            event.preventDefault();
+
+
+                            if (
+                                Number(
+                                    selectedItem
+                                        .quantity
+                                ) <= 1
+                            ) {
+
+                                return;
+
+                            }
+
+
+                            decreaseQuantity(
+                                selectedItem._id
+                            );
+
+
+                            return;
+
+                        }
+
+
+                        if (
+                            event.key ===
+                                "Delete" ||
+
+                            event.key ===
+                                "Del"
+                        ) {
+
+                            event.preventDefault();
+
+
+                            const currentLength =
+                                items.length;
+
+
+                            removeItem(
+                                selectedItem._id
+                            );
+
+
+                            const nextLength =
+                                currentLength -
+                                1;
+
+
+                            if (
+                                nextLength <= 0
+                            ) {
+
+                                setSelectedCartIndex(
+                                    0
+                                );
+
+
+                                return;
+
+                            }
+
+
+                            setSelectedCartIndex(
+                                Math.min(
+                                    safeIndex,
+                                    nextLength -
+                                        1
+                                )
+                            );
+
+
+                            return;
+
+                        }
 
                     }
 
@@ -834,23 +1585,53 @@ case "F4":
             );
 
 
-            return () =>
+            return () => {
+
                 window.removeEventListener(
                     "keydown",
                     handleShortcuts
                 );
 
+            };
+
         },
         [
-    items,
-    clearCart,
-    holdCart,
-    resumeLatestCart,
-    user,
-    toggleWholesale,
-    openPriceOpen,
-    setSearch,
-]
+            items,
+
+            user,
+
+            keyboardZone,
+
+            keyboardProducts,
+
+            selectedProductIndex,
+
+            selectedCartIndex,
+
+            checkoutOpen,
+
+            receiptOpen,
+
+            openPriceOpen,
+
+            clearCart,
+
+            holdCart,
+
+            resumeLatestCart,
+
+            toggleWholesale,
+
+            setSearch,
+
+            addItem,
+
+            increaseQuantity,
+
+            decreaseQuantity,
+
+            removeItem,
+        ]
     );
 
 
@@ -864,6 +1645,10 @@ case "F4":
 
         <>
 
+            {/* =================================================
+                BARCODE SCANNER
+            ================================================= */}
+
             <BarcodeScanner />
 
 
@@ -871,131 +1656,121 @@ case "F4":
                 WHOLESALE MODE INDICATOR
             ================================================= */}
 
-            {wholesaleMode && (
-
-                <div
-                    className="
-                        mb-3
-                        px-4
-                        py-2.5
-                        rounded-lg
-                        border-2
-                        border-warning
-                        bg-warning/10
-                        flex
-                        items-center
-                        justify-between
-                        shadow-sm
-                    "
-                >
-
-                    {/* LEFT */}
+            {
+                wholesaleMode && (
 
                     <div
                         className="
+                            mb-3
+                            px-4
+                            py-2.5
+                            rounded-lg
+                            border-2
+                            border-warning
+                            bg-warning/10
                             flex
                             items-center
-                            gap-3
+                            justify-between
+                            shadow-sm
                         "
                     >
 
                         <div
                             className="
-                                w-8
-                                h-8
-                                rounded-full
-                                bg-warning
-                                text-warning-content
                                 flex
                                 items-center
-                                justify-center
-                                font-bold
-                                text-lg
+                                gap-3
                             "
                         >
 
-                            %
-
-                        </div>
-
-
-                        <div>
-
                             <div
                                 className="
-                                    font-bold
-                                    text-sm
+                                    w-8
+                                    h-8
+                                    rounded-full
+                                    bg-warning
                                     text-warning-content
+                                    flex
+                                    items-center
+                                    justify-center
+                                    font-bold
+                                    text-lg
                                 "
                             >
 
-                                WHOLESALE MODE ACTIVE
+                                %
 
                             </div>
 
 
-                            <div
+                            <div>
+
+                                <div
+                                    className="
+                                        font-bold
+                                        text-sm
+                                        text-warning-content
+                                    "
+                                >
+
+                                    WHOLESALE MODE ACTIVE
+
+                                </div>
+
+
+                                <div
+                                    className="
+                                        text-[11px]
+                                        text-base-content/60
+                                    "
+                                >
+
+                                    Bulk pricing is being applied
+                                    regardless of minimum quantity.
+
+                                </div>
+
+                            </div>
+
+                        </div>
+
+
+                        <div
+                            className="
+                                flex
+                                items-center
+                                gap-2
+                            "
+                        >
+
+                            <kbd className="kbd kbd-sm">
+
+                                F11
+
+                            </kbd>
+
+
+                            <span
                                 className="
-                                    text-[11px]
+                                    text-xs
                                     text-base-content/60
                                 "
                             >
 
-                                Bulk pricing is being applied
-                                regardless of minimum quantity.
+                                Disable
 
-                            </div>
+                            </span>
 
                         </div>
 
                     </div>
 
-
-                    {/* RIGHT */}
-
-                    <div
-                        className="
-                            flex
-                            items-center
-                            gap-2
-                        "
-                    >
-
-                        <kbd className="kbd kbd-sm">
-                            F11
-                        </kbd>
-
-
-                        <span
-                            className="
-                                text-xs
-                                text-base-content/60
-                            "
-                        >
-
-                            Disable
-
-                        </span>
-
-                    </div>
-
-                </div>
-
-            )}
+                )
+            }
 
 
             {/* =================================================
                 POS WORKING AREA
-            =================================================
-
-                IMPORTANT:
-
-                This wrapper is RELATIVE.
-
-                The F6 popup is positioned ABSOLUTE inside this
-                area, so it appears in the center of PRODUCTS
-                + CART, but does NOT cover the sidebar or bottom
-                shortcut bar.
             ================================================= */}
 
             <div
@@ -1009,6 +1784,7 @@ case "F4":
                     overflow-hidden
                 "
             >
+
 
                 {/* =============================================
                     PRODUCTS
@@ -1024,8 +1800,6 @@ case "F4":
                     "
                 >
 
-                    {/* SEARCH BAR */}
-
                     <div className="shrink-0">
 
                         <SearchBar />
@@ -1033,16 +1807,12 @@ case "F4":
                     </div>
 
 
-                    {/* CATEGORY BAR */}
-
                     <div className="shrink-0">
 
                         <CategorySidebar />
 
                     </div>
 
-
-                    {/* PRODUCT TABLE */}
 
                     <div
                         className="
@@ -1052,7 +1822,26 @@ case "F4":
                         "
                     >
 
-                        <ProductGrid />
+                        <ProductGrid
+
+                            keyboardActive={
+                                keyboardZone ===
+                                "products"
+                            }
+
+                            selectedIndex={
+                                selectedProductIndex
+                            }
+
+                            onSelectedIndexChange={
+                                setSelectedProductIndex
+                            }
+
+                            onProductsChange={
+                                setKeyboardProducts
+                            }
+
+                        />
 
                     </div>
 
@@ -1072,11 +1861,38 @@ case "F4":
                 >
 
                     <CartPanel
-                        onCheckout={() =>
+
+                        onCheckout={() => {
+
+                            if (
+                                items.length ===
+                                0
+                            ) {
+
+                                return;
+
+                            }
+
+
                             setCheckoutOpen(
                                 true
-                            )
+                            );
+
+                        }}
+
+                        keyboardActive={
+                            keyboardZone ===
+                            "cart"
                         }
+
+                        selectedIndex={
+                            selectedCartIndex
+                        }
+
+                        onSelectedIndexChange={
+                            setSelectedCartIndex
+                        }
+
                     />
 
                 </div>
@@ -1084,406 +1900,442 @@ case "F4":
 
                 {/* =================================================
                     F6 OPEN PRICE POPUP
-                =================================================
-
-                    CENTERED OVER PRODUCTS + CART.
-
-                    It does not belong to CartPanel anymore.
                 ================================================= */}
 
-                {openPriceOpen && (
+                {
+                    openPriceOpen && (
 
-                    <div
-                        className="
-                            absolute
-                            inset-0
-                            z-[300]
-                            flex
-                            items-center
-                            justify-center
-                            bg-black/20
-                            backdrop-blur-[1px]
-                        "
-                    >
-
-                        <form
-    onSubmit={(event) => {
-
-        event.preventDefault();
-        event.stopPropagation();
-
-        handleAddOpenPrice();
-
-    }}
-
-    onKeyDown={(event) => {
-
-        /*
-        ====================================================
-        ENTER
-        ====================================================
-
-        Force Enter to belong to this popup.
-
-        It will NOT reach:
-        - SearchBar
-        - Product search
-        - barcode handlers
-        - other POS shortcuts
-        ====================================================
-        */
-
-        if (
-            event.key ===
-            "Enter"
-        ) {
-
-            event.preventDefault();
-            event.stopPropagation();
-
-
-            handleAddOpenPrice();
-
-            return;
-
-        }
-
-
-        /*
-        ====================================================
-        ESCAPE
-        ====================================================
-        */
-
-        if (
-            event.key ===
-            "Escape"
-        ) {
-
-            event.preventDefault();
-            event.stopPropagation();
-
-
-            closeOpenPrice();
-
-        }
-
-    }}
+                        <div
                             className="
-                                w-[310px]
-                                rounded-2xl
-                                border
-                                border-base-300
-                                bg-base-100
-                                p-6
-                                shadow-2xl
+                                absolute
+                                inset-0
+                                z-[300]
+                                flex
+                                items-center
+                                justify-center
+                                bg-black/20
+                                backdrop-blur-[1px]
                             "
                         >
 
-                            {/* ==================================
-                                HEADER
-                            ================================== */}
+                            <form
+                                onSubmit={(
+                                    event
+                                ) => {
 
-                            <div className="text-center">
+                                    event.preventDefault();
 
-                                <div
-                                    className="
-                                        text-[10px]
-                                        font-bold
-                                        uppercase
-                                        tracking-[0.18em]
-                                        text-base-content/40
-                                    "
-                                >
-
-                                    F6 Open Price
-
-                                </div>
+                                    event.stopPropagation();
 
 
-                                <div
-                                    className="
-                                        mt-2
-                                        text-xl
-                                        font-black
-                                    "
-                                >
+                                    handleAddOpenPrice();
 
-                                    GROCERY
+                                }}
 
-                                </div>
+                                onKeyDown={(
+                                    event
+                                ) => {
 
+                                    if (
+                                        event.key ===
+                                        "Escape"
+                                    ) {
 
-                                <div
-                                    className="
-                                        mt-1
-                                        text-[10px]
-                                        text-base-content/45
-                                    "
-                                >
+                                        event.preventDefault();
 
-                                    Manual price item
-
-                                </div>
-
-                            </div>
+                                        event.stopPropagation();
 
 
-                            {/* ==================================
-                                F7 MULTIPLIER INDICATOR
-                            ================================== */}
+                                        closeOpenPrice();
 
-                            {Number(
-                                pendingMultiplier
-                            ) > 1 && (
+                                    }
 
-                                <div
-                                    className="
-                                        mt-4
-                                        flex
-                                        justify-center
-                                    "
-                                >
+                                }}
 
-                                    <span
+                                className="
+                                    w-[340px]
+                                    rounded-2xl
+                                    border
+                                    border-base-300
+                                    bg-base-100
+                                    p-6
+                                    shadow-2xl
+                                "
+                            >
+
+                                {/* ==============================
+                                    HEADER
+                                ============================== */}
+
+                                <div className="text-center">
+
+                                    <div
                                         className="
-                                            badge
-                                            badge-warning
-                                            badge-lg
+                                            text-[10px]
+                                            font-bold
+                                            uppercase
+                                            tracking-[0.18em]
+                                            text-base-content/40
+                                        "
+                                    >
+
+                                        F6 Open Price
+
+                                    </div>
+
+
+                                    <div
+                                        className="
+                                            mt-2
+                                            text-xl
                                             font-black
                                         "
                                     >
 
-                                        Qty X
-                                        {
-                                            pendingMultiplier
-                                        }
+                                        GROCERY
 
-                                    </span>
+                                    </div>
+
+
+                                    <div
+                                        className="
+                                            mt-1
+                                            text-[10px]
+                                            text-base-content/45
+                                        "
+                                    >
+
+                                        Manual price item
+
+                                    </div>
 
                                 </div>
 
-                            )}
 
+                                {/* ==============================
+                                    F7 MULTIPLIER
+                                ============================== */}
 
-                            {/* ==================================
-                                LIVE PRICE
-                            ================================== */}
-
-                            <div
-                                className="
-                                    mt-6
-                                    text-center
-                                    text-5xl
-                                    font-black
-                                    tracking-tight
-                                    text-primary
-                                "
-                            >
-
-                                ₱
                                 {
-                                    openPriceValue ||
-                                    "0"
+                                    Number(
+                                        pendingMultiplier
+                                    ) > 1 && (
+
+                                        <div
+                                            className="
+                                                mt-4
+                                                flex
+                                                justify-center
+                                            "
+                                        >
+
+                                            <span
+                                                className="
+                                                    badge
+                                                    badge-warning
+                                                    badge-lg
+                                                    font-black
+                                                "
+                                            >
+
+                                                Qty X
+                                                {
+                                                    pendingMultiplier
+                                                }
+
+                                            </span>
+
+                                        </div>
+
+                                    )
                                 }
 
-                            </div>
 
+                                {/* ==============================
+                                    LIVE PRICE
+                                ============================== */}
 
-                            {/* ==================================
-                                INPUT
-                            ================================== */}
+                                <div
+                                    className="
+                                        mt-6
+                                        text-center
+                                        text-5xl
+                                        font-black
+                                        tracking-tight
+                                        text-primary
+                                    "
+                                >
 
-                            <input
-                                ref={
-                                    openPriceInputRef
-                                }
-                                type="text"
-                                inputMode="decimal"
-                                autoComplete="off"
-                                value={
-                                    openPriceValue
-                                }
-                                onChange={(
-                                    event
-                                ) => {
-
-                                    let value =
-                                        event.target
-                                            .value;
-
-
-                                    /*
-                                    --------------------------------
-                                    ONLY NUMBERS + DECIMAL
-                                    --------------------------------
-                                    */
-
-                                    value =
-                                        value.replace(
-                                            /[^0-9.]/g,
-                                            ""
-                                        );
-
-
-                                    /*
-                                    --------------------------------
-                                    ONLY ONE DECIMAL POINT
-                                    --------------------------------
-                                    */
-
-                                    const firstDot =
-                                        value.indexOf(
-                                            "."
-                                        );
-
-
-                                    if (
-                                        firstDot !==
-                                        -1
-                                    ) {
-
-                                        value =
-                                            value.slice(
-                                                0,
-                                                firstDot +
-                                                1
-                                            ) +
-                                            value
-                                                .slice(
-                                                    firstDot +
-                                                    1
-                                                )
-                                                .replace(
-                                                    /\./g,
-                                                    ""
-                                                );
-
+                                    ₱
+                                    {
+                                        openPriceValue ||
+                                        "0"
                                     }
 
+                                </div>
 
-                                    /*
-                                    --------------------------------
-                                    MAX 2 DECIMAL PLACES
-                                    --------------------------------
-                                    */
 
-                                    if (
-                                        value.includes(
-                                            "."
-                                        )
-                                    ) {
+                                {/* ==============================
+                                    AMOUNT INPUT
+                                ============================== */}
 
-                                        const [
-                                            whole,
-                                            decimal,
-                                        ] =
-                                            value.split(
+                                <input
+                                    ref={
+                                        openPriceInputRef
+                                    }
+
+                                    type="text"
+
+                                    inputMode="decimal"
+
+                                    autoComplete="off"
+
+                                    value={
+                                        openPriceValue
+                                    }
+
+                                    onChange={(
+                                        event
+                                    ) => {
+
+                                        let value =
+                                            event.target
+                                                .value;
+
+
+                                        value =
+                                            value.replace(
+                                                /[^0-9.]/g,
+                                                ""
+                                            );
+
+
+                                        const firstDot =
+                                            value.indexOf(
                                                 "."
                                             );
 
 
-                                        value =
-                                            `${whole}.${(
-                                                decimal ||
-                                                ""
-                                            ).slice(
-                                                0,
-                                                2
-                                            )}`;
+                                        if (
+                                            firstDot !==
+                                            -1
+                                        ) {
 
-                                    }
+                                            value =
+                                                value.slice(
+                                                    0,
+                                                    firstDot +
+                                                        1
+                                                ) +
+                                                value
+                                                    .slice(
+                                                        firstDot +
+                                                            1
+                                                    )
+                                                    .replace(
+                                                        /\./g,
+                                                        ""
+                                                    );
 
-
-                                    /*
-                                    --------------------------------
-                                    MAX LENGTH
-                                    --------------------------------
-                                    */
-
-                                    if (
-                                        value.length >
-                                        10
-                                    ) {
-
-                                        value =
-                                            value.slice(
-                                                0,
-                                                10
-                                            );
-
-                                    }
+                                        }
 
 
-                                    setOpenPriceValue(
-                                        value
-                                    );
+                                        if (
+                                            value.includes(
+                                                "."
+                                            )
+                                        ) {
 
-                                }}
-                                className="
-                                    input
-                                    input-bordered
-                                    mt-5
-                                    w-full
-                                    text-center
-                                    text-xl
-                                    font-bold
-                                "
-                                placeholder="Enter amount"
-                            />
+                                            const [
+                                                whole,
+                                                decimal,
+                                            ] =
+                                                value.split(
+                                                    "."
+                                                );
 
 
-                            {/* ==================================
-                                MULTIPLIER TOTAL PREVIEW
-                            ================================== */}
+                                            value =
+                                                `${whole}.${(
+                                                    decimal ||
+                                                    ""
+                                                ).slice(
+                                                    0,
+                                                    2
+                                                )}`;
 
-                            {Number(
-                                pendingMultiplier
-                            ) > 1 &&
-                            Number(
-                                openPriceValue
-                            ) > 0 && (
+                                        }
 
-                                <div
+
+                                        if (
+                                            value.length >
+                                            10
+                                        ) {
+
+                                            value =
+                                                value.slice(
+                                                    0,
+                                                    10
+                                                );
+
+                                        }
+
+
+                                        setOpenPriceValue(
+                                            value
+                                        );
+
+                                    }}
+
+                                    onKeyDown={(
+                                        event
+                                    ) => {
+
+                                        if (
+                                            event.key ===
+                                            "Enter"
+                                        ) {
+
+                                            event.preventDefault();
+
+                                            event.stopPropagation();
+
+
+                                            if (
+                                                Number(
+                                                    openPriceValue
+                                                ) > 0
+                                            ) {
+
+                                                openPriceNoteInputRef
+                                                    .current
+                                                    ?.focus();
+
+                                            }
+
+                                        }
+
+                                    }}
+
                                     className="
-                                        mt-4
-                                        rounded-xl
-                                        bg-base-200
-                                        px-4
-                                        py-3
+                                        input
+                                        input-bordered
+                                        mt-5
+                                        w-full
+                                        text-center
+                                        text-xl
+                                        font-bold
                                     "
-                                >
+
+                                    placeholder="Enter amount"
+                                />
+
+
+                                {/* ==============================
+                                    GROCERY NOTE
+                                ============================== */}
+
+                                <div className="mt-4">
 
                                     <div
                                         className="
+                                            mb-1.5
                                             flex
                                             items-center
                                             justify-between
-                                            text-xs
                                         "
                                     >
 
-                                        <span className="text-base-content/50">
+                                        <label
+                                            className="
+                                                text-[10px]
+                                                font-bold
+                                                uppercase
+                                                tracking-wide
+                                                text-base-content/50
+                                            "
+                                        >
 
-                                            Unit Price
+                                            Grocery Note
 
-                                        </span>
+                                        </label>
 
 
-                                        <span className="font-semibold">
+                                        <span
+                                            className="
+                                                text-[9px]
+                                                text-base-content/35
+                                            "
+                                        >
 
-                                            ₱
-                                            {
-                                                Number(
-                                                    openPriceValue
-                                                ).toFixed(
-                                                    2
-                                                )
-                                            }
+                                            Optional
 
                                         </span>
 
                                     </div>
+
+
+                                    <input
+                                        ref={
+                                            openPriceNoteInputRef
+                                        }
+
+                                        type="text"
+
+                                        autoComplete="off"
+
+                                        value={
+                                            openPriceNote
+                                        }
+
+                                        maxLength={
+                                            80
+                                        }
+
+                                        onChange={(
+                                            event
+                                        ) => {
+
+                                            setOpenPriceNote(
+                                                event.target
+                                                    .value
+                                                    .slice(
+                                                        0,
+                                                        80
+                                                    )
+                                            );
+
+                                        }}
+
+                                        onKeyDown={(
+                                            event
+                                        ) => {
+
+                                            if (
+                                                event.key ===
+                                                "Enter"
+                                            ) {
+
+                                                event.preventDefault();
+
+                                                event.stopPropagation();
+
+
+                                                handleAddOpenPrice();
+
+                                            }
+
+                                        }}
+
+                                        className="
+                                            input
+                                            input-bordered
+                                            w-full
+                                            text-sm
+                                        "
+
+                                        placeholder="e.g. Rice, vegetables, ice..."
+                                    />
 
 
                                     <div
@@ -1492,63 +2344,22 @@ case "F4":
                                             flex
                                             items-center
                                             justify-between
-                                            text-xs
+                                            text-[9px]
+                                            text-base-content/35
                                         "
                                     >
 
-                                        <span className="text-base-content/50">
-
-                                            Quantity
-
+                                        <span>
+                                            What was sold?
                                         </span>
 
 
-                                        <span className="font-semibold">
+                                        <span>
 
-                                            X
                                             {
-                                                pendingMultiplier
+                                                openPriceNote.length
                                             }
-
-                                        </span>
-
-                                    </div>
-
-
-                                    <div
-                                        className="
-                                            mt-2
-                                            border-t
-                                            border-base-300
-                                            pt-2
-                                            flex
-                                            items-center
-                                            justify-between
-                                        "
-                                    >
-
-                                        <span className="text-sm font-bold">
-
-                                            Total
-
-                                        </span>
-
-
-                                        <span className="text-lg font-black">
-
-                                            ₱
-                                            {
-                                                (
-                                                    Number(
-                                                        openPriceValue
-                                                    ) *
-                                                    Number(
-                                                        pendingMultiplier
-                                                    )
-                                                ).toFixed(
-                                                    2
-                                                )
-                                            }
+                                            /80
 
                                         </span>
 
@@ -1556,89 +2367,225 @@ case "F4":
 
                                 </div>
 
-                            )}
+
+                                {/* ==============================
+                                    MULTIPLIER PREVIEW
+                                ============================== */}
+
+                                {
+                                    Number(
+                                        pendingMultiplier
+                                    ) > 1 &&
+
+                                    Number(
+                                        openPriceValue
+                                    ) > 0 && (
+
+                                        <div
+                                            className="
+                                                mt-4
+                                                rounded-xl
+                                                bg-base-200
+                                                px-4
+                                                py-3
+                                            "
+                                        >
+
+                                            <div
+                                                className="
+                                                    flex
+                                                    items-center
+                                                    justify-between
+                                                    text-xs
+                                                "
+                                            >
+
+                                                <span className="text-base-content/50">
+
+                                                    Unit Price
+
+                                                </span>
 
 
-                            {/* ==================================
-                                BUTTONS
-                            ================================== */}
+                                                <span className="font-semibold">
 
-                            <div
-                                className="
-                                    mt-5
-                                    grid
-                                    grid-cols-2
-                                    gap-2
-                                "
-                            >
+                                                    ₱
+                                                    {
+                                                        Number(
+                                                            openPriceValue
+                                                        ).toFixed(
+                                                            2
+                                                        )
+                                                    }
 
-                                <button
-                                    type="button"
-                                    className="btn"
-                                    onClick={
-                                        closeOpenPrice
-                                    }
+                                                </span>
+
+                                            </div>
+
+
+                                            <div
+                                                className="
+                                                    mt-1
+                                                    flex
+                                                    items-center
+                                                    justify-between
+                                                    text-xs
+                                                "
+                                            >
+
+                                                <span className="text-base-content/50">
+
+                                                    Quantity
+
+                                                </span>
+
+
+                                                <span className="font-semibold">
+
+                                                    X
+                                                    {
+                                                        pendingMultiplier
+                                                    }
+
+                                                </span>
+
+                                            </div>
+
+
+                                            <div
+                                                className="
+                                                    mt-2
+                                                    border-t
+                                                    border-base-300
+                                                    pt-2
+                                                    flex
+                                                    items-center
+                                                    justify-between
+                                                "
+                                            >
+
+                                                <span className="text-sm font-bold">
+
+                                                    Total
+
+                                                </span>
+
+
+                                                <span className="text-lg font-black">
+
+                                                    ₱
+                                                    {
+                                                        (
+                                                            Number(
+                                                                openPriceValue
+                                                            ) *
+                                                            Number(
+                                                                pendingMultiplier
+                                                            )
+                                                        ).toFixed(
+                                                            2
+                                                        )
+                                                    }
+
+                                                </span>
+
+                                            </div>
+
+                                        </div>
+
+                                    )
+                                }
+
+
+                                {/* ==============================
+                                    BUTTONS
+                                ============================== */}
+
+                                <div
+                                    className="
+                                        mt-5
+                                        grid
+                                        grid-cols-2
+                                        gap-2
+                                    "
                                 >
 
-                                    Cancel
+                                    <button
+                                        type="button"
+                                        className="btn"
+                                        onClick={
+                                            closeOpenPrice
+                                        }
+                                    >
 
-                                </button>
+                                        Cancel
+
+                                    </button>
 
 
-                                <button
-                                    type="submit"
-                                    className="btn btn-primary"
-                                    disabled={
-                                        !openPriceValue ||
-                                        Number(
-                                            openPriceValue
-                                        ) <= 0
-                                    }
+                                    <button
+                                        type="submit"
+                                        className="btn btn-primary"
+                                        disabled={
+                                            !openPriceValue ||
+                                            Number(
+                                                openPriceValue
+                                            ) <= 0
+                                        }
+                                    >
+
+                                        Add Grocery
+
+                                    </button>
+
+                                </div>
+
+
+                                {/* ==============================
+                                    HELP
+                                ============================== */}
+
+                                <div
+                                    className="
+                                        mt-3
+                                        text-center
+                                        text-[10px]
+                                        text-base-content/40
+                                    "
                                 >
 
-                                    Add Grocery
+                                    <kbd className="kbd kbd-xs">
 
-                                </button>
+                                        Enter
 
-                            </div>
+                                    </kbd>
+
+                                    {" "}Next / Add
 
 
-                            {/* ==================================
-                                SHORTCUT HELP
-                            ================================== */}
+                                    <span className="mx-2">
 
-                            <div
-                                className="
-                                    mt-3
-                                    text-center
-                                    text-[10px]
-                                    text-base-content/40
-                                "
-                            >
+                                        •
 
-                                <kbd className="kbd kbd-xs">
-                                    Enter
-                                </kbd>
+                                    </span>
 
-                                {" "}Add
 
-                                <span className="mx-2">
-                                    •
-                                </span>
+                                    <kbd className="kbd kbd-xs">
 
-                                <kbd className="kbd kbd-xs">
-                                    Esc
-                                </kbd>
+                                        Esc
 
-                                {" "}Cancel
+                                    </kbd>
 
-                            </div>
+                                    {" "}Cancel
 
-                        </form>
+                                </div>
 
-                    </div>
+                            </form>
 
-                )}
+                        </div>
+
+                    )
+                }
 
             </div>
 
@@ -1677,14 +2624,17 @@ case "F4":
                 open={
                     checkoutOpen
                 }
+
                 subtotal={
                     subtotal
                 }
+
                 onClose={() =>
                     setCheckoutOpen(
                         false
                     )
                 }
+
                 onComplete={
                     handleCheckout
                 }
@@ -1699,9 +2649,11 @@ case "F4":
                 open={
                     receiptOpen
                 }
+
                 sale={
                     lastSale
                 }
+
                 onClose={() => {
 
                     setReceiptOpen(
@@ -1711,6 +2663,16 @@ case "F4":
 
                     setLastSale(
                         null
+                    );
+
+
+                    setKeyboardZone(
+                        "products"
+                    );
+
+
+                    setSelectedProductIndex(
+                        0
                     );
 
                 }}

@@ -9,26 +9,48 @@ import validate from "../middleware/validate.middleware.js";
 import productValidator from "../validators/product.validator.js";
 
 
-const router = express.Router();
+const router =
+    express.Router();
 
 
 /*
 ==========================================================
 CREATE PRODUCT
 ==========================================================
-
-Admin only.
-Cashiers can use products but cannot create them.
 */
 
 router.post(
     "/",
     protect,
-    authorize("admin"),
-    validate(
-        productValidator.createProductSchema
+    authorize(
+        "admin"
     ),
-    productController.createProduct
+    validate(
+        productValidator
+            .createProductSchema
+    ),
+    productController
+        .createProduct
+);
+
+
+/*
+==========================================================
+GENERATE UNIQUE BARCODE
+==========================================================
+
+IMPORTANT:
+This MUST appear before /:id.
+*/
+
+router.get(
+    "/generate-barcode",
+    protect,
+    authorize(
+        "admin"
+    ),
+    productController
+        .generateBarcode
 );
 
 
@@ -36,16 +58,13 @@ router.post(
 ==========================================================
 GET ALL PRODUCTS
 ==========================================================
-
-Admin + Cashier.
-
-Cashiers need this for the POS.
 */
 
 router.get(
     "/",
     protect,
-    productController.getProducts
+    productController
+        .getProducts
 );
 
 
@@ -53,16 +72,13 @@ router.get(
 ==========================================================
 GET PRODUCT BY ID
 ==========================================================
-
-Admin + Cashier.
-
-Useful for POS product lookup/barcode lookup.
 */
 
 router.get(
     "/:id",
     protect,
-    productController.getProductById
+    productController
+        .getProductById
 );
 
 
@@ -70,18 +86,20 @@ router.get(
 ==========================================================
 UPDATE PRODUCT
 ==========================================================
-
-Admin only.
 */
 
 router.put(
     "/:id",
     protect,
-    authorize("admin"),
-    validate(
-        productValidator.updateProductSchema
+    authorize(
+        "admin"
     ),
-    productController.updateProduct
+    validate(
+        productValidator
+            .updateProductSchema
+    ),
+    productController
+        .updateProduct
 );
 
 
@@ -89,18 +107,20 @@ router.put(
 ==========================================================
 UPDATE PRODUCT STATUS
 ==========================================================
-
-Admin only.
 */
 
 router.patch(
     "/:id/status",
     protect,
-    authorize("admin"),
-    validate(
-        productValidator.updateProductStatusSchema
+    authorize(
+        "admin"
     ),
-    productController.updateProductStatus
+    validate(
+        productValidator
+            .updateProductStatusSchema
+    ),
+    productController
+        .updateProductStatus
 );
 
 

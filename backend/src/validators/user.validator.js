@@ -8,13 +8,54 @@ ALLOWED ROLES
 */
 
 const allowedRoles = [
+
     "admin",
+
     "manager",
+
     "cashier",
+
     "inventory",
+
     "payroll",
+
     "custom",
+
 ];
+
+
+/*
+============================================================
+PROFILE
+============================================================
+*/
+
+const profileSchema =
+    Joi.object({
+
+        image:
+            Joi.string()
+                .trim()
+                .max(
+                    500
+                )
+                .allow(
+                    ""
+                )
+                .optional(),
+
+        nickname:
+            Joi.string()
+                .trim()
+                .max(
+                    50
+                )
+                .allow(
+                    ""
+                )
+                .optional(),
+
+    });
 
 
 /*
@@ -23,39 +64,55 @@ PERMISSIONS
 ============================================================
 */
 
-const permissionsSchema = Joi.object({
+const permissionsSchema =
+    Joi.object({
 
-    dashboard: Joi.boolean(),
+        dashboard:
+            Joi.boolean(),
 
-    products: Joi.boolean(),
+        products:
+            Joi.boolean(),
 
-    inventory: Joi.boolean(),
+        inventory:
+            Joi.boolean(),
 
-    pos: Joi.boolean(),
+        pos:
+            Joi.boolean(),
 
-    sales: Joi.boolean(),
+        sales:
+            Joi.boolean(),
 
-    customers: Joi.boolean(),
+        customers:
+            Joi.boolean(),
 
-    suppliers: Joi.boolean(),
+        suppliers:
+            Joi.boolean(),
 
-    workers: Joi.boolean(),
+        workers:
+            Joi.boolean(),
 
-    ledger: Joi.boolean(),
+        ledger:
+            Joi.boolean(),
 
-    reports: Joi.boolean(),
+        reports:
+            Joi.boolean(),
 
-    users: Joi.boolean(),
+        users:
+            Joi.boolean(),
 
-    settings: Joi.boolean(),
+        settings:
+            Joi.boolean(),
 
-    salesRefund: Joi.boolean(),
+        salesRefund:
+            Joi.boolean(),
 
-salesVoid: Joi.boolean(),
+        salesVoid:
+            Joi.boolean(),
 
-salesReprint: Joi.boolean(),
+        salesReprint:
+            Joi.boolean(),
 
-});
+    });
 
 
 /*
@@ -64,37 +121,94 @@ CREATE USER
 ============================================================
 */
 
-const createUserSchema = Joi.object({
+const createUserSchema =
+    Joi.object({
 
-    name: Joi.string()
-        .trim()
-        .min(2)
-        .max(100)
-        .required(),
+        name:
+            Joi.string()
+                .trim()
+                .min(
+                    2
+                )
+                .max(
+                    100
+                )
+                .required(),
 
-    username: Joi.string()
-        .trim()
-        .min(3)
-        .max(50)
-        .required(),
+        username:
+            Joi.string()
+                .trim()
+                .min(
+                    3
+                )
+                .max(
+                    50
+                )
+                .required(),
 
-    password: Joi.string()
-        .min(6)
-        .max(128)
-        .required(),
+        password:
+            Joi.string()
+                .min(
+                    6
+                )
+                .max(
+                    128
+                )
+                .required(),
 
-    role: Joi.string()
-        .valid(
-            ...allowedRoles
-        )
-        .default(
-            "cashier"
-        ),
+        role:
+            Joi.string()
+                .valid(
+                    ...allowedRoles
+                )
+                .default(
+                    "cashier"
+                ),
 
-    permissions: permissionsSchema
-        .optional(),
 
-});
+        /*
+        ====================================================
+        PROFILE
+        ====================================================
+        */
+
+        profile:
+            profileSchema
+                .optional(),
+
+
+        /*
+        ====================================================
+        RFID / NFC
+        ====================================================
+
+        "" = no card assigned
+        ====================================================
+        */
+
+        rfidUid:
+            Joi.string()
+                .trim()
+                .max(
+                    100
+                )
+                .allow(
+                    ""
+                )
+                .optional(),
+
+
+        /*
+        ====================================================
+        PERMISSIONS
+        ====================================================
+        */
+
+        permissions:
+            permissionsSchema
+                .optional(),
+
+    });
 
 
 /*
@@ -103,34 +217,93 @@ UPDATE USER
 ============================================================
 */
 
-const updateUserSchema = Joi.object({
+const updateUserSchema =
+    Joi.object({
 
-    name: Joi.string()
-        .trim()
-        .min(2)
-        .max(100)
-        .optional(),
+        name:
+            Joi.string()
+                .trim()
+                .min(
+                    2
+                )
+                .max(
+                    100
+                )
+                .optional(),
 
-    username: Joi.string()
-        .trim()
-        .min(3)
-        .max(50)
-        .optional(),
+        username:
+            Joi.string()
+                .trim()
+                .min(
+                    3
+                )
+                .max(
+                    50
+                )
+                .optional(),
 
-    role: Joi.string()
-        .valid(
-            ...allowedRoles
-        )
-        .optional(),
+        role:
+            Joi.string()
+                .valid(
+                    ...allowedRoles
+                )
+                .optional(),
 
-    permissions: permissionsSchema
-        .optional(),
 
-    isActive: Joi.boolean()
-        .optional(),
+        /*
+        ====================================================
+        PROFILE
+        ====================================================
+        */
 
-})
-    .min(1);
+        profile:
+            profileSchema
+                .optional(),
+
+
+        /*
+        ====================================================
+        RFID / NFC
+        ====================================================
+        */
+
+        rfidUid:
+            Joi.string()
+                .trim()
+                .max(
+                    100
+                )
+                .allow(
+                    ""
+                )
+                .optional(),
+
+
+        /*
+        ====================================================
+        PERMISSIONS
+        ====================================================
+        */
+
+        permissions:
+            permissionsSchema
+                .optional(),
+
+
+        /*
+        ====================================================
+        ACTIVE
+        ====================================================
+        */
+
+        isActive:
+            Joi.boolean()
+                .optional(),
+
+    })
+        .min(
+            1
+        );
 
 
 /*
@@ -139,14 +312,20 @@ UPDATE PASSWORD
 ============================================================
 */
 
-const updatePasswordSchema = Joi.object({
+const updatePasswordSchema =
+    Joi.object({
 
-    password: Joi.string()
-        .min(6)
-        .max(128)
-        .required(),
+        password:
+            Joi.string()
+                .min(
+                    6
+                )
+                .max(
+                    128
+                )
+                .required(),
 
-});
+    });
 
 
 /*

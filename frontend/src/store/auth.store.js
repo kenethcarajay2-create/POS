@@ -1,4 +1,7 @@
-import { create } from "zustand";
+import {
+    create,
+} from "zustand";
+
 import authService from "../services/auth.service";
 
 
@@ -21,33 +24,99 @@ READ SAVED USER
 ============================================================
 */
 
-const getSavedUser = () => {
+const getSavedUser =
+    () => {
 
-    try {
+        try {
 
-        const savedUser =
-            localStorage.getItem(
-                USER_KEY
+            const savedUser =
+                localStorage.getItem(
+                    USER_KEY
+                );
+
+
+            if (
+                !savedUser
+            ) {
+
+                return null;
+
+            }
+
+
+            return JSON.parse(
+                savedUser
             );
 
 
-        if (!savedUser) {
+        } catch (
+            error
+        ) {
+
+            console.error(
+                "Failed to read saved user:",
+                error
+            );
+
+
+            localStorage.removeItem(
+                USER_KEY
+            );
+
 
             return null;
 
         }
 
+    };
 
-        return JSON.parse(
-            savedUser
+
+/*
+============================================================
+SAVE AUTH SESSION
+============================================================
+
+Used by:
+
+- normal login
+- RFID login
+
+Both login methods should produce the same frontend state.
+============================================================
+*/
+
+const saveAuthSession =
+    (
+        data
+    ) => {
+
+        localStorage.setItem(
+            TOKEN_KEY,
+            data.token
         );
 
 
-    } catch (error) {
+        localStorage.setItem(
+            USER_KEY,
+            JSON.stringify(
+                data.user
+            )
+        );
 
-        console.error(
-            "Failed to read saved user:",
-            error
+    };
+
+
+/*
+============================================================
+CLEAR AUTH SESSION
+============================================================
+*/
+
+const clearAuthSession =
+    () => {
+
+        localStorage.removeItem(
+            TOKEN_KEY
         );
 
 
@@ -55,12 +124,7 @@ const getSavedUser = () => {
             USER_KEY
         );
 
-
-        return null;
-
-    }
-
-};
+    };
 
 
 /*
@@ -92,13 +156,21 @@ const useAuthStore =
             loading:
                 false,
 
+            /*
+            Separate state is useful so the Login page can
+            show "Reading card..." later if desired.
+            */
+
+            rfidLoading:
+                false,
+
             error:
                 null,
 
 
             /*
             ====================================================
-            LOGIN
+            NORMAL LOGIN
             ====================================================
             */
 
@@ -129,35 +201,12 @@ const useAuthStore =
 
                         /*
                         ----------------------------------------
-                        SAVE TOKEN
+                        SAVE SESSION
                         ----------------------------------------
                         */
 
-                        localStorage.setItem(
-                            TOKEN_KEY,
-                            data.token
-                        );
-
-
-                        /*
-                        ----------------------------------------
-                        SAVE USER
-
-                        IMPORTANT:
-                        This includes:
-
-                        name
-                        username
-                        role
-                        permissions
-                        ----------------------------------------
-                        */
-
-                        localStorage.setItem(
-                            USER_KEY,
-                            JSON.stringify(
-                                data.user
-                            )
+                        saveAuthSession(
+                            data
                         );
 
 
@@ -178,6 +227,9 @@ const useAuthStore =
                             loading:
                                 false,
 
+                            rfidLoading:
+                                false,
+
                             error:
                                 null,
 
@@ -192,17 +244,12 @@ const useAuthStore =
                     ) {
 
                         /*
-                        Remove potentially stale auth state.
+                        ----------------------------------------
+                        REMOVE STALE AUTH
+                        ----------------------------------------
                         */
 
-                        localStorage.removeItem(
-                            TOKEN_KEY
-                        );
-
-
-                        localStorage.removeItem(
-                            USER_KEY
-                        );
+                        clearAuthSession();
 
 
                         set({
@@ -214,6 +261,9 @@ const useAuthStore =
                                 null,
 
                             loading:
+                                false,
+
+                            rfidLoading:
                                 false,
 
                             error:
@@ -234,11 +284,204 @@ const useAuthStore =
 
             /*
             ====================================================
-            UPDATE CURRENT USER
+            RFID / NFC LOGIN
             ====================================================
 
-            Useful later if Admin changes this user's profile
-            or permissions without forcing another login.
+            Receives the UID from the card reader.
+
+            Example:
+
+            04A3D8917C2B80
+
+            Backend verifies which user owns the card.
+            ====================================================
+            */
+
+            rfidLogin:
+                async (
+                    rfidUid
+                ) => {
+
+                    try {
+
+                        set({
+
+                            rfidLoading:
+                                true,
+
+                            error:
+                                null,
+
+                        });
+
+
+                        /*
+                        ----------------------------------------
+                        NORMALIZE FRONTEND VALUE
+                        ----------------------------------------
+
+                        Backend still normalizes and validates
+                        again. This is only a convenience.
+                        ----------------------------------------
+                        */
+
+                        const normalizedUid =
+                            String(
+                                rfidUid ||
+                                ""
+                            )
+                                .replace(
+                                    /[^a-zA-Z0-9]/g,
+                                    ""
+                                )
+                                .toUpperCase()
+                                .trim();
+
+
+                        if (
+                            !normalizedUid
+                        ) {
+
+                            set({
+
+                                rfidLoading:
+                                    false,
+
+                                error:
+                                    "RFID/NFC card UID is required.",
+
+                            });
+
+
+                            return false;
+
+                        }
+
+
+                        /*
+                        ----------------------------------------
+                        CALL RFID LOGIN
+                        ----------------------------------------
+                        */
+
+                        const data =
+                            await authService
+                                .rfidLogin(
+                                    normalizedUid
+                                );
+
+
+                        /*
+                        ----------------------------------------
+                        SAVE SESSION
+                        ----------------------------------------
+                        */
+
+                        saveAuthSession(
+                            data
+                        );
+
+
+                        /*
+                        ----------------------------------------
+                        UPDATE STORE
+                        ----------------------------------------
+                        */
+
+                        set({
+
+                            user:
+                                data.user,
+
+                            token:
+                                data.token,
+
+                            loading:
+                                false,
+
+                            rfidLoading:
+                                false,
+
+                            error:
+                                null,
+
+                        });
+
+
+                        return true;
+
+
+                    } catch (
+                        error
+                    ) {
+
+                        /*
+                        ----------------------------------------
+                        IMPORTANT
+
+                        Failed card login should not leave an
+                        old authenticated user/session behind.
+                        ----------------------------------------
+                        */
+
+                        clearAuthSession();
+
+
+                        set({
+
+                            user:
+                                null,
+
+                            token:
+                                null,
+
+                            loading:
+                                false,
+
+                            rfidLoading:
+                                false,
+
+                            error:
+                                error.response
+                                    ?.data
+                                    ?.message ||
+                                "RFID/NFC login failed.",
+
+                        });
+
+
+                        return false;
+
+                    }
+
+                },
+
+
+            /*
+            ====================================================
+            CLEAR ERROR
+            ====================================================
+
+            Useful when another card is tapped after an error.
+            ====================================================
+            */
+
+            clearError:
+                () => {
+
+                    set({
+
+                        error:
+                            null,
+
+                    });
+
+                },
+
+
+            /*
+            ====================================================
+            UPDATE CURRENT USER
             ====================================================
             */
 
@@ -283,14 +526,7 @@ const useAuthStore =
             logout:
                 () => {
 
-                    localStorage.removeItem(
-                        TOKEN_KEY
-                    );
-
-
-                    localStorage.removeItem(
-                        USER_KEY
-                    );
+                    clearAuthSession();
 
 
                     set({
@@ -300,6 +536,12 @@ const useAuthStore =
 
                         token:
                             null,
+
+                        loading:
+                            false,
+
+                        rfidLoading:
+                            false,
 
                         error:
                             null,

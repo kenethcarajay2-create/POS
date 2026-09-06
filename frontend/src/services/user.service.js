@@ -91,6 +91,38 @@ const enableUser = async (id) => {
 
 };
 
+const uploadProfileImage =
+    async (
+        id,
+        file
+    ) => {
+
+        const formData =
+            new FormData();
+
+
+        formData.append(
+            "image",
+            file
+        );
+
+
+        const response =
+            await api.patch(
+                `/users/${id}/profile-image`,
+                formData,
+                {
+                    headers: {
+                        "Content-Type":
+                            "multipart/form-data",
+                    },
+                }
+            );
+
+
+        return response.data.data;
+
+    };
 
 export default {
 
@@ -107,5 +139,7 @@ export default {
     disableUser,
 
     enableUser,
+
+    uploadProfileImage
 
 };

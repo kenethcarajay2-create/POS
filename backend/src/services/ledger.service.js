@@ -35,6 +35,46 @@
 
     };
 
+    /*
+============================================================
+NORMALIZE CUSTOM ITEM NOTE
+============================================================
+
+Used only for custom/open-price ledger items.
+
+Examples:
+
+Grocery
+note: "Rice and vegetables"
+
+Grocery
+note: "Medicine"
+
+Rules:
+
+- optional
+- converted to string
+- leading/trailing spaces removed
+- maximum 80 characters
+============================================================
+*/
+
+const normalizeCustomItemNote = (
+    value
+) => {
+
+    return String(
+        value ||
+        ""
+    )
+        .trim()
+        .slice(
+            0,
+            80
+        );
+
+};
+
 
     /*
     ============================================================
@@ -2474,18 +2514,29 @@
                 "CUSTOM"
             ) {
 
-                const name =
-                    String(
-                        item.name ||
-                        "Grocery"
-                    ).trim();
+               const name =
+    String(
+        item.name ||
+        "Grocery"
+    )
+        .trim()
+        .slice(
+            0,
+            100
+        );
 
 
-                const quantity =
-                    Number(
-                        item.quantity ??
-                        1
-                    );
+const note =
+    normalizeCustomItemNote(
+        item.note
+    );
+
+
+const quantity =
+    Number(
+        item.quantity ??
+        1
+    );
 
 
                 const unitPrice =
@@ -2536,26 +2587,30 @@
                     unitPrice;
 
 
-                preparedItems.push({
+                
+preparedItems.push({
 
-                    itemType:
-                        "CUSTOM",
+    itemType:
+        "CUSTOM",
 
-                    product:
-                        null,
+    product:
+        null,
 
-                    barcode:
-                        "",
+    barcode:
+        "",
 
-                    name,
+    name,
 
-                    quantity,
+    note,
 
-                    unitPrice,
+    quantity,
 
-                    total,
+    unitPrice,
 
-                });
+    total,
+
+});
+                
 
 
                 grandTotal += total;
@@ -2806,6 +2861,8 @@
             of preparedItems
         ) {
 
+            
+
             /*
             ====================================================
             CUSTOM ITEM
@@ -2813,41 +2870,44 @@
             No inventory changes.
             ====================================================
             */
+if (
+    prepared.itemType ===
+    "CUSTOM"
+) {
 
-            if (
-                prepared.itemType ===
-                "CUSTOM"
-            ) {
+    transactionItems.push({
 
-                transactionItems.push({
+        itemType:
+            "CUSTOM",
 
-                    itemType:
-                        "CUSTOM",
+        product:
+            null,
 
-                    product:
-                        null,
+        barcode:
+            "",
 
-                    barcode:
-                        "",
+        name:
+            prepared.name,
 
-                    name:
-                        prepared.name,
+        note:
+            prepared.note ||
+            "",
 
-                    quantity:
-                        prepared.quantity,
+        quantity:
+            prepared.quantity,
 
-                    unitPrice:
-                        prepared.unitPrice,
+        unitPrice:
+            prepared.unitPrice,
 
-                    total:
-                        prepared.total,
+        total:
+            prepared.total,
 
-                });
+    });
 
 
-                continue;
+    continue;
 
-            }
+}
 
 
             /*
@@ -2919,26 +2979,29 @@
 
             transactionItems.push({
 
-                itemType:
-                    "PRODUCT",
+    itemType:
+        "PRODUCT",
 
-                product:
-                    product._id,
+    product:
+        product._id,
 
-                barcode:
-                    product.barcode ||
-                    "",
+    barcode:
+        product.barcode ||
+        "",
 
-                name:
-                    product.name,
+    name:
+        product.name,
 
-                quantity,
+    note:
+        "",
 
-                unitPrice,
+    quantity,
 
-                total,
+    unitPrice,
 
-            });
+    total,
+
+});
 
         }
 
@@ -5240,112 +5303,124 @@ const prepareEditedCreditItems = async (
 
 
         /*
-        ====================================================
-        CUSTOM ITEM
-        ====================================================
-        */
+====================================================
+CUSTOM ITEM
+====================================================
+*/
 
-        if (
-            itemType ===
-            "CUSTOM"
-        ) {
+if (
+    itemType ===
+    "CUSTOM"
+) {
 
-            const name =
-                String(
-                    item.name ||
-                    "Grocery"
-                ).trim();
-
-
-            const quantity =
-                Number(
-                    item.quantity ??
-                    1
-                );
+    const name =
+        String(
+            item.name ||
+            "Grocery"
+        )
+            .trim()
+            .slice(
+                0,
+                100
+            );
 
 
-            const unitPrice =
-                Number(
-                    item.unitPrice ??
-                    item.price
-                );
+    const note =
+        normalizeCustomItemNote(
+            item.note
+        );
 
 
-            if (!name) {
-
-                throw new ApiError(
-                    400,
-                    "Custom item name is required."
-                );
-
-            }
+    const quantity =
+        Number(
+            item.quantity ??
+            1
+        );
 
 
-            if (
-                !Number.isInteger(
-                    quantity
-                ) ||
-                quantity <= 0
-            ) {
-
-                throw new ApiError(
-                    400,
-                    "Custom item quantity must be a positive whole number."
-                );
-
-            }
+    const unitPrice =
+        Number(
+            item.unitPrice ??
+            item.price
+        );
 
 
-            if (
-                !Number.isFinite(
-                    unitPrice
-                ) ||
-                unitPrice <= 0
-            ) {
+    if (!name) {
 
-                throw new ApiError(
-                    400,
-                    `Enter a valid amount for ${name}.`
-                );
+        throw new ApiError(
+            400,
+            "Custom item name is required."
+        );
 
-            }
+    }
 
 
-            const total =
-                quantity *
-                unitPrice;
+    if (
+        !Number.isInteger(
+            quantity
+        ) ||
+        quantity <= 0
+    ) {
+
+        throw new ApiError(
+            400,
+            "Custom item quantity must be a positive whole number."
+        );
+
+    }
 
 
-            preparedItems.push({
+    if (
+        !Number.isFinite(
+            unitPrice
+        ) ||
+        unitPrice <= 0
+    ) {
 
-                itemType:
-                    "CUSTOM",
+        throw new ApiError(
+            400,
+            `Enter a valid amount for ${name}.`
+        );
 
-                product:
-                    null,
-
-                barcode:
-                    "",
-
-                name,
-
-                quantity,
-
-                unitPrice,
-
-                total,
-
-            });
+    }
 
 
-            grandTotal +=
-                total;
+    const total =
+        quantity *
+        unitPrice;
 
 
-            continue;
+    preparedItems.push({
 
-        }
+        itemType:
+            "CUSTOM",
 
+        product:
+            null,
+
+        barcode:
+            "",
+
+        name,
+
+        note,
+
+        quantity,
+
+        unitPrice,
+
+        total,
+
+    });
+
+
+    grandTotal +=
+        total;
+
+
+    continue;
+
+}
 
         /*
         ====================================================
@@ -5503,7 +5578,6 @@ const prepareEditedCreditItems = async (
 APPLY EDITED CREDIT INVENTORY
 ============================================================
 */
-
 const applyEditedCreditInventory = async (
     preparedItems,
     userId,
@@ -5544,6 +5618,10 @@ const applyEditedCreditInventory = async (
                 name:
                     prepared.name,
 
+                note:
+                    prepared.note ||
+                    "",
+
                 quantity:
                     prepared.quantity,
 
@@ -5555,6 +5633,12 @@ const applyEditedCreditInventory = async (
 
             });
 
+
+            /*
+            IMPORTANT:
+            Custom items do not affect inventory.
+            Skip the PRODUCT logic below.
+            */
 
             continue;
 
@@ -5635,6 +5719,12 @@ const applyEditedCreditInventory = async (
         });
 
 
+        /*
+        ====================================================
+        PRODUCT LEDGER SNAPSHOT
+        ====================================================
+        */
+
         transactionItems.push({
 
             itemType:
@@ -5649,6 +5739,9 @@ const applyEditedCreditInventory = async (
 
             name:
                 product.name,
+
+            note:
+                "",
 
             quantity,
 
@@ -5666,7 +5759,6 @@ const applyEditedCreditInventory = async (
     return transactionItems;
 
 };
-
 
 /*
 ============================================================
@@ -5884,53 +5976,57 @@ const updateTransaction = async (
     ========================================================
     */
 
-    const previousData = {
+const previousData = {
 
-        type:
-            transaction.type,
+    type:
+        transaction.type,
 
-        description:
-            transaction.description,
+    description:
+        transaction.description,
 
-        amount:
-            transaction.amount,
+    amount:
+        transaction.amount,
 
-        items:
-            transaction.items
-                .map(
-                    (item) => ({
+    items:
+        transaction.items
+            .map(
+                (item) => ({
 
-                        itemType:
-                            item.itemType,
+                    itemType:
+                        item.itemType,
 
-                        product:
-                            item.product,
+                    product:
+                        item.product,
 
-                        barcode:
-                            item.barcode,
+                    barcode:
+                        item.barcode,
 
-                        name:
-                            item.name,
+                    name:
+                        item.name,
 
-                        quantity:
-                            item.quantity,
+                    note:
+                        item.note ||
+                        "",
 
-                        unitPrice:
-                            item.unitPrice,
+                    quantity:
+                        item.quantity,
 
-                        total:
-                            item.total,
+                    unitPrice:
+                        item.unitPrice,
 
-                    })
-                ),
+                    total:
+                        item.total,
 
-        status:
-            transaction.status,
+                })
+            ),
 
-        remarks:
-            transaction.remarks,
+    status:
+        transaction.status,
 
-    };
+    remarks:
+        transaction.remarks,
+
+};
 
 
     /*

@@ -15,29 +15,103 @@ for each user from the Users page.
 
 const defaultPermissions = {
 
-    dashboard: true,
+    dashboard:
+        true,
 
-    products: false,
+    products:
+        false,
 
-    inventory: false,
+    inventory:
+        false,
 
-    pos: false,
+    pos:
+        false,
 
-    sales: false,
+    sales:
+        false,
 
-    customers: false,
+    customers:
+        false,
 
-    suppliers: false,
+    suppliers:
+        false,
 
-    workers: false,
+    workers:
+        false,
 
-    ledger: false,
+    ledger:
+        false,
 
-    reports: false,
+    reports:
+        false,
 
-    users: false,
+    users:
+        false,
 
-    settings: false,
+    settings:
+        false,
+
+
+    /*
+    ========================================================
+    SALES ACTION PERMISSIONS
+    ========================================================
+    */
+
+    salesRefund:
+        false,
+
+    salesVoid:
+        false,
+
+    salesReprint:
+        false,
+
+};
+
+
+/*
+============================================================
+NORMALIZE RFID / NFC UID
+============================================================
+
+Examples:
+
+04:A3:D8:91:7C:2B:80
+04-A3-D8-91-7C-2B-80
+04a3d8917c2b80
+
+All become:
+
+04A3D8917C2B80
+============================================================
+*/
+
+const normalizeRfidUid = (
+    value
+) => {
+
+    if (
+        value ===
+            null ||
+        value ===
+            undefined
+    ) {
+
+        return "";
+
+    }
+
+
+    return String(
+        value
+    )
+        .replace(
+            /[^a-zA-Z0-9]/g,
+            ""
+        )
+        .toUpperCase()
+        .trim();
 
 };
 
@@ -60,11 +134,17 @@ const userSchema =
 
             name: {
 
-                type: String,
+                type:
+                    String,
 
-                required: true,
+                required:
+                    true,
 
-                trim: true,
+                trim:
+                    true,
+
+                maxlength:
+                    100,
 
             },
 
@@ -77,15 +157,23 @@ const userSchema =
 
             username: {
 
-                type: String,
+                type:
+                    String,
 
-                required: true,
+                required:
+                    true,
 
-                unique: true,
+                unique:
+                    true,
 
-                trim: true,
+                trim:
+                    true,
 
-                lowercase: true,
+                lowercase:
+                    true,
+
+                maxlength:
+                    100,
 
             },
 
@@ -98,9 +186,11 @@ const userSchema =
 
             password: {
 
-                type: String,
+                type:
+                    String,
 
-                required: true,
+                required:
+                    true,
 
             },
 
@@ -122,7 +212,8 @@ const userSchema =
 
             role: {
 
-                type: String,
+                type:
+                    String,
 
                 enum: [
                     "admin",
@@ -135,6 +226,122 @@ const userSchema =
 
                 default:
                     "cashier",
+
+            },
+
+
+            /*
+            ====================================================
+            PROFILE
+            ====================================================
+
+            Used for:
+
+            - profile picture
+            - login welcome animation
+            - user display
+            - future worker/user profile page
+
+            Example:
+
+            profile: {
+                image: "/uploads/profiles/user-123.jpg",
+                nickname: "Kent"
+            }
+            ====================================================
+            */
+
+            profile: {
+
+                /*
+                ------------------------------------------------
+                PROFILE IMAGE
+                ------------------------------------------------
+
+                Store a URL/path only.
+
+                Do NOT store the actual binary image here.
+                ------------------------------------------------
+                */
+
+                image: {
+
+                    type:
+                        String,
+
+                    default:
+                        "",
+
+                    trim:
+                        true,
+
+                    maxlength:
+                        500,
+
+                },
+
+
+                /*
+                ------------------------------------------------
+                NICKNAME
+                ------------------------------------------------
+                */
+
+                nickname: {
+
+                    type:
+                        String,
+
+                    default:
+                        "",
+
+                    trim:
+                        true,
+
+                    maxlength:
+                        50,
+
+                },
+
+            },
+
+
+            /*
+            ====================================================
+            RFID / NFC UID
+            ====================================================
+
+            Optional.
+
+            Empty string:
+            → no card assigned
+
+            Example:
+            04A3D8917C2B80
+
+            Used for tap-to-login.
+            ====================================================
+            */
+
+            rfidUid: {
+
+                type:
+                    String,
+
+                default:
+                    "",
+
+                trim:
+                    true,
+
+                uppercase:
+                    true,
+
+                set:
+                    normalizeRfidUid,
+
+                maxlength:
+                    100,
 
             },
 
@@ -155,8 +362,7 @@ const userSchema =
                 inventory: false,
             }
 
-            Admin can still be treated as full access
-            regardless of these values.
+            Admin users are forced to full access below.
             ====================================================
             */
 
@@ -365,23 +571,58 @@ const userSchema =
 
                 },
 
+
+                /*
+                ------------------------------------------------
+                SALES REFUND
+                ------------------------------------------------
+                */
+
                 salesRefund: {
-    type: Boolean,
-    default: false,
-},
 
-salesVoid: {
-    type: Boolean,
-    default: false,
-},
+                    type:
+                        Boolean,
 
-salesReprint: {
-    type: Boolean,
-    default: false,
-},
+                    default:
+                        defaultPermissions.salesRefund,
+
+                },
+
+
+                /*
+                ------------------------------------------------
+                SALES VOID
+                ------------------------------------------------
+                */
+
+                salesVoid: {
+
+                    type:
+                        Boolean,
+
+                    default:
+                        defaultPermissions.salesVoid,
+
+                },
+
+
+                /*
+                ------------------------------------------------
+                SALES REPRINT
+                ------------------------------------------------
+                */
+
+                salesReprint: {
+
+                    type:
+                        Boolean,
+
+                    default:
+                        defaultPermissions.salesReprint,
+
+                },
 
             },
-
 
 
             /*
@@ -392,16 +633,19 @@ salesReprint: {
 
             isActive: {
 
-                type: Boolean,
+                type:
+                    Boolean,
 
-                default: true,
+                default:
+                    true,
 
             },
 
         },
         {
 
-            timestamps: true,
+            timestamps:
+                true,
 
         }
     );
@@ -412,11 +656,12 @@ salesReprint: {
 ADMIN PERMISSIONS
 ============================================================
 
-Whenever an admin user is saved, force every page
-permission to true.
+Whenever an admin user is saved:
 
-This prevents accidentally creating an Admin account
-that cannot access part of the system.
+Force every permission to TRUE.
+
+This prevents accidentally creating an Admin account that
+cannot access part of the system.
 ============================================================
 */
 
@@ -436,32 +681,149 @@ userSchema.pre(
 
         this.permissions = {
 
-            dashboard: true,
+            dashboard:
+                true,
 
-            products: true,
+            products:
+                true,
 
-            inventory: true,
+            inventory:
+                true,
 
-            pos: true,
+            pos:
+                true,
 
-            sales: true,
+            sales:
+                true,
 
-            customers: true,
+            customers:
+                true,
 
-            suppliers: true,
+            suppliers:
+                true,
 
-            workers: true,
+            workers:
+                true,
 
-            ledger: true,
+            ledger:
+                true,
 
-            reports: true,
+            reports:
+                true,
 
-            users: true,
+            users:
+                true,
 
-            settings: true,
+            settings:
+                true,
+
+            salesRefund:
+                true,
+
+            salesVoid:
+                true,
+
+            salesReprint:
+                true,
 
         };
 
+    }
+);
+
+
+/*
+============================================================
+NORMALIZE RFID BEFORE VALIDATION
+============================================================
+
+This also protects older code paths that may assign a raw UID.
+============================================================
+*/
+
+userSchema.pre(
+    "validate",
+    function () {
+
+        this.rfidUid =
+            normalizeRfidUid(
+                this.rfidUid
+            );
+
+    }
+);
+
+
+/*
+============================================================
+INDEXES
+============================================================
+*/
+
+
+/*
+------------------------------------------------------------
+ROLE + ACTIVE
+------------------------------------------------------------
+*/
+
+userSchema.index({
+
+    role:
+        1,
+
+    isActive:
+        1,
+
+});
+
+
+/*
+------------------------------------------------------------
+ACTIVE USERS
+------------------------------------------------------------
+*/
+
+userSchema.index({
+
+    isActive:
+        1,
+
+});
+
+
+/*
+------------------------------------------------------------
+RFID / NFC UID
+------------------------------------------------------------
+
+Only non-empty assigned cards should be unique.
+
+partialFilterExpression avoids duplicate-key problems
+from every user having the default empty string.
+------------------------------------------------------------
+*/
+
+userSchema.index(
+    {
+        rfidUid:
+            1,
+    },
+    {
+        unique:
+            true,
+
+        partialFilterExpression: {
+
+            rfidUid: {
+                $type:
+                    "string",
+
+                $ne:
+                    "",
+            },
+
+        },
     }
 );
 
@@ -480,3 +842,16 @@ const User =
 
 
 export default User;
+
+
+/*
+============================================================
+OPTIONAL EXPORT
+
+Useful later in auth.service.js when implementing RFID login.
+============================================================
+*/
+
+export {
+    normalizeRfidUid,
+};

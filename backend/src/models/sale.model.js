@@ -13,6 +13,7 @@ NORMAL PRODUCT:
     isOpenPrice: false,
     barcode: "...",
     name: "Coca Cola",
+    note: "",
     quantity: 2,
     unitPrice: 20,
     subtotal: 40
@@ -26,6 +27,7 @@ OPEN PRICE ITEM:
     isOpenPrice: true,
     barcode: "",
     name: "Grocery",
+    note: "Vegetables",
     quantity: 1,
     unitPrice: 125,
     subtotal: 125
@@ -92,9 +94,6 @@ const saleItemSchema =
             ====================================================
             BARCODE
             ====================================================
-
-            Grocery/Open Price can have an empty barcode.
-            ====================================================
             */
 
             barcode: {
@@ -127,6 +126,56 @@ const saleItemSchema =
 
                 trim:
                     true,
+
+                maxlength:
+                    100,
+
+            },
+
+
+            /*
+            ====================================================
+            OPEN PRICE NOTE
+            ====================================================
+
+            Optional description for manually priced items.
+
+            Examples:
+
+            Grocery
+            note: "Vegetables"
+
+            Grocery
+            note: "Rice"
+
+            Grocery
+            note: "Ice"
+
+            Normal products usually leave this empty.
+
+            The note does NOT affect:
+
+            - inventory
+            - pricing
+            - quantity
+            - refunds
+            - loyalty calculations
+            ====================================================
+            */
+
+            note: {
+
+                type:
+                    String,
+
+                default:
+                    "",
+
+                trim:
+                    true,
+
+                maxlength:
+                    80,
 
             },
 
@@ -216,8 +265,10 @@ const saleItemSchema =
             /*
             Keep item _id.
 
-            This is useful for refunds, especially when the
-            same sale contains multiple Grocery lines.
+            Needed for individual-item refunds.
+
+            This is especially important for open-price items,
+            because they do not have a Product ObjectId.
             */
 
             _id:
@@ -285,6 +336,36 @@ const saleSchema =
 
             /*
             ====================================================
+            CUSTOMER
+            ====================================================
+
+            null
+            → Walk-in
+
+            ObjectId
+            → Registered Customer
+            ====================================================
+            */
+
+            customer: {
+
+                type:
+                    mongoose.Schema.Types.ObjectId,
+
+                ref:
+                    "Customer",
+
+                default:
+                    null,
+
+                index:
+                    true,
+
+            },
+
+
+            /*
+            ====================================================
             ITEMS
             ====================================================
             */
@@ -344,7 +425,7 @@ const saleSchema =
 
             /*
             ====================================================
-            DISCOUNT
+            NORMAL DISCOUNT
             ====================================================
             */
 
@@ -364,7 +445,152 @@ const saleSchema =
 
             /*
             ====================================================
-            TOTAL
+            LOYALTY POINTS REDEEMED
+            ====================================================
+
+            Example:
+
+            40 points used
+            ====================================================
+            */
+
+            loyaltyPointsRedeemed: {
+
+                type:
+                    Number,
+
+                default:
+                    0,
+
+                min:
+                    0,
+
+            },
+
+
+            /*
+            ====================================================
+            LOYALTY DISCOUNT
+            ====================================================
+
+            Example:
+
+            40 points
+            = ₱40 loyalty discount
+            ====================================================
+            */
+
+            loyaltyDiscount: {
+
+                type:
+                    Number,
+
+                default:
+                    0,
+
+                min:
+                    0,
+
+            },
+
+
+            /*
+            ====================================================
+            LOYALTY POINTS EARNED
+            ====================================================
+
+            Example:
+
+            ₱190 final spend
+            = 1 point
+            ====================================================
+            */
+
+            loyaltyPointsEarned: {
+
+                type:
+                    Number,
+
+                default:
+                    0,
+
+                min:
+                    0,
+
+            },
+
+
+            /*
+            ====================================================
+            LOYALTY EARNED POINTS REVERSED
+            ====================================================
+
+            Used for:
+
+            - void
+            - full refund
+
+            Prevents duplicate reversal.
+            ====================================================
+            */
+
+            loyaltyEarnedPointsReversed: {
+
+                type:
+                    Number,
+
+                default:
+                    0,
+
+                min:
+                    0,
+
+            },
+
+
+            /*
+            ====================================================
+            REDEEMED POINTS RESTORED
+            ====================================================
+
+            Used when a sale is:
+
+            - voided
+            - fully refunded
+            ====================================================
+            */
+
+            loyaltyRedeemedPointsRestored: {
+
+                type:
+                    Number,
+
+                default:
+                    0,
+
+                min:
+                    0,
+
+            },
+
+
+            /*
+            ====================================================
+            FINAL TOTAL
+            ====================================================
+
+            This is the FINAL amount after:
+
+            normal discount
+            AND
+            loyalty discount
+
+            Example:
+
+            subtotal             ₱230
+            loyalty discount      ₱40
+            --------------------------
+            total                ₱190
             ====================================================
             */
 
@@ -447,7 +673,20 @@ const saleSchema =
 
             /*
             ====================================================
-            NOTES
+            SALE NOTES
+            ====================================================
+
+            General notes for the whole sale.
+
+            This is different from:
+
+            items[].note
+
+            items[].note
+            → description of one Grocery/open-price line
+
+            sale.notes
+            → note for the entire transaction
             ====================================================
             */
 
@@ -504,11 +743,26 @@ INDEXES
 ============================================================
 */
 
+
+/*
+------------------------------------------------------------
+RECENT SALES
+------------------------------------------------------------
+*/
+
 saleSchema.index({
+
     createdAt:
         -1,
+
 });
 
+
+/*
+------------------------------------------------------------
+STATUS + DATE
+------------------------------------------------------------
+*/
 
 saleSchema.index({
 
@@ -521,9 +775,45 @@ saleSchema.index({
 });
 
 
+/*
+------------------------------------------------------------
+CASHIER SALES HISTORY
+------------------------------------------------------------
+*/
+
 saleSchema.index({
 
     cashier:
+        1,
+
+    createdAt:
+        -1,
+
+});
+
+
+/*
+------------------------------------------------------------
+CUSTOMER PURCHASE HISTORY
+------------------------------------------------------------
+
+Used by Customers page for:
+
+- purchases today
+- purchases this week
+- purchases this month
+- purchases this year
+- lifetime spending
+- transaction count
+- average purchase
+- last purchase
+- loyalty history linkage
+------------------------------------------------------------
+*/
+
+saleSchema.index({
+
+    customer:
         1,
 
     createdAt:
@@ -538,7 +828,11 @@ EXPORT
 ============================================================
 */
 
-export default mongoose.model(
-    "Sale",
-    saleSchema
-);
+const Sale =
+    mongoose.model(
+        "Sale",
+        saleSchema
+    );
+
+
+export default Sale;

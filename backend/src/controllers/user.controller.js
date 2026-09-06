@@ -1,4 +1,5 @@
 import userService from "../services/user.service.js";
+
 import ApiResponse from "../utils/ApiResponse.js";
 
 
@@ -8,35 +9,43 @@ GET ALL USERS
 ==========================================================
 */
 
-const getUsers = async (
-    req,
-    res,
-    next
-) => {
+const getUsers =
+    async (
+        req,
+        res,
+        next
+    ) => {
 
-    try {
+        try {
 
-        const users =
-            await userService.getUsers();
+            const users =
+                await userService
+                    .getUsers();
 
 
-        res.status(200).json(
+            res
+                .status(
+                    200
+                )
+                .json(
+                    new ApiResponse(
+                        true,
+                        "Users retrieved successfully",
+                        users
+                    )
+                );
 
-            new ApiResponse(
-                true,
-                "Users retrieved successfully",
-                users
-            )
+        } catch (
+            error
+        ) {
 
-        );
+            next(
+                error
+            );
 
-    } catch (error) {
+        }
 
-        next(error);
-
-    }
-
-};
+    };
 
 
 /*
@@ -45,37 +54,45 @@ GET USER BY ID
 ==========================================================
 */
 
-const getUserById = async (
-    req,
-    res,
-    next
-) => {
+const getUserById =
+    async (
+        req,
+        res,
+        next
+    ) => {
 
-    try {
+        try {
 
-        const user =
-            await userService.getUserById(
-                req.params.id
+            const user =
+                await userService
+                    .getUserById(
+                        req.params.id
+                    );
+
+
+            res
+                .status(
+                    200
+                )
+                .json(
+                    new ApiResponse(
+                        true,
+                        "User retrieved successfully",
+                        user
+                    )
+                );
+
+        } catch (
+            error
+        ) {
+
+            next(
+                error
             );
 
+        }
 
-        res.status(200).json(
-
-            new ApiResponse(
-                true,
-                "User retrieved successfully",
-                user
-            )
-
-        );
-
-    } catch (error) {
-
-        next(error);
-
-    }
-
-};
+    };
 
 
 /*
@@ -84,80 +101,104 @@ CREATE USER
 ==========================================================
 */
 
-const createUser = async (
-    req,
-    res,
-    next
-) => {
+const createUser =
+    async (
+        req,
+        res,
+        next
+    ) => {
 
-    try {
+        try {
 
-        const user =
-            await userService.createUser(
-                req.body
+            const user =
+                await userService
+                    .createUser(
+                        req.body
+                    );
+
+
+            res
+                .status(
+                    201
+                )
+                .json(
+                    new ApiResponse(
+                        true,
+                        "User created successfully",
+                        user
+                    )
+                );
+
+        } catch (
+            error
+        ) {
+
+            next(
+                error
             );
 
+        }
 
-        res.status(201).json(
-
-            new ApiResponse(
-                true,
-                "User created successfully",
-                user
-            )
-
-        );
-
-    } catch (error) {
-
-        next(error);
-
-    }
-
-};
+    };
 
 
 /*
 ==========================================================
 UPDATE USER
 ==========================================================
+
+Can update:
+
+- name
+- username
+- role
+- profile
+- rfidUid
+- permissions
+- isActive
+==========================================================
 */
 
-const updateUser = async (
-    req,
-    res,
-    next
-) => {
+const updateUser =
+    async (
+        req,
+        res,
+        next
+    ) => {
 
-    try {
+        try {
 
-        const user =
-            await userService.updateUser(
+            const user =
+                await userService
+                    .updateUser(
+                        req.params.id,
+                        req.body
+                    );
 
-                req.params.id,
 
-                req.body
+            res
+                .status(
+                    200
+                )
+                .json(
+                    new ApiResponse(
+                        true,
+                        "User updated successfully",
+                        user
+                    )
+                );
 
+        } catch (
+            error
+        ) {
+
+            next(
+                error
             );
 
+        }
 
-        res.status(200).json(
-
-            new ApiResponse(
-                true,
-                "User updated successfully",
-                user
-            )
-
-        );
-
-    } catch (error) {
-
-        next(error);
-
-    }
-
-};
+    };
 
 
 /*
@@ -166,42 +207,46 @@ CHANGE PASSWORD
 ==========================================================
 */
 
-const updatePassword = async (
-    req,
-    res,
-    next
-) => {
+const updatePassword =
+    async (
+        req,
+        res,
+        next
+    ) => {
 
-    try {
+        try {
 
-        const user =
-            await userService.updatePassword(
+            const user =
+                await userService
+                    .updatePassword(
+                        req.params.id,
+                        req.body.password
+                    );
 
-                req.params.id,
 
-                req.body.password
+            res
+                .status(
+                    200
+                )
+                .json(
+                    new ApiResponse(
+                        true,
+                        "Password updated successfully",
+                        user
+                    )
+                );
 
+        } catch (
+            error
+        ) {
+
+            next(
+                error
             );
 
+        }
 
-        res.status(200).json(
-
-            new ApiResponse(
-                true,
-                "Password updated successfully",
-                user
-
-            )
-
-        );
-
-    } catch (error) {
-
-        next(error);
-
-    }
-
-};
+    };
 
 
 /*
@@ -210,37 +255,45 @@ DISABLE USER
 ==========================================================
 */
 
-const disableUser = async (
-    req,
-    res,
-    next
-) => {
+const disableUser =
+    async (
+        req,
+        res,
+        next
+    ) => {
 
-    try {
+        try {
 
-        const user =
-            await userService.disableUser(
-                req.params.id
+            const user =
+                await userService
+                    .disableUser(
+                        req.params.id
+                    );
+
+
+            res
+                .status(
+                    200
+                )
+                .json(
+                    new ApiResponse(
+                        true,
+                        "User disabled successfully",
+                        user
+                    )
+                );
+
+        } catch (
+            error
+        ) {
+
+            next(
+                error
             );
 
+        }
 
-        res.status(200).json(
-
-            new ApiResponse(
-                true,
-                "User disabled successfully",
-                user
-            )
-
-        );
-
-    } catch (error) {
-
-        next(error);
-
-    }
-
-};
+    };
 
 
 /*
@@ -249,37 +302,116 @@ ENABLE USER
 ==========================================================
 */
 
-const enableUser = async (
-    req,
-    res,
-    next
-) => {
+const enableUser =
+    async (
+        req,
+        res,
+        next
+    ) => {
 
-    try {
+        try {
 
-        const user =
-            await userService.enableUser(
-                req.params.id
+            const user =
+                await userService
+                    .enableUser(
+                        req.params.id
+                    );
+
+
+            res
+                .status(
+                    200
+                )
+                .json(
+                    new ApiResponse(
+                        true,
+                        "User enabled successfully",
+                        user
+                    )
+                );
+
+        } catch (
+            error
+        ) {
+
+            next(
+                error
             );
 
+        }
 
-        res.status(200).json(
+    };
 
-            new ApiResponse(
-                true,
-                "User enabled successfully",
-                user
-            )
+    const uploadProfileImage =
+    async (
+        req,
+        res,
+        next
+    ) => {
 
-        );
+        try {
 
-    } catch (error) {
+            if (
+                !req.file
+            ) {
 
-        next(error);
+                return res
+                    .status(
+                        400
+                    )
+                    .json({
 
-    }
+                        success:
+                            false,
 
-};
+                        message:
+                            "No profile image uploaded.",
+
+                    });
+
+            }
+
+
+            const imagePath =
+                `/uploads/profiles/${req.file.filename}`;
+
+
+            const user =
+                await userService
+                    .updateUser(
+                        req.params.id,
+                        {
+                            profile: {
+                                image:
+                                    imagePath,
+                            },
+                        }
+                    );
+
+
+            res
+                .status(
+                    200
+                )
+                .json(
+                    new ApiResponse(
+                        true,
+                        "Profile image uploaded successfully",
+                        user
+                    )
+                );
+
+        } catch (
+            error
+        ) {
+
+            next(
+                error
+            );
+
+        }
+
+    };
 
 
 /*
@@ -303,5 +435,7 @@ export default {
     disableUser,
 
     enableUser,
+
+    uploadProfileImage
 
 };

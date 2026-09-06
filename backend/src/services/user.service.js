@@ -1,6 +1,8 @@
 import bcrypt from "bcryptjs";
 
-import User from "../models/user.model.js";
+import User, {
+    normalizeRfidUid,
+} from "../models/user.model.js";
 
 import ApiError from "../utils/ApiError.js";
 
@@ -28,21 +30,37 @@ PERMISSION KEYS
 */
 
 const PERMISSION_KEYS = [
+
     "dashboard",
+
     "products",
+
     "inventory",
+
     "pos",
+
     "sales",
+
     "customers",
+
     "suppliers",
+
     "workers",
+
     "ledger",
+
     "reports",
+
     "users",
+
     "settings",
+
     "salesRefund",
+
     "salesVoid",
+
     "salesReprint",
+
 ];
 
 
@@ -50,116 +68,307 @@ const PERMISSION_KEYS = [
 ============================================================
 ROLE DEFAULT PERMISSIONS
 ============================================================
-
-These are only presets.
-
-You can still manually change permissions for any
-non-admin user.
-============================================================
 */
 
 const ROLE_PERMISSION_PRESETS = {
 
     admin: {
-    dashboard: true,
-    products: true,
-    inventory: true,
-    pos: true,
-    sales: true,
 
-    salesRefund: true,
-    salesVoid: true,
-    salesReprint: true,
+        dashboard:
+            true,
 
-    customers: true,
-    suppliers: true,
-    workers: true,
-    ledger: true,
-    reports: true,
-    users: true,
-    settings: true,
-},
+        products:
+            true,
+
+        inventory:
+            true,
+
+        pos:
+            true,
+
+        sales:
+            true,
+
+        customers:
+            true,
+
+        suppliers:
+            true,
+
+        workers:
+            true,
+
+        ledger:
+            true,
+
+        reports:
+            true,
+
+        users:
+            true,
+
+        settings:
+            true,
+
+        salesRefund:
+            true,
+
+        salesVoid:
+            true,
+
+        salesReprint:
+            true,
+
+    },
+
 
     manager: {
-        dashboard: true,
-        products: true,
-        inventory: true,
-        pos: true,
-        sales: true,
-        customers: true,
-        suppliers: true,
-        workers: true,
-        ledger: true,
-        reports: true,
-        users: false,
-        settings: false,
+
+        dashboard:
+            true,
+
+        products:
+            true,
+
+        inventory:
+            true,
+
+        pos:
+            true,
+
+        sales:
+            true,
+
+        customers:
+            true,
+
+        suppliers:
+            true,
+
+        workers:
+            true,
+
+        ledger:
+            true,
+
+        reports:
+            true,
+
+        users:
+            false,
+
+        settings:
+            false,
+
+        salesRefund:
+            true,
+
+        salesVoid:
+            false,
+
+        salesReprint:
+            true,
+
     },
+
 
     cashier: {
-    dashboard: false,
-    products: false,
-    inventory: false,
 
-    pos: true,
+        dashboard:
+            false,
 
-    sales: true,
+        products:
+            false,
 
-    salesRefund: false,
-    salesVoid: false,
-    salesReprint: false,
+        inventory:
+            false,
 
-    customers: false,
-    suppliers: false,
-    workers: false,
-    ledger: false,
-    reports: false,
-    users: false,
-    settings: false,
-},
+        pos:
+            true,
+
+        sales:
+            true,
+
+        customers:
+            false,
+
+        suppliers:
+            false,
+
+        workers:
+            false,
+
+        ledger:
+            false,
+
+        reports:
+            false,
+
+        users:
+            false,
+
+        settings:
+            false,
+
+        salesRefund:
+            false,
+
+        salesVoid:
+            false,
+
+        salesReprint:
+            false,
+
+    },
+
 
     inventory: {
-        dashboard: true,
-        products: true,
-        inventory: true,
-        pos: false,
-        sales: false,
-        customers: false,
-        suppliers: true,
-        workers: false,
-        ledger: false,
-        reports: true,
-        users: false,
-        settings: false,
+
+        dashboard:
+            true,
+
+        products:
+            true,
+
+        inventory:
+            true,
+
+        pos:
+            false,
+
+        sales:
+            false,
+
+        customers:
+            false,
+
+        suppliers:
+            true,
+
+        workers:
+            false,
+
+        ledger:
+            false,
+
+        reports:
+            true,
+
+        users:
+            false,
+
+        settings:
+            false,
+
+        salesRefund:
+            false,
+
+        salesVoid:
+            false,
+
+        salesReprint:
+            false,
+
     },
+
 
     payroll: {
-        dashboard: true,
-        products: false,
-        inventory: false,
-        pos: false,
-        sales: false,
-        customers: false,
-        suppliers: false,
-        workers: true,
-        ledger: true,
-        reports: true,
-        users: false,
-        settings: false,
+
+        dashboard:
+            true,
+
+        products:
+            false,
+
+        inventory:
+            false,
+
+        pos:
+            false,
+
+        sales:
+            false,
+
+        customers:
+            false,
+
+        suppliers:
+            false,
+
+        workers:
+            true,
+
+        ledger:
+            true,
+
+        reports:
+            true,
+
+        users:
+            false,
+
+        settings:
+            false,
+
+        salesRefund:
+            false,
+
+        salesVoid:
+            false,
+
+        salesReprint:
+            false,
+
     },
 
+
     custom: {
-        dashboard: true,
-        products: false,
-        inventory: false,
-        pos: false,
-        sales: false,
-        customers: false,
-        suppliers: false,
-        workers: false,
-        ledger: false,
-        reports: false,
-        users: false,
-        settings: false,
+
+        dashboard:
+            true,
+
+        products:
+            false,
+
+        inventory:
+            false,
+
+        pos:
+            false,
+
+        sales:
+            false,
+
+        customers:
+            false,
+
+        suppliers:
+            false,
+
+        workers:
+            false,
+
+        ledger:
+            false,
+
+        reports:
+            false,
+
+        users:
+            false,
+
+        settings:
+            false,
+
+        salesRefund:
+            false,
+
+        salesVoid:
+            false,
+
+        salesReprint:
+            false,
+
     },
 
 };
@@ -168,13 +377,6 @@ const ROLE_PERMISSION_PRESETS = {
 /*
 ============================================================
 NORMALIZE PERMISSIONS
-============================================================
-
-Ensures:
-
-- only known permission keys are accepted
-- all values become booleans
-- missing keys fall back to role defaults
 ============================================================
 */
 
@@ -190,7 +392,8 @@ const normalizePermissions = (
         ROLE_PERMISSION_PRESETS.custom;
 
 
-    const normalized = {};
+    const normalized =
+        {};
 
 
     for (
@@ -221,7 +424,7 @@ const normalizePermissions = (
 
 
     /*
-    Admin always gets full access.
+    Admin always full access.
     */
 
     if (
@@ -243,6 +446,35 @@ const normalizePermissions = (
 
 
     return normalized;
+
+};
+
+
+/*
+============================================================
+NORMALIZE PROFILE
+============================================================
+*/
+
+const normalizeProfile = (
+    profile = {}
+) => {
+
+    return {
+
+        image:
+            String(
+                profile?.image ||
+                ""
+            ).trim(),
+
+        nickname:
+            String(
+                profile?.nickname ||
+                ""
+            ).trim(),
+
+    };
 
 };
 
@@ -274,8 +506,54 @@ const sanitizeUser = (
         role:
             user.role,
 
+
+        /*
+        ====================================================
+        PROFILE
+        ====================================================
+        */
+
+        profile: {
+
+            image:
+                user.profile
+                    ?.image ||
+                "",
+
+            nickname:
+                user.profile
+                    ?.nickname ||
+                "",
+
+        },
+
+
+        /*
+        ====================================================
+        RFID
+        ====================================================
+        */
+
+        rfidUid:
+            user.rfidUid ||
+            "",
+
+
+        /*
+        ====================================================
+        PERMISSIONS
+        ====================================================
+        */
+
         permissions:
             user.permissions,
+
+
+        /*
+        ====================================================
+        STATUS
+        ====================================================
+        */
 
         isActive:
             user.isActive,
@@ -293,6 +571,83 @@ const sanitizeUser = (
 
 /*
 ============================================================
+CHECK RFID DUPLICATE
+============================================================
+*/
+
+const ensureRfidAvailable =
+    async (
+        rfidUid,
+        excludeUserId =
+            null
+    ) => {
+
+        const normalizedUid =
+            normalizeRfidUid(
+                rfidUid
+            );
+
+
+        /*
+        Empty UID means no card assigned.
+        */
+
+        if (
+            !normalizedUid
+        ) {
+
+            return "";
+
+        }
+
+
+        const query = {
+
+            rfidUid:
+                normalizedUid,
+
+        };
+
+
+        if (
+            excludeUserId
+        ) {
+
+            query._id = {
+
+                $ne:
+                    excludeUserId,
+
+            };
+
+        }
+
+
+        const existingUser =
+            await User.findOne(
+                query
+            );
+
+
+        if (
+            existingUser
+        ) {
+
+            throw new ApiError(
+                409,
+                "This RFID/NFC card is already assigned to another user."
+            );
+
+        }
+
+
+        return normalizedUid;
+
+    };
+
+
+/*
+============================================================
 GET ALL USERS
 ============================================================
 */
@@ -302,16 +657,22 @@ const getUsers =
 
         const users =
             await User.find()
+
                 .select(
                     "-password"
                 )
+
                 .sort({
+
                     createdAt:
                         -1,
+
                 });
 
 
-        return users;
+        return users.map(
+            sanitizeUser
+        );
 
     };
 
@@ -330,10 +691,7 @@ const getUserById =
         const user =
             await User.findById(
                 id
-            )
-                .select(
-                    "-password"
-                );
+            );
 
 
         if (
@@ -348,7 +706,9 @@ const getUserById =
         }
 
 
-        return user;
+        return sanitizeUser(
+            user
+        );
 
     };
 
@@ -366,12 +726,14 @@ const createUser =
         password,
         role = "cashier",
         permissions,
+        profile,
+        rfidUid = "",
     }) => {
 
         /*
-        --------------------------------------------------------
+        ====================================================
         REQUIRED FIELDS
-        --------------------------------------------------------
+        ====================================================
         */
 
         if (
@@ -389,9 +751,9 @@ const createUser =
 
 
         /*
-        --------------------------------------------------------
+        ====================================================
         NORMALIZE USERNAME
-        --------------------------------------------------------
+        ====================================================
         */
 
         const normalizedUsername =
@@ -415,15 +777,17 @@ const createUser =
 
 
         /*
-        --------------------------------------------------------
+        ====================================================
         DUPLICATE USERNAME
-        --------------------------------------------------------
+        ====================================================
         */
 
         const existingUser =
             await User.findOne({
+
                 username:
                     normalizedUsername,
+
             });
 
 
@@ -440,9 +804,9 @@ const createUser =
 
 
         /*
-        --------------------------------------------------------
-        VALIDATE ROLE
-        --------------------------------------------------------
+        ====================================================
+        ROLE
+        ====================================================
         */
 
         if (
@@ -460,9 +824,9 @@ const createUser =
 
 
         /*
-        --------------------------------------------------------
+        ====================================================
         PASSWORD
-        --------------------------------------------------------
+        ====================================================
         */
 
         if (
@@ -486,9 +850,21 @@ const createUser =
 
 
         /*
-        --------------------------------------------------------
+        ====================================================
+        RFID / NFC
+        ====================================================
+        */
+
+        const normalizedRfidUid =
+            await ensureRfidAvailable(
+                rfidUid
+            );
+
+
+        /*
+        ====================================================
         PERMISSIONS
-        --------------------------------------------------------
+        ====================================================
         */
 
         const normalizedPermissions =
@@ -499,9 +875,21 @@ const createUser =
 
 
         /*
-        --------------------------------------------------------
-        CREATE USER
-        --------------------------------------------------------
+        ====================================================
+        PROFILE
+        ====================================================
+        */
+
+        const normalizedProfile =
+            normalizeProfile(
+                profile
+            );
+
+
+        /*
+        ====================================================
+        CREATE
+        ====================================================
         */
 
         const user =
@@ -519,6 +907,12 @@ const createUser =
                     hashedPassword,
 
                 role,
+
+                profile:
+                    normalizedProfile,
+
+                rfidUid:
+                    normalizedRfidUid,
 
                 permissions:
                     normalizedPermissions,
@@ -550,6 +944,8 @@ const updateUser =
             username,
             role,
             permissions,
+            profile,
+            rfidUid,
             isActive,
         }
     ) => {
@@ -573,9 +969,9 @@ const updateUser =
 
 
         /*
-        --------------------------------------------------------
+        ====================================================
         NAME
-        --------------------------------------------------------
+        ====================================================
         */
 
         if (
@@ -608,9 +1004,9 @@ const updateUser =
 
 
         /*
-        --------------------------------------------------------
+        ====================================================
         USERNAME
-        --------------------------------------------------------
+        ====================================================
         */
 
         if (
@@ -645,7 +1041,10 @@ const updateUser =
                         normalizedUsername,
 
                     _id: {
-                        $ne: id,
+
+                        $ne:
+                            id,
+
                     },
 
                 });
@@ -670,9 +1069,9 @@ const updateUser =
 
 
         /*
-        --------------------------------------------------------
+        ====================================================
         ROLE
-        --------------------------------------------------------
+        ====================================================
         */
 
         if (
@@ -702,16 +1101,90 @@ const updateUser =
 
 
         /*
-        --------------------------------------------------------
+        ====================================================
+        PROFILE
+        ====================================================
+
+        Allows partial updates.
+
+        Example:
+
+        {
+            profile: {
+                nickname: "Boss"
+            }
+        }
+
+        Existing image remains unchanged.
+        ====================================================
+        */
+
+        if (
+            profile !==
+            undefined
+        ) {
+
+            if (
+                profile.nickname !==
+                undefined
+            ) {
+
+                user.profile.nickname =
+                    String(
+                        profile.nickname ||
+                        ""
+                    ).trim();
+
+            }
+
+
+            if (
+                profile.image !==
+                undefined
+            ) {
+
+                user.profile.image =
+                    String(
+                        profile.image ||
+                        ""
+                    ).trim();
+
+            }
+
+        }
+
+
+        /*
+        ====================================================
+        RFID / NFC
+        ====================================================
+
+        Empty string removes the card.
+        ====================================================
+        */
+
+        if (
+            rfidUid !==
+            undefined
+        ) {
+
+            const normalizedUid =
+                await ensureRfidAvailable(
+                    rfidUid,
+                    user._id
+                );
+
+
+            user.rfidUid =
+                normalizedUid;
+
+        }
+
+
+        /*
+        ====================================================
         PERMISSIONS
-        --------------------------------------------------------
-
-        If permissions are provided:
-        use them.
-
-        If role changed but permissions were not provided:
-        apply the role preset.
-        --------------------------------------------------------
+        ====================================================
         */
 
         if (
@@ -740,9 +1213,9 @@ const updateUser =
 
 
         /*
-        --------------------------------------------------------
+        ====================================================
         ACTIVE STATUS
-        --------------------------------------------------------
+        ====================================================
         */
 
         if (
@@ -759,10 +1232,12 @@ const updateUser =
 
 
         /*
-        Important:
+        ====================================================
+        SAVE
+        ====================================================
 
-        save() ensures your User model's admin permission
-        hook still runs.
+        save() also runs the admin permission hook.
+        ====================================================
         */
 
         await user.save();

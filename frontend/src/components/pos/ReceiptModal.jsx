@@ -3,6 +3,7 @@ import { useState } from "react";
 import {
     FaPrint,
     FaTrash,
+    FaStar,
 } from "react-icons/fa";
 
 import useSaleStore from "../../store/sale.store";
@@ -32,6 +33,33 @@ const formatMoney = (value) => {
 
 /*
 ============================================================
+GET ITEM NOTE
+============================================================
+
+The POS cart stores Grocery / Open Price notes as:
+
+item.note
+
+This helper safely handles:
+- missing notes
+- null
+- undefined
+- accidental spaces
+============================================================
+*/
+
+const getItemNote = (item) => {
+
+    return String(
+        item?.note ??
+        ""
+    ).trim();
+
+};
+
+
+/*
+============================================================
 RECEIPT MODAL
 ============================================================
 */
@@ -45,19 +73,6 @@ function ReceiptModal({
     /*
     ========================================================
     ACTION PERMISSIONS
-    ========================================================
-
-    These come from SalesPage.
-
-    Admin:
-        canRefund = true
-        canVoid = true
-        canReprint = true
-
-    Restricted cashier:
-        false
-        false
-        false
     ========================================================
     */
 
@@ -109,6 +124,20 @@ function ReceiptModal({
         return null;
 
     }
+
+
+    /*
+    ========================================================
+    SAFE SALE ITEMS
+    ========================================================
+    */
+
+    const saleItems =
+        Array.isArray(
+            sale.items
+        )
+            ? sale.items
+            : [];
 
 
     /*
@@ -204,6 +233,87 @@ function ReceiptModal({
 
     /*
     ========================================================
+    CUSTOMER INFORMATION
+    ========================================================
+    */
+
+    const hasCustomer =
+        Boolean(
+            sale.customer
+        );
+
+
+    const customerName =
+        sale.customer
+            ?.name ||
+        "";
+
+
+    const customerCode =
+        sale.customer
+            ?.customerCode ||
+        "";
+
+
+    /*
+    ========================================================
+    LOYALTY VALUES
+    ========================================================
+
+    These values come from the backend Sale document.
+
+    loyaltyPointsRedeemed
+    loyaltyDiscount
+    loyaltyPointsEarned
+
+    The populated customer may also contain the customer's
+    current loyaltyPoints balance.
+    ========================================================
+    */
+
+    const loyaltyPointsRedeemed =
+        Number(
+            sale.loyaltyPointsRedeemed ||
+            0
+        );
+
+
+    const loyaltyDiscount =
+        Number(
+            sale.loyaltyDiscount ||
+            0
+        );
+
+
+    const loyaltyPointsEarned =
+        Number(
+            sale.loyaltyPointsEarned ||
+            0
+        );
+
+
+    const customerCurrentPoints =
+        Number(
+            sale.customer
+                ?.loyaltyPoints ||
+            0
+        );
+
+
+    const hasLoyaltyActivity =
+        hasCustomer &&
+        (
+            loyaltyPointsRedeemed >
+                0 ||
+            loyaltyPointsEarned >
+                0 ||
+            loyaltyDiscount >
+                0
+        );
+
+
+    /*
+    ========================================================
     RECEIPT TOTALS
     ========================================================
     */
@@ -215,6 +325,23 @@ function ReceiptModal({
         );
 
 
+    /*
+    --------------------------------------------------------
+    IMPORTANT
+
+    sale.total is already the FINAL checkout total.
+
+    Example:
+
+    subtotal = 230
+    loyaltyDiscount = 40
+    total = 190
+
+    We therefore should NOT subtract the loyalty discount
+    from sale.total again.
+    --------------------------------------------------------
+    */
+
     const originalTotal =
         Number(
             sale.total ||
@@ -223,22 +350,24 @@ function ReceiptModal({
 
 
     const refundedAmount =
-        Array.isArray(
-            sale.items
-        )
-            ? sale.items.reduce(
-                (
-                    sum,
+        saleItems.reduce(
+            (
+                sum,
+                item
+            ) =>
+                sum +
+                getRefundedItemAmount(
                     item
-                ) =>
-                    sum +
-                    getRefundedItemAmount(
-                        item
-                    ),
-                0
-            )
-            : 0;
+                ),
+            0
+        );
 
+
+    /*
+    ========================================================
+    CURRENT SUBTOTAL AFTER REFUNDS
+    ========================================================
+    */
 
     const currentSubtotal =
         Math.max(
@@ -248,16 +377,32 @@ function ReceiptModal({
         );
 
 
+    /*
+    ========================================================
+    CURRENT TOTAL
+    ========================================================
+
+    For an untouched sale:
+
+        currentTotal = sale.total
+
+    For refunded sales:
+
+        sale.total - refunded amount
+
+    For voided sales:
+
+        0
+    ========================================================
+    */
+
     const currentTotal =
         sale.status ===
         "VOIDED"
             ? 0
             : Math.max(
-                currentSubtotal -
-                Number(
-                    sale.discount ||
-                    0
-                ),
+                originalTotal -
+                refundedAmount,
                 0
             );
 
@@ -284,13 +429,6 @@ function ReceiptModal({
 
     const handleRefund =
         async () => {
-
-            /*
-            Extra frontend protection.
-
-            Even if this function somehow gets triggered,
-            a user without permission cannot continue.
-            */
 
             if (
                 !canRefund
@@ -328,10 +466,6 @@ function ReceiptModal({
 
                 };
 
-
-                /*
-                Use saleItemId whenever possible.
-                */
 
                 if (
                     refundItem._id
@@ -655,6 +789,8 @@ function ReceiptModal({
                 className="
                     modal-box
                     max-w-md
+                    max-h-[90vh]
+                    overflow-y-auto
                 "
             >
 
@@ -713,18 +849,20 @@ function ReceiptModal({
                     </div>
 
 
-                    <div className="flex justify-between">
+                    <div className="flex justify-between gap-4">
 
                         <span>
                             Date
                         </span>
 
-                        <span>
+                        <span className="text-right">
 
                             {
-                                new Date(
-                                    sale.createdAt
-                                ).toLocaleString()
+                                sale.createdAt
+                                    ? new Date(
+                                        sale.createdAt
+                                    ).toLocaleString()
+                                    : "—"
                             }
 
                         </span>
@@ -732,23 +870,68 @@ function ReceiptModal({
                     </div>
 
 
-                    <div className="flex justify-between">
+                    <div className="flex justify-between gap-4">
 
                         <span>
                             Cashier
                         </span>
 
-                        <span>
+                        <span className="text-right">
 
                             {
                                 sale.cashier
                                     ?.name ||
+                                sale.cashier
+                                    ?.username ||
                                 "Cashier"
                             }
 
                         </span>
 
                     </div>
+
+
+                    {/* ======================================
+                        CUSTOMER
+                    ====================================== */}
+
+                    <div className="flex justify-between gap-4">
+
+                        <span>
+                            Customer
+                        </span>
+
+                        <span className="text-right">
+
+                            {
+                                hasCustomer
+                                    ? customerName
+                                    : "Walk-in"
+                            }
+
+                        </span>
+
+                    </div>
+
+
+                    {
+                        hasCustomer &&
+                        customerCode && (
+
+                            <div className="flex justify-between">
+
+                                <span>
+                                    Customer ID
+                                </span>
+
+                                <span>
+                                    {customerCode}
+                                </span>
+
+                            </div>
+
+                        )
+                    }
 
 
                     <div className="flex justify-between">
@@ -783,7 +966,7 @@ function ReceiptModal({
                 >
 
                     {
-                        sale.items.map(
+                        saleItems.map(
                             (
                                 item,
                                 index
@@ -819,6 +1002,12 @@ function ReceiptModal({
                                     );
 
 
+                                const itemNote =
+                                    getItemNote(
+                                        item
+                                    );
+
+
                                 return (
 
                                     <div
@@ -830,6 +1019,7 @@ function ReceiptModal({
                                         className="
                                             rounded-lg
                                             border
+                                            border-base-300
                                             p-3
                                         "
                                     >
@@ -842,16 +1032,30 @@ function ReceiptModal({
                                             "
                                         >
 
-                                            <div className="min-w-0">
+                                            <div className="min-w-0 flex-1">
 
-                                                <p className="font-medium">
+                                                {/* ==========================
+                                                    PRODUCT NAME
+                                                ========================== */}
+
+                                                <p
+                                                    className="
+                                                        break-words
+                                                        font-medium
+                                                    "
+                                                >
 
                                                     {
-                                                        item.name
+                                                        item.name ||
+                                                        "Product"
                                                     }
 
                                                 </p>
 
+
+                                                {/* ==========================
+                                                    QUANTITY × UNIT PRICE
+                                                ========================== */}
 
                                                 <p
                                                     className="
@@ -875,6 +1079,10 @@ function ReceiptModal({
                                                 </p>
 
 
+                                                {/* ==========================
+                                                    OPEN PRICE
+                                                ========================== */}
+
                                                 {
                                                     item.isOpenPrice && (
 
@@ -882,6 +1090,7 @@ function ReceiptModal({
                                                             className="
                                                                 mt-0.5
                                                                 text-[10px]
+                                                                font-medium
                                                                 text-purple-500
                                                             "
                                                         >
@@ -894,13 +1103,75 @@ function ReceiptModal({
                                                 }
 
 
+                                                {/* ==========================
+                                                    ITEM NOTE
+                                                ========================== */}
+
+                                                {
+                                                    itemNote && (
+
+                                                        <div
+                                                            className="
+                                                                mt-2
+                                                                max-w-full
+                                                                rounded-md
+                                                                border
+                                                                border-base-300
+                                                                bg-base-200/50
+                                                                px-2
+                                                                py-1.5
+                                                            "
+                                                        >
+
+                                                            <p
+                                                                className="
+                                                                    text-[9px]
+                                                                    font-semibold
+                                                                    uppercase
+                                                                    tracking-wide
+                                                                    text-base-content/40
+                                                                "
+                                                            >
+
+                                                                Note
+
+                                                            </p>
+
+
+                                                            <p
+                                                                className="
+                                                                    mt-0.5
+                                                                    whitespace-pre-wrap
+                                                                    break-words
+                                                                    text-xs
+                                                                    leading-relaxed
+                                                                    text-base-content/80
+                                                                "
+                                                            >
+
+                                                                {
+                                                                    itemNote
+                                                                }
+
+                                                            </p>
+
+                                                        </div>
+
+                                                    )
+                                                }
+
+
+                                                {/* ==========================
+                                                    REFUNDED INFORMATION
+                                                ========================== */}
+
                                                 {
                                                     refunded >
                                                     0 && (
 
                                                         <div
                                                             className="
-                                                                mt-1
+                                                                mt-2
                                                                 space-y-0.5
                                                             "
                                                         >
@@ -969,7 +1240,11 @@ function ReceiptModal({
                                             </div>
 
 
-                                            <div className="text-right">
+                                            {/* ==========================
+                                                ITEM TOTAL
+                                            ========================== */}
+
+                                            <div className="shrink-0 text-right">
 
                                                 {
                                                     refunded >
@@ -1031,12 +1306,6 @@ function ReceiptModal({
 
                                         {/* ==============================
                                             REFUND BUTTON
-
-                                            Only visible when:
-                                            1. User has salesRefund
-                                            2. Sale isn't voided
-                                            3. Sale isn't fully refunded
-                                            4. Item still has quantity
                                         ============================== */}
 
                                         {
@@ -1057,7 +1326,7 @@ function ReceiptModal({
                                                         btn
                                                         btn-warning
                                                         btn-xs
-                                                        mt-2
+                                                        mt-3
                                                     "
                                                     onClick={() =>
                                                         openRefund(
@@ -1078,6 +1347,30 @@ function ReceiptModal({
                                 );
 
                             }
+                        )
+                    }
+
+
+                    {
+                        saleItems.length ===
+                        0 && (
+
+                            <div
+                                className="
+                                    rounded-lg
+                                    border
+                                    border-base-300
+                                    py-8
+                                    text-center
+                                    text-sm
+                                    text-base-content/50
+                                "
+                            >
+
+                                No receipt items found.
+
+                            </div>
+
                         )
                     }
 
@@ -1190,6 +1483,10 @@ function ReceiptModal({
                     </div>
 
 
+                    {/* ======================================
+                        NORMAL DISCOUNT
+                    ====================================== */}
+
                     {
                         Number(
                             sale.discount ||
@@ -1209,6 +1506,84 @@ function ReceiptModal({
                                     {
                                         formatMoney(
                                             sale.discount
+                                        )
+                                    }
+
+                                </span>
+
+                            </div>
+
+                        )
+                    }
+
+
+                    {/* ======================================
+                        LOYALTY POINTS REDEEMED
+                    ====================================== */}
+
+                    {
+                        loyaltyPointsRedeemed >
+                        0 && (
+
+                            <div
+                                className="
+                                    flex
+                                    justify-between
+                                    text-sm
+                                "
+                            >
+
+                                <span>
+                                    Loyalty Redeemed
+                                </span>
+
+                                <span className="font-semibold">
+
+                                    {
+                                        loyaltyPointsRedeemed
+                                    }
+
+                                    {" pts"}
+
+                                </span>
+
+                            </div>
+
+                        )
+                    }
+
+
+                    {/* ======================================
+                        LOYALTY DISCOUNT
+                    ====================================== */}
+
+                    {
+                        loyaltyDiscount >
+                        0 && (
+
+                            <div
+                                className="
+                                    flex
+                                    justify-between
+                                    text-sm
+                                "
+                            >
+
+                                <span>
+                                    Loyalty Discount
+                                </span>
+
+                                <span
+                                    className="
+                                        font-semibold
+                                        text-warning
+                                    "
+                                >
+
+                                    -₱
+                                    {
+                                        formatMoney(
+                                            loyaltyDiscount
                                         )
                                     }
 
@@ -1253,6 +1628,10 @@ function ReceiptModal({
                         )
                     }
 
+
+                    {/* ======================================
+                        FINAL TOTAL
+                    ====================================== */}
 
                     <div
                         className="
@@ -1300,6 +1679,10 @@ function ReceiptModal({
                     </div>
 
 
+                    {/* ======================================
+                        PAYMENT
+                    ====================================== */}
+
                     <div className="flex justify-between">
 
                         <span>
@@ -1319,6 +1702,10 @@ function ReceiptModal({
 
                     </div>
 
+
+                    {/* ======================================
+                        CHANGE
+                    ====================================== */}
 
                     <div className="flex justify-between">
 
@@ -1348,6 +1735,179 @@ function ReceiptModal({
 
 
                 {/* ==========================================
+                    LOYALTY SUMMARY
+                ========================================== */}
+
+                {
+                    hasLoyaltyActivity && (
+
+                        <>
+
+                            <div className="divider" />
+
+
+                            <div
+                                className="
+                                    rounded-xl
+                                    border
+                                    border-warning/30
+                                    bg-warning/5
+                                    p-4
+                                "
+                            >
+
+                                <div
+                                    className="
+                                        mb-3
+                                        flex
+                                        items-center
+                                        gap-2
+                                    "
+                                >
+
+                                    <FaStar className="text-warning" />
+
+
+                                    <span className="font-bold">
+
+                                        Loyalty Rewards
+
+                                    </span>
+
+                                </div>
+
+
+                                <div
+                                    className="
+                                        space-y-2
+                                        text-sm
+                                    "
+                                >
+
+
+                                    {
+                                        loyaltyPointsRedeemed >
+                                        0 && (
+
+                                            <div className="flex justify-between">
+
+                                                <span className="text-base-content/60">
+
+                                                    Points Redeemed
+
+                                                </span>
+
+
+                                                <span className="font-semibold">
+
+                                                    -
+                                                    {
+                                                        loyaltyPointsRedeemed
+                                                    }
+
+                                                    {" pts"}
+
+                                                </span>
+
+                                            </div>
+
+                                        )
+                                    }
+
+
+                                    {
+                                        loyaltyDiscount >
+                                        0 && (
+
+                                            <div className="flex justify-between">
+
+                                                <span className="text-base-content/60">
+
+                                                    Reward Discount
+
+                                                </span>
+
+
+                                                <span className="font-semibold text-warning">
+
+                                                    -₱
+                                                    {
+                                                        formatMoney(
+                                                            loyaltyDiscount
+                                                        )
+                                                    }
+
+                                                </span>
+
+                                            </div>
+
+                                        )
+                                    }
+
+
+                                    <div className="flex justify-between">
+
+                                        <span className="text-base-content/60">
+
+                                            Points Earned
+
+                                        </span>
+
+
+                                        <span className="font-bold text-success">
+
+                                            +
+                                            {
+                                                loyaltyPointsEarned
+                                            }
+
+                                            {" pts"}
+
+                                        </span>
+
+                                    </div>
+
+
+                                    <div
+                                        className="
+                                            flex
+                                            justify-between
+                                            border-t
+                                            border-base-200
+                                            pt-2
+                                        "
+                                    >
+
+                                        <span className="font-semibold">
+
+                                            Current Points
+
+                                        </span>
+
+
+                                        <span className="font-bold">
+
+                                            {
+                                                customerCurrentPoints
+                                            }
+
+                                            {" pts"}
+
+                                        </span>
+
+                                    </div>
+
+                                </div>
+
+                            </div>
+
+                        </>
+
+                    )
+                }
+
+
+                {/* ==========================================
                     ACTIONS
                 ========================================== */}
 
@@ -1361,9 +1921,6 @@ function ReceiptModal({
 
                     {/* ======================================
                         VOID SALE
-
-                        Hidden completely when the user
-                        doesn't have salesVoid.
                     ====================================== */}
 
                     {
@@ -1406,9 +1963,6 @@ function ReceiptModal({
 
                     {/* ======================================
                         REPRINT
-
-                        Hidden completely when the user
-                        doesn't have salesReprint.
                     ====================================== */}
 
                     {
@@ -1437,9 +1991,6 @@ function ReceiptModal({
 
                     {/* ======================================
                         DONE
-
-                        Everyone who can view Sales can close
-                        the receipt.
                     ====================================== */}
 
                     <button
@@ -1461,8 +2012,6 @@ function ReceiptModal({
 
             {/* ==============================================
                 REFUND MODAL
-
-                Double protected with canRefund.
             ============================================== */}
 
             {
@@ -1504,6 +2053,63 @@ function ReceiptModal({
                                     }
 
                                 </p>
+
+
+                                {/* ==================================
+                                    REFUND ITEM NOTE
+                                ================================== */}
+
+                                {
+                                    getItemNote(
+                                        refundItem
+                                    ) && (
+
+                                        <div
+                                            className="
+                                                rounded-lg
+                                                border
+                                                border-base-300
+                                                bg-base-200/50
+                                                p-3
+                                            "
+                                        >
+
+                                            <p
+                                                className="
+                                                    text-[10px]
+                                                    font-semibold
+                                                    uppercase
+                                                    tracking-wide
+                                                    text-base-content/40
+                                                "
+                                            >
+
+                                                Item Note
+
+                                            </p>
+
+
+                                            <p
+                                                className="
+                                                    mt-1
+                                                    whitespace-pre-wrap
+                                                    break-words
+                                                    text-sm
+                                                "
+                                            >
+
+                                                {
+                                                    getItemNote(
+                                                        refundItem
+                                                    )
+                                                }
+
+                                            </p>
+
+                                        </div>
+
+                                    )
+                                }
 
 
                                 <p
@@ -1812,9 +2418,11 @@ function ReceiptModal({
                         Date:{" "}
 
                         {
-                            new Date(
-                                sale.createdAt
-                            ).toLocaleString()
+                            sale.createdAt
+                                ? new Date(
+                                    sale.createdAt
+                                ).toLocaleString()
+                                : "—"
                         }
 
                     </div>
@@ -1827,10 +2435,47 @@ function ReceiptModal({
                         {
                             sale.cashier
                                 ?.name ||
+                            sale.cashier
+                                ?.username ||
                             "Cashier"
                         }
 
                     </div>
+
+
+                    {/* ======================================
+                        THERMAL CUSTOMER
+                    ====================================== */}
+
+                    <div>
+
+                        Customer:{" "}
+
+                        {
+                            hasCustomer
+                                ? customerName
+                                : "Walk-in"
+                        }
+
+                    </div>
+
+
+                    {
+                        hasCustomer &&
+                        customerCode && (
+
+                            <div>
+
+                                Customer ID:{" "}
+
+                                {
+                                    customerCode
+                                }
+
+                            </div>
+
+                        )
+                    }
 
 
                     <div>
@@ -1853,10 +2498,12 @@ function ReceiptModal({
                 </div>
 
 
-                {/* ITEMS */}
+                {/* ==========================================
+                    THERMAL ITEMS
+                ========================================== */}
 
                 {
-                    sale.items.map(
+                    saleItems.map(
                         (
                             item,
                             index
@@ -1874,6 +2521,12 @@ function ReceiptModal({
                                 );
 
 
+                            const itemNote =
+                                getItemNote(
+                                    item
+                                );
+
+
                             return (
 
                                 <div
@@ -1885,14 +2538,23 @@ function ReceiptModal({
                                     className="thermal-item"
                                 >
 
+                                    {/* ==========================
+                                        ITEM NAME
+                                    ========================== */}
+
                                     <div className="thermal-name">
 
                                         {
-                                            item.name
+                                            item.name ||
+                                            "Product"
                                         }
 
                                     </div>
 
+
+                                    {/* ==========================
+                                        QTY / PRICE / TOTAL
+                                    ========================== */}
 
                                     <div className="thermal-item-row">
 
@@ -1902,7 +2564,7 @@ function ReceiptModal({
                                                 item.quantity
                                             }
 
-                                            {" × ₱"}
+                                            {" x P"}
 
                                             {
                                                 formatMoney(
@@ -1915,7 +2577,7 @@ function ReceiptModal({
 
                                         <span>
 
-                                            ₱
+                                            P
                                             {
                                                 formatMoney(
                                                     getOriginalItemTotal(
@@ -1928,6 +2590,79 @@ function ReceiptModal({
 
                                     </div>
 
+
+                                    {/* ==========================
+                                        OPEN PRICE
+                                    ========================== */}
+
+                                    {
+                                        item.isOpenPrice && (
+
+                                            <div
+                                                style={{
+                                                    fontSize:
+                                                        "10px",
+
+                                                    marginTop:
+                                                        "1px",
+                                                }}
+                                            >
+
+                                                Open Price
+
+                                            </div>
+
+                                        )
+                                    }
+
+
+                                    {/* ==========================
+                                        THERMAL ITEM NOTE
+                                    ========================== */}
+
+                                    {
+                                        itemNote && (
+
+                                            <div
+                                                className="thermal-item-note"
+                                                style={{
+                                                    fontSize:
+                                                        "10px",
+
+                                                    marginTop:
+                                                        "2px",
+
+                                                    marginBottom:
+                                                        "4px",
+
+                                                    whiteSpace:
+                                                        "pre-wrap",
+
+                                                    overflowWrap:
+                                                        "anywhere",
+
+                                                    wordBreak:
+                                                        "break-word",
+
+                                                    lineHeight:
+                                                        "1.25",
+                                                }}
+                                            >
+
+                                                Note:{" "}
+                                                {
+                                                    itemNote
+                                                }
+
+                                            </div>
+
+                                        )
+                                    }
+
+
+                                    {/* ==========================
+                                        REFUNDED
+                                    ========================== */}
 
                                     {
                                         refunded >
@@ -1950,7 +2685,7 @@ function ReceiptModal({
 
                                                     <span>
 
-                                                        -₱
+                                                        -P
                                                         {
                                                             formatMoney(
                                                                 getRefundedItemAmount(
@@ -1976,7 +2711,7 @@ function ReceiptModal({
 
                                                             <span>
 
-                                                                ₱
+                                                                P
                                                                 {
                                                                     formatMoney(
                                                                         getRemainingItemTotal(
@@ -2013,7 +2748,9 @@ function ReceiptModal({
                 </div>
 
 
-                {/* TOTALS */}
+                {/* ==========================================
+                    THERMAL TOTALS
+                ========================================== */}
 
                 <div className="thermal-totals">
 
@@ -2032,7 +2769,7 @@ function ReceiptModal({
 
                                     <span>
 
-                                        ₱
+                                        P
                                         {
                                             formatMoney(
                                                 originalTotal
@@ -2052,7 +2789,7 @@ function ReceiptModal({
 
                                     <span>
 
-                                        -₱
+                                        -P
                                         {
                                             formatMoney(
                                                 refundedAmount
@@ -2069,6 +2806,8 @@ function ReceiptModal({
                     }
 
 
+                    {/* NORMAL DISCOUNT */}
+
                     {
                         Number(
                             sale.discount ||
@@ -2084,7 +2823,7 @@ function ReceiptModal({
 
                                 <span>
 
-                                    -₱
+                                    -P
                                     {
                                         formatMoney(
                                             sale.discount
@@ -2098,6 +2837,65 @@ function ReceiptModal({
                         )
                     }
 
+
+                    {/* LOYALTY REDEEMED */}
+
+                    {
+                        loyaltyPointsRedeemed >
+                        0 && (
+
+                            <div>
+
+                                <span>
+                                    Points Redeemed
+                                </span>
+
+                                <span>
+
+                                    {
+                                        loyaltyPointsRedeemed
+                                    }
+
+                                    {" pts"}
+
+                                </span>
+
+                            </div>
+
+                        )
+                    }
+
+
+                    {/* LOYALTY DISCOUNT */}
+
+                    {
+                        loyaltyDiscount >
+                        0 && (
+
+                            <div>
+
+                                <span>
+                                    Loyalty Discount
+                                </span>
+
+                                <span>
+
+                                    -P
+                                    {
+                                        formatMoney(
+                                            loyaltyDiscount
+                                        )
+                                    }
+
+                                </span>
+
+                            </div>
+
+                        )
+                    }
+
+
+                    {/* GRAND TOTAL */}
 
                     <div className="thermal-grand-total">
 
@@ -2115,7 +2913,7 @@ function ReceiptModal({
 
                         <span>
 
-                            ₱
+                            P
                             {
                                 formatMoney(
                                     currentTotal
@@ -2127,6 +2925,8 @@ function ReceiptModal({
                     </div>
 
 
+                    {/* CASH */}
+
                     <div>
 
                         <span>
@@ -2135,7 +2935,7 @@ function ReceiptModal({
 
                         <span>
 
-                            ₱
+                            P
                             {
                                 formatMoney(
                                     sale.payment
@@ -2147,6 +2947,8 @@ function ReceiptModal({
                     </div>
 
 
+                    {/* CHANGE */}
+
                     <div>
 
                         <span>
@@ -2155,7 +2957,7 @@ function ReceiptModal({
 
                         <span>
 
-                            ₱
+                            P
                             {
                                 formatMoney(
                                     sale.change
@@ -2169,6 +2971,104 @@ function ReceiptModal({
                 </div>
 
 
+                {/* ==========================================
+                    THERMAL LOYALTY
+                ========================================== */}
+
+                {
+                    hasLoyaltyActivity && (
+
+                        <>
+
+                            <div className="thermal-line">
+
+                                ------------------------------
+
+                            </div>
+
+
+                            <div className="thermal-info">
+
+                                <div>
+
+                                    LOYALTY REWARDS
+
+                                </div>
+
+
+                                {
+                                    loyaltyPointsRedeemed >
+                                    0 && (
+
+                                        <div>
+
+                                            Redeemed:{" "}
+
+                                            {
+                                                loyaltyPointsRedeemed
+                                            }
+
+                                            {" pts"}
+
+                                        </div>
+
+                                    )
+                                }
+
+
+                                {
+                                    loyaltyDiscount >
+                                    0 && (
+
+                                        <div>
+
+                                            Reward Discount: -P
+
+                                            {
+                                                formatMoney(
+                                                    loyaltyDiscount
+                                                )
+                                            }
+
+                                        </div>
+
+                                    )
+                                }
+
+
+                                <div>
+
+                                    Points Earned: +
+
+                                    {
+                                        loyaltyPointsEarned
+                                    }
+
+                                    {" pts"}
+
+                                </div>
+
+
+                                <div>
+
+                                    Current Points:{" "}
+
+                                    {
+                                        customerCurrentPoints
+                                    }
+
+                                    {" pts"}
+
+                                </div>
+
+                            </div>
+
+                        </>
+
+                    )
+                }
+
+
                 <div className="thermal-line">
 
                     ------------------------------
@@ -2178,9 +3078,29 @@ function ReceiptModal({
 
                 <div className="thermal-footer">
 
+                    {
+                        hasCustomer && (
+
+                            <p>
+
+                                Thank you,{" "}
+
+                                {
+                                    customerName
+                                }
+
+                                !
+
+                            </p>
+
+                        )
+                    }
+
+
                     <p>
                         THANK YOU!
                     </p>
+
 
                     <p>
                         Please come again.

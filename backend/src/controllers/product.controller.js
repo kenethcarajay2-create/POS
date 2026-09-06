@@ -1,3 +1,4 @@
+
 import productService from "../services/product.service.js";
 import ApiResponse from "../utils/ApiResponse.js";
 
@@ -88,10 +89,47 @@ const updateProductStatus = async (req, res, next) => {
     }
 };
 
+const generateBarcode =
+    async (
+        req,
+        res,
+        next
+    ) => {
+
+        try {
+
+            const barcode =
+                await productService
+                    .generateUniqueBarcode();
+
+
+            res.status(200).json({
+                success: true,
+
+                message:
+                    "Barcode generated successfully.",
+
+                data: {
+                    barcode,
+                },
+            });
+
+
+        } catch (error) {
+
+            next(
+                error
+            );
+
+        }
+
+    };
+
 export default {
     createProduct,
     getProducts,
     getProductById,
     updateProduct,
-    updateProductStatus
+    updateProductStatus,
+    generateBarcode
 };

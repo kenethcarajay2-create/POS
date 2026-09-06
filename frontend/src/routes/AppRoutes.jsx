@@ -44,6 +44,7 @@ STORE
 */
 
 import useAuthStore from "../store/auth.store";
+import CashierReportPage from "../pages/reports/CashierReportPage";
 
 
 /*
@@ -68,7 +69,7 @@ import WorkersPage from "../pages/Workers/WorkersPage";
 
 import UsersPage from "../pages/Users/UsersPage";
 import SettingsPage from "../pages/Settings/SettingsPage";
-
+import CustomersPage from "../pages/Customers/CustomersPage";
 /*
 ============================================================
 REPORTS
@@ -519,6 +520,21 @@ function AppRoutes() {
                         }
                     />
 
+                    <Route
+    path="/customers"
+    element={
+
+        <PermissionRoute
+            permission="customers"
+        >
+
+            <CustomersPage />
+
+        </PermissionRoute>
+
+    }
+/>
+
                     
 {/* ======================================
     SETTINGS
@@ -538,7 +554,20 @@ function AppRoutes() {
 
     }
     />
+<Route
+    path="/reports/cashiers"
+    element={
 
+        <PermissionRoute
+            permission="reports"
+        >
+
+            <CashierReportPage />
+
+        </PermissionRoute>
+
+    }
+/>
 
                     {/* ======================================
                         NO ACCESS

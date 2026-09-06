@@ -8,9 +8,13 @@ function ProductModal({
     onSubmit,
     loading,
 }) {
-    if (!open) return null;
+
+    if (!open) {
+        return null;
+    }
 
     return (
+
         <dialog className="modal modal-open">
 
             <div
@@ -26,16 +30,26 @@ function ProductModal({
             >
 
                 <ProductForm
-                    initialValues={initialValues}
-                    onSubmit={onSubmit}
-                    onCancel={onClose}
-                    loading={loading}
+                    initialValues={
+                        initialValues
+                    }
+                    onSubmit={
+                        onSubmit
+                    }
+                    onCancel={
+                        onClose
+                    }
+                    loading={
+                        loading
+                    }
                 />
 
             </div>
 
         </dialog>
+
     );
+
 }
 
 export default ProductModal;

@@ -3,43 +3,75 @@ import express from "express";
 import userController from "../controllers/user.controller.js";
 
 import protect from "../middleware/auth.middleware.js";
+
 import authorize from "../middleware/role.middleware.js";
 
 import validate from "../middleware/validate.middleware.js";
+
 import userValidator from "../validators/user.validator.js";
 
+import upload from "../middleware/upload.middleware.js";
 
-const router = express.Router();
+
+const router =
+    express.Router();
 
 
 /*
 ==========================================================
 GET ALL USERS
 ==========================================================
+
 GET /api/users
 ==========================================================
 */
 
 router.get(
     "/",
+
     protect,
-    authorize("admin"),
+
+    authorize(
+        "admin"
+    ),
+
     userController.getUsers
 );
 
 
+router.patch(
+    "/:id/profile-image",
+
+    protect,
+
+    authorize(
+        "admin"
+    ),
+
+    upload.single(
+        "image"
+    ),
+
+    userController.uploadProfileImage
+);
 /*
 ==========================================================
 GET USER BY ID
 ==========================================================
+
 GET /api/users/:id
 ==========================================================
 */
 
 router.get(
     "/:id",
+
     protect,
-    authorize("admin"),
+
+    authorize(
+        "admin"
+    ),
+
     userController.getUserById
 );
 
@@ -48,17 +80,25 @@ router.get(
 ==========================================================
 CREATE USER
 ==========================================================
+
 POST /api/users
 ==========================================================
 */
 
 router.post(
     "/",
+
     protect,
-    authorize("admin"),
-    validate(
-        userValidator.createUserSchema
+
+    authorize(
+        "admin"
     ),
+
+    validate(
+        userValidator
+            .createUserSchema
+    ),
+
     userController.createUser
 );
 
@@ -67,17 +107,36 @@ router.post(
 ==========================================================
 UPDATE USER
 ==========================================================
+
 PATCH /api/users/:id
+
+Supports:
+
+{
+    "name": "Juan",
+    "profile": {
+        "nickname": "Johnny",
+        "image": "/uploads/profiles/juan.jpg"
+    },
+    "rfidUid": "0944697426"
+}
 ==========================================================
 */
 
 router.patch(
     "/:id",
+
     protect,
-    authorize("admin"),
-    validate(
-        userValidator.updateUserSchema
+
+    authorize(
+        "admin"
     ),
+
+    validate(
+        userValidator
+            .updateUserSchema
+    ),
+
     userController.updateUser
 );
 
@@ -86,17 +145,25 @@ router.patch(
 ==========================================================
 CHANGE PASSWORD
 ==========================================================
+
 PATCH /api/users/:id/password
 ==========================================================
 */
 
 router.patch(
     "/:id/password",
+
     protect,
-    authorize("admin"),
-    validate(
-        userValidator.updatePasswordSchema
+
+    authorize(
+        "admin"
     ),
+
+    validate(
+        userValidator
+            .updatePasswordSchema
+    ),
+
     userController.updatePassword
 );
 
@@ -105,14 +172,17 @@ router.patch(
 ==========================================================
 DISABLE USER
 ==========================================================
-PATCH /api/users/:id/disable
-==========================================================
 */
 
 router.patch(
     "/:id/disable",
+
     protect,
-    authorize("admin"),
+
+    authorize(
+        "admin"
+    ),
+
     userController.disableUser
 );
 
@@ -121,14 +191,17 @@ router.patch(
 ==========================================================
 ENABLE USER
 ==========================================================
-PATCH /api/users/:id/enable
-==========================================================
 */
 
 router.patch(
     "/:id/enable",
+
     protect,
-    authorize("admin"),
+
+    authorize(
+        "admin"
+    ),
+
     userController.enableUser
 );
 

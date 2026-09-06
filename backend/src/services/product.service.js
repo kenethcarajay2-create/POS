@@ -2,6 +2,110 @@ import Product from "../models/product.model.js";
 import ApiError from "../utils/ApiError.js";
 import mongoose from "mongoose";
 import { Types } from "mongoose";
+import Counter from "../models/counter.model.js";
+
+/*
+============================================================
+GENERATE UNIQUE INTERNAL PRODUCT CODE
+============================================================
+*/
+
+const generateUniqueBarcode =
+    async () => {
+
+        /*
+        Atomic sequence increment.
+
+        MongoDB guarantees that each successful increment
+        receives a different number, even when multiple
+        requests happen at the same time.
+        */
+
+        const counter =
+            await Counter.findOneAndUpdate(
+                {
+                    _id:
+                        "product_barcode",
+                },
+                {
+                    $inc: {
+                        sequence:
+                            1,
+                    },
+                },
+                {
+                    new:
+                        true,
+
+                    upsert:
+                        true,
+
+                    setDefaultsOnInsert:
+                        true,
+                }
+            )
+                .lean();
+
+
+        if (
+            !counter ||
+            !Number.isSafeInteger(
+                counter.sequence
+            ) ||
+            counter.sequence <= 0
+        ) {
+
+            throw new ApiError(
+                500,
+                "Unable to generate product code."
+            );
+
+        }
+
+
+        const sequence =
+            String(
+                counter.sequence
+            )
+                .padStart(
+                    12,
+                    "0"
+                );
+
+
+        const barcode =
+            `PRD-${sequence}`;
+
+
+        /*
+        Defensive check.
+
+        The atomic counter should already prevent generated
+        duplicates, but the product collection's unique index
+        is still the final protection.
+        */
+
+        const existing =
+            await Product.exists({
+                barcode,
+            });
+
+
+        if (
+            existing
+        ) {
+
+            throw new ApiError(
+                409,
+                "Generated product code already exists."
+            );
+
+        }
+
+
+        return barcode;
+
+    };
 
 const validatePricing = (pricing) => {
   if (!pricing || pricing.length === 0) {
@@ -43,22 +147,113 @@ const getUnitPrice = (pricing, quantity) => {
     return selectedPrice;
 
 };
+const createProduct =
+    async (
+        productData
+    ) => {
 
-const createProduct = async (productData) => {
-  const existingProduct = await Product.findOne({
-    barcode: productData.barcode,
-  });
+        const barcode =
+            String(
+                productData.barcode ||
+                ""
+            ).trim();
 
-  if (existingProduct) {
-    throw new ApiError(409, "A product with this barcode already exists.");
-  }
 
-  productData.pricing = validatePricing(productData.pricing);
+        if (
+            !barcode
+        ) {
 
-  const product = await Product.create(productData);
+            throw new ApiError(
+                400,
+                "Barcode is required."
+            );
 
-  return product;
-};
+        }
+
+
+        /*
+        ========================================================
+        FRIENDLY PRE-CHECK
+        ========================================================
+        */
+
+        const existingProduct =
+            await Product.findOne({
+                barcode,
+            })
+                .select(
+                    "_id barcode name"
+                )
+                .lean();
+
+
+        if (
+            existingProduct
+        ) {
+
+            throw new ApiError(
+                409,
+                "A product with this barcode already exists."
+            );
+
+        }
+
+
+        productData.barcode =
+            barcode;
+
+
+        productData.pricing =
+            validatePricing(
+                productData.pricing
+            );
+
+
+        try {
+
+            const product =
+                await Product.create(
+                    productData
+                );
+
+
+            return product;
+
+
+        } catch (error) {
+
+            /*
+            ====================================================
+            RACE-CONDITION PROTECTION
+
+            MongoDB unique barcode index is the final guarantee.
+            ====================================================
+            */
+
+            if (
+                error?.code ===
+                11000 &&
+                (
+                    error?.keyPattern
+                        ?.barcode ||
+                    error?.keyValue
+                        ?.barcode
+                )
+            ) {
+
+                throw new ApiError(
+                    409,
+                    "This barcode is already assigned to another product."
+                );
+
+            }
+
+
+            throw error;
+
+        }
+
+    };
 
 const getProducts = async () => {
   const products = await Product.find().sort({ createdAt: -1 });
@@ -79,39 +274,142 @@ const getProductById = async (id) => {
 
   return product;
 };
+const updateProduct =
+    async (
+        id,
+        productData
+    ) => {
 
-const updateProduct = async (id, productData) => {
-  if (!Types.ObjectId.isValid(id)) {
-    throw new ApiError(400, "Invalid product ID.");
-  }
+        if (
+            !Types.ObjectId.isValid(
+                id
+            )
+        ) {
 
-  const product = await Product.findById(id);
+            throw new ApiError(
+                400,
+                "Invalid product ID."
+            );
 
-  if (!product) {
-    throw new ApiError(404, "Product not found.");
-  }
+        }
 
-  if (productData.barcode && productData.barcode !== product.barcode) {
-    const existing = await Product.findOne({
-      barcode: productData.barcode,
-      _id: { $ne: id },
-    });
 
-    if (existing) {
-      throw new ApiError(409, "Another product already uses this barcode.");
-    }
-  }
+        const product =
+            await Product.findById(
+                id
+            );
 
-  if (productData.pricing) {
-    productData.pricing = validatePricing(productData.pricing);
-  }
 
-  Object.assign(product, productData);
+        if (
+            !product
+        ) {
 
-  await product.save();
+            throw new ApiError(
+                404,
+                "Product not found."
+            );
 
-  return product;
-};
+        }
+
+
+        if (
+            productData.barcode
+        ) {
+
+            productData.barcode =
+                String(
+                    productData.barcode
+                ).trim();
+
+
+            if (
+                productData.barcode !==
+                product.barcode
+            ) {
+
+                const existing =
+                    await Product.findOne({
+                        barcode:
+                            productData.barcode,
+
+                        _id: {
+                            $ne:
+                                product._id,
+                        },
+                    })
+                        .select("_id")
+                        .lean();
+
+
+                if (
+                    existing
+                ) {
+
+                    throw new ApiError(
+                        409,
+                        "Another product already uses this barcode."
+                    );
+
+                }
+
+            }
+
+        }
+
+
+        if (
+            productData.pricing
+        ) {
+
+            productData.pricing =
+                validatePricing(
+                    productData.pricing
+                );
+
+        }
+
+
+        Object.assign(
+            product,
+            productData
+        );
+
+
+        try {
+
+            await product.save();
+
+
+            return product;
+
+
+        } catch (error) {
+
+            if (
+                error?.code ===
+                11000 &&
+                (
+                    error?.keyPattern
+                        ?.barcode ||
+                    error?.keyValue
+                        ?.barcode
+                )
+            ) {
+
+                throw new ApiError(
+                    409,
+                    "Another product already uses this barcode."
+                );
+
+            }
+
+
+            throw error;
+
+        }
+
+    };
+
 const updateProductStatus = async (id, isActive) => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
     throw new ApiError(400, "Invalid product ID.");
@@ -130,11 +428,17 @@ const updateProductStatus = async (id, isActive) => {
   return product;
 };
 
+
+
+
+
+
 export default {
   createProduct,
   getProducts,
   getProductById,
   updateProduct,
   updateProductStatus,
-  getUnitPrice
+  getUnitPrice,
+  generateUniqueBarcode
 };

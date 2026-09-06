@@ -1,6 +1,8 @@
 import bcrypt from "bcryptjs";
 
-import User from "../models/user.model.js";
+import User, {
+    normalizeRfidUid,
+} from "../models/user.model.js";
 
 import generateToken from "../utils/generateToken.js";
 
@@ -9,7 +11,312 @@ import ApiError from "../utils/ApiError.js";
 
 /*
 ============================================================
-LOGIN
+BUILD PERMISSIONS
+============================================================
+
+Keeps permission handling identical between:
+
+- Username/password login
+- RFID/NFC login
+============================================================
+*/
+
+const buildPermissions = (
+    user
+) => {
+
+    /*
+    ========================================================
+    ADMIN
+    ========================================================
+
+    Admin always receives full access.
+    ========================================================
+    */
+
+    if (
+        user.role ===
+        "admin"
+    ) {
+
+        return {
+
+            dashboard:
+                true,
+
+            products:
+                true,
+
+            inventory:
+                true,
+
+            pos:
+                true,
+
+            sales:
+                true,
+
+            customers:
+                true,
+
+            suppliers:
+                true,
+
+            workers:
+                true,
+
+            ledger:
+                true,
+
+            reports:
+                true,
+
+            users:
+                true,
+
+            settings:
+                true,
+
+            salesRefund:
+                true,
+
+            salesVoid:
+                true,
+
+            salesReprint:
+                true,
+
+        };
+
+    }
+
+
+    /*
+    ========================================================
+    OTHER USERS
+    ========================================================
+    */
+
+    return {
+
+        dashboard:
+            Boolean(
+                user.permissions
+                    ?.dashboard
+            ),
+
+        products:
+            Boolean(
+                user.permissions
+                    ?.products
+            ),
+
+        inventory:
+            Boolean(
+                user.permissions
+                    ?.inventory
+            ),
+
+        pos:
+            Boolean(
+                user.permissions
+                    ?.pos
+            ),
+
+        sales:
+            Boolean(
+                user.permissions
+                    ?.sales
+            ),
+
+        customers:
+            Boolean(
+                user.permissions
+                    ?.customers
+            ),
+
+        suppliers:
+            Boolean(
+                user.permissions
+                    ?.suppliers
+            ),
+
+        workers:
+            Boolean(
+                user.permissions
+                    ?.workers
+            ),
+
+        ledger:
+            Boolean(
+                user.permissions
+                    ?.ledger
+            ),
+
+        reports:
+            Boolean(
+                user.permissions
+                    ?.reports
+            ),
+
+        users:
+            Boolean(
+                user.permissions
+                    ?.users
+            ),
+
+        settings:
+            Boolean(
+                user.permissions
+                    ?.settings
+            ),
+
+        salesRefund:
+            Boolean(
+                user.permissions
+                    ?.salesRefund
+            ),
+
+        salesVoid:
+            Boolean(
+                user.permissions
+                    ?.salesVoid
+            ),
+
+        salesReprint:
+            Boolean(
+                user.permissions
+                    ?.salesReprint
+            ),
+
+    };
+
+};
+
+
+/*
+============================================================
+BUILD AUTH RESPONSE
+============================================================
+
+Both login methods use this function.
+
+That means the frontend does NOT need separate user structures
+for password login and RFID login.
+============================================================
+*/
+
+const buildAuthResponse = (
+    user
+) => {
+
+    /*
+    ========================================================
+    GENERATE TOKEN
+    ========================================================
+    */
+
+    const token =
+        generateToken(
+            user
+        );
+
+
+    /*
+    ========================================================
+    PERMISSIONS
+    ========================================================
+    */
+
+    const permissions =
+        buildPermissions(
+            user
+        );
+
+
+    /*
+    ========================================================
+    RETURN
+    ========================================================
+    */
+
+    return {
+
+        token,
+
+        user: {
+
+            id:
+                user._id,
+
+            _id:
+                user._id,
+
+            name:
+                user.name,
+
+            username:
+                user.username,
+
+            role:
+                user.role,
+
+
+            /*
+            =================================================
+            PROFILE
+            =================================================
+
+            This is important for the login animation later.
+            =================================================
+            */
+
+            profile: {
+
+                image:
+                    user.profile
+                        ?.image ||
+                    "",
+
+                nickname:
+                    user.profile
+                        ?.nickname ||
+                    "",
+
+            },
+
+
+            /*
+            =================================================
+            PERMISSIONS
+            =================================================
+            */
+
+            permissions,
+
+
+            /*
+            =================================================
+            STATUS
+            =================================================
+            */
+
+            isActive:
+                user.isActive,
+
+        },
+
+    };
+
+};
+
+
+/*
+============================================================
+NORMAL LOGIN
+============================================================
+
+Username + password login.
 ============================================================
 */
 
@@ -26,7 +333,8 @@ const login = async ({
 
     const normalizedUsername =
         String(
-            username || ""
+            username ||
+            ""
         )
             .trim()
             .toLowerCase();
@@ -40,12 +348,22 @@ const login = async ({
 
     const user =
         await User.findOne({
+
             username:
                 normalizedUsername,
+
         });
 
 
-    if (!user) {
+    /*
+    ========================================================
+    USER NOT FOUND
+    ========================================================
+    */
+
+    if (
+        !user
+    ) {
 
         throw new ApiError(
             401,
@@ -100,188 +418,132 @@ const login = async ({
 
     /*
     ========================================================
-    GENERATE TOKEN
+    AUTH RESPONSE
     ========================================================
     */
 
-    const token =
-        generateToken(
-            user
+    return buildAuthResponse(
+        user
+    );
+
+};
+
+
+/*
+============================================================
+RFID / NFC LOGIN
+============================================================
+
+Used when a worker taps their RFID/NFC card.
+
+Example incoming UID:
+
+04:A3:D8:91:7C:2B:80
+
+Normalized:
+
+04A3D8917C2B80
+============================================================
+*/
+
+const rfidLogin = async ({
+    rfidUid,
+}) => {
+
+    /*
+    ========================================================
+    NORMALIZE CARD UID
+    ========================================================
+    */
+
+    const normalizedUid =
+        normalizeRfidUid(
+            rfidUid
         );
 
 
     /*
     ========================================================
-    PERMISSIONS
-    ========================================================
-
-    Admin is always full access.
-
-    Other users use their stored permissions.
+    EMPTY UID
     ========================================================
     */
 
-    const permissions =
-        user.role ===
-        "admin"
+    if (
+        !normalizedUid
+    ) {
 
-            ? {
+        throw new ApiError(
+            400,
+            "RFID/NFC card UID is required"
+        );
 
-                dashboard: true,
-
-                products: true,
-
-                inventory: true,
-
-                pos: true,
-
-                sales: true,
-
-                customers: true,
-
-                suppliers: true,
-
-                workers: true,
-
-                ledger: true,
-
-                reports: true,
-
-                users: true,
-
-                settings: true,
-                salesRefund: true,
-salesVoid: true,
-salesReprint: true,
-
-            }
-
-            : {
-
-                dashboard:
-                    Boolean(
-                        user.permissions
-                            ?.dashboard
-                    ),
-
-                products:
-                    Boolean(
-                        user.permissions
-                            ?.products
-                    ),
-
-                inventory:
-                    Boolean(
-                        user.permissions
-                            ?.inventory
-                    ),
-
-                pos:
-                    Boolean(
-                        user.permissions
-                            ?.pos
-                    ),
-
-                sales:
-                    Boolean(
-                        user.permissions
-                            ?.sales
-                    ),
-
-                customers:
-                    Boolean(
-                        user.permissions
-                            ?.customers
-                    ),
-
-                suppliers:
-                    Boolean(
-                        user.permissions
-                            ?.suppliers
-                    ),
-
-                workers:
-                    Boolean(
-                        user.permissions
-                            ?.workers
-                    ),
-
-                ledger:
-                    Boolean(
-                        user.permissions
-                            ?.ledger
-                    ),
-
-                reports:
-                    Boolean(
-                        user.permissions
-                            ?.reports
-                    ),
-
-                users:
-                    Boolean(
-                        user.permissions
-                            ?.users
-                    ),
-
-                settings:
-                    Boolean(
-                        user.permissions
-                            ?.settings
-                    ),
-                    salesRefund:
-    Boolean(
-        user.permissions?.salesRefund
-    ),
-
-salesVoid:
-    Boolean(
-        user.permissions?.salesVoid
-    ),
-
-salesReprint:
-    Boolean(
-        user.permissions?.salesReprint
-    ),
-
-            };
+    }
 
 
     /*
     ========================================================
-    RETURN LOGIN DATA
+    FIND USER BY CARD
     ========================================================
     */
 
-    return {
+    const user =
+        await User.findOne({
 
-        token,
+            rfidUid:
+                normalizedUid,
 
-        user: {
+        });
 
-            id:
-                user._id,
 
-            _id:
-                user._id,
+    /*
+    ========================================================
+    CARD NOT REGISTERED
+    ========================================================
+    */
 
-            name:
-                user.name,
+    if (
+        !user
+    ) {
 
-            username:
-                user.username,
+        throw new ApiError(
+            401,
+            "RFID/NFC card is not registered"
+        );
 
-            role:
-                user.role,
+    }
 
-            permissions,
 
-            isActive:
-                user.isActive,
+    /*
+    ========================================================
+    ACCOUNT STATUS
+    ========================================================
+    */
 
-        },
+    if (
+        !user.isActive
+    ) {
 
-    };
+        throw new ApiError(
+            403,
+            "This account has been disabled"
+        );
+
+    }
+
+
+    /*
+    ========================================================
+    AUTHENTICATE USER
+    ========================================================
+
+    No password is needed here because possession of the
+    registered card is the login credential.
+    ========================================================
+    */
+
+    return buildAuthResponse(
+        user
+    );
 
 };
 
@@ -289,5 +551,7 @@ salesReprint:
 export default {
 
     login,
+
+    rfidLogin,
 
 };

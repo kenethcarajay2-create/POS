@@ -1,6 +1,10 @@
+import mongoose from "mongoose";
+
 import Sale from "../models/sale.model.js";
 import Product from "../models/product.model.js";
 import InventoryTransaction from "../models/inventoryTransaction.model.js";
+import Customer from "../models/customer.model.js";
+import LoyaltyTransaction from "../models/loyaltyTransaction.model.js";
 
 import ApiError from "../utils/ApiError.js";
 import { generateReceiptNumber } from "../utils/receipt.js";
@@ -8,6 +12,95 @@ import { generateReceiptNumber } from "../utils/receipt.js";
 import {
     calculateSubtotal,
 } from "../utils/pricing.js";
+
+
+/*
+============================================================
+LOYALTY CONFIGURATION
+============================================================
+
+EARNING:
+₱100 spent = 1 point
+
+REDEMPTION:
+1 point = ₱1
+
+Minimum redemption:
+10 points
+
+Redemption increment:
+10 points
+
+Maximum redemption:
+50% of the amount before loyalty discount
+============================================================
+*/
+
+const LOYALTY_SPEND_PER_POINT =
+    100;
+
+const LOYALTY_POINT_VALUE =
+    1;
+
+const LOYALTY_MIN_REDEMPTION =
+    10;
+
+const LOYALTY_REDEMPTION_STEP =
+    10;
+
+const LOYALTY_MAX_REDEMPTION_RATE =
+    0.50;
+
+
+/*
+============================================================
+CALCULATE LOYALTY POINTS
+============================================================
+*/
+
+const calculateLoyaltyPoints = (
+    amount
+) => {
+
+    const numericAmount =
+        Number(
+            amount
+        ) || 0;
+
+
+    if (
+        numericAmount <= 0
+    ) {
+
+        return 0;
+
+    }
+
+
+    return Math.floor(
+        numericAmount /
+        LOYALTY_SPEND_PER_POINT
+    );
+
+};
+
+
+/*
+============================================================
+CUSTOMER POPULATE FIELDS
+============================================================
+*/
+
+const CUSTOMER_POPULATE_FIELDS = `
+    customerCode
+    name
+    phone
+    rfidUid
+    loyaltyPoints
+    lifetimePoints
+    loyaltyTier
+    isActive
+`;
 
 
 /*
@@ -31,16 +124,45 @@ Supports:
 {
     isOpenPrice: true,
     name: "Grocery",
+    note: "Vegetables",
     quantity: 1,
     unitPrice: 125
 }
 
-Open-price items:
 
-- Do NOT require a Product
-- Do NOT deduct inventory
-- Do NOT create inventory transactions
-- Use the manually entered price
+3. OPTIONAL REGISTERED CUSTOMER
+
+{
+    customerId: "..."
+}
+
+
+4. OPTIONAL LOYALTY REDEMPTION
+
+{
+    loyaltyPointsToRedeem: 50
+}
+
+
+No customerId:
+→ Walk-in customer
+
+With customerId:
+→ Sale is linked to Customer
+
+Open-price items:
+→ Optional note/description
+→ No Product required
+→ No inventory deduction
+→ No inventory transaction
+
+Loyalty:
+→ Registered customers only
+→ ₱100 final spend = 1 point
+→ 1 point = ₱1 discount
+→ Minimum 10 points
+→ Multiples of 10
+→ Maximum 50% of purchase
 ============================================================
 */
 
@@ -54,17 +176,101 @@ const checkout = async (
         discount = 0,
         payment,
         paymentMethod = "Cash",
+        customerId = null,
+        loyaltyPointsToRedeem = 0,
     } = data;
 
 
     /*
     ========================================================
-    BASIC VALIDATION
+    CUSTOMER VALIDATION
+    ========================================================
+    */
+
+    let customer =
+        null;
+
+
+    if (
+        customerId
+    ) {
+
+        /*
+        ----------------------------------------------------
+        VALID OBJECT ID
+        ----------------------------------------------------
+        */
+
+        if (
+            !mongoose.Types.ObjectId
+                .isValid(
+                    customerId
+                )
+        ) {
+
+            throw new ApiError(
+                400,
+                "Invalid customer ID."
+            );
+
+        }
+
+
+        /*
+        ----------------------------------------------------
+        FIND CUSTOMER
+        ----------------------------------------------------
+        */
+
+        customer =
+            await Customer.findById(
+                customerId
+            );
+
+
+        if (
+            !customer
+        ) {
+
+            throw new ApiError(
+                404,
+                "Customer not found."
+            );
+
+        }
+
+
+        /*
+        ----------------------------------------------------
+        ACTIVE CUSTOMER CHECK
+        ----------------------------------------------------
+        */
+
+        if (
+            customer.isActive ===
+            false
+        ) {
+
+            throw new ApiError(
+                400,
+                "The selected customer is inactive."
+            );
+
+        }
+
+    }
+
+
+    /*
+    ========================================================
+    BASIC CART VALIDATION
     ========================================================
     */
 
     if (
-        !Array.isArray(items) ||
+        !Array.isArray(
+            items
+        ) ||
         items.length === 0
     ) {
 
@@ -76,9 +282,12 @@ const checkout = async (
     }
 
 
-    let subtotal = 0;
+    let subtotal =
+        0;
 
-    const saleItems = [];
+
+    const saleItems =
+        [];
 
 
     /*
@@ -88,7 +297,8 @@ const checkout = async (
     */
 
     for (
-        const cartItem of items
+        const cartItem
+        of items
     ) {
 
         const quantity =
@@ -123,6 +333,12 @@ const checkout = async (
             true
         ) {
 
+            /*
+            ------------------------------------------------
+            UNIT PRICE
+            ------------------------------------------------
+            */
+
             const unitPrice =
                 Number(
                     cartItem.unitPrice
@@ -144,14 +360,27 @@ const checkout = async (
             }
 
 
+            /*
+            ------------------------------------------------
+            NAME
+            ------------------------------------------------
+            */
+
             const name =
                 String(
                     cartItem.name ||
                     "Grocery"
-                ).trim();
+                )
+                    .trim()
+                    .slice(
+                        0,
+                        100
+                    );
 
 
-            if (!name) {
+            if (
+                !name
+            ) {
 
                 throw new ApiError(
                     400,
@@ -160,6 +389,49 @@ const checkout = async (
 
             }
 
+
+            /*
+            ------------------------------------------------
+            NOTE
+            ------------------------------------------------
+
+            Optional description of what the cashier sold.
+
+            Examples:
+
+            Grocery
+            note: "Vegetables"
+
+            Grocery
+            note: "Rice"
+
+            Grocery
+            note: "Ice"
+
+            We sanitize again here even though Joi already
+            validates the request.
+
+            This gives the service its own defensive boundary.
+            ------------------------------------------------
+            */
+
+            const note =
+                String(
+                    cartItem.note ||
+                    ""
+                )
+                    .trim()
+                    .slice(
+                        0,
+                        80
+                    );
+
+
+            /*
+            ------------------------------------------------
+            LINE SUBTOTAL
+            ------------------------------------------------
+            */
 
             const lineSubtotal =
                 unitPrice *
@@ -170,21 +442,19 @@ const checkout = async (
                 lineSubtotal;
 
 
-            saleItems.push({
+            /*
+            ------------------------------------------------
+            ADD OPEN PRICE SALE ITEM
+            ------------------------------------------------
+            */
 
-                /*
-                No Product document.
-                */
+            saleItems.push({
 
                 product:
                     null,
 
                 productDocument:
                     null,
-
-                /*
-                Marks this as a manual/open-price line.
-                */
 
                 isOpenPrice:
                     true,
@@ -193,6 +463,8 @@ const checkout = async (
                     "",
 
                 name,
+
+                note,
 
                 quantity,
 
@@ -227,13 +499,42 @@ const checkout = async (
         }
 
 
+        /*
+        ----------------------------------------------------
+        VALID PRODUCT ID
+        ----------------------------------------------------
+        */
+
+        if (
+            !mongoose.Types.ObjectId
+                .isValid(
+                    cartItem.productId
+                )
+        ) {
+
+            throw new ApiError(
+                400,
+                "Invalid product ID."
+            );
+
+        }
+
+
+        /*
+        ----------------------------------------------------
+        FIND PRODUCT
+        ----------------------------------------------------
+        */
+
         const product =
             await Product.findById(
                 cartItem.productId
             );
 
 
-        if (!product) {
+        if (
+            !product
+        ) {
 
             throw new ApiError(
                 404,
@@ -285,11 +586,6 @@ const checkout = async (
         /*
         ----------------------------------------------------
         CALCULATE PRICE
-
-        IMPORTANT:
-        The backend calculates normal product pricing.
-
-        The frontend does NOT control normal product price.
         ----------------------------------------------------
         */
 
@@ -309,6 +605,19 @@ const checkout = async (
             lineSubtotal;
 
 
+        /*
+        ----------------------------------------------------
+        ADD NORMAL SALE ITEM
+        ----------------------------------------------------
+
+        Normal inventory products do not use the Grocery
+        note field.
+
+        We explicitly store an empty string so every sale
+        item has a consistent structure.
+        ----------------------------------------------------
+        */
+
         saleItems.push({
 
             product:
@@ -321,10 +630,14 @@ const checkout = async (
                 false,
 
             barcode:
-                product.barcode,
+                product.barcode ||
+                "",
 
             name:
                 product.name,
+
+            note:
+                "",
 
             quantity,
 
@@ -340,7 +653,7 @@ const checkout = async (
 
     /*
     ========================================================
-    TOTALS
+    NORMAL DISCOUNT
     ========================================================
     */
 
@@ -362,13 +675,279 @@ const checkout = async (
     }
 
 
-    const total =
+    if (
+        numericDiscount >
+        subtotal
+    ) {
+
+        throw new ApiError(
+            400,
+            "Discount cannot exceed subtotal."
+        );
+
+    }
+
+
+    /*
+    ========================================================
+    TOTAL BEFORE LOYALTY
+    ========================================================
+    */
+
+    const totalBeforeLoyalty =
         Math.max(
             0,
             subtotal -
             numericDiscount
         );
 
+
+    /*
+    ========================================================
+    LOYALTY REDEMPTION
+    ========================================================
+    */
+
+    const requestedPoints =
+        Number(
+            loyaltyPointsToRedeem
+        ) || 0;
+
+
+    let loyaltyPointsRedeemed =
+        0;
+
+
+    let loyaltyDiscount =
+        0;
+
+
+    /*
+    --------------------------------------------------------
+    NEGATIVE POINTS ARE INVALID
+    --------------------------------------------------------
+    */
+
+    if (
+        requestedPoints < 0
+    ) {
+
+        throw new ApiError(
+            400,
+            "Loyalty points cannot be negative."
+        );
+
+    }
+
+
+    /*
+    --------------------------------------------------------
+    CUSTOMER REQUIRED
+    --------------------------------------------------------
+    */
+
+    if (
+        requestedPoints > 0 &&
+        !customer
+    ) {
+
+        throw new ApiError(
+            400,
+            "A registered customer is required to redeem loyalty points."
+        );
+
+    }
+
+
+    /*
+    --------------------------------------------------------
+    VALIDATE REDEMPTION
+    --------------------------------------------------------
+    */
+
+    if (
+        requestedPoints > 0
+    ) {
+
+        /*
+        ----------------------------------------------------
+        WHOLE NUMBER ONLY
+        ----------------------------------------------------
+        */
+
+        if (
+            !Number.isInteger(
+                requestedPoints
+            )
+        ) {
+
+            throw new ApiError(
+                400,
+                "Loyalty points must be a whole number."
+            );
+
+        }
+
+
+        /*
+        ----------------------------------------------------
+        MINIMUM REDEMPTION
+        ----------------------------------------------------
+        */
+
+        if (
+            requestedPoints <
+            LOYALTY_MIN_REDEMPTION
+        ) {
+
+            throw new ApiError(
+                400,
+                `Minimum loyalty redemption is ${LOYALTY_MIN_REDEMPTION} points.`
+            );
+
+        }
+
+
+        /*
+        ----------------------------------------------------
+        REDEMPTION STEP
+        ----------------------------------------------------
+        */
+
+        if (
+            requestedPoints %
+                LOYALTY_REDEMPTION_STEP !==
+            0
+        ) {
+
+            throw new ApiError(
+                400,
+                `Loyalty points must be redeemed in increments of ${LOYALTY_REDEMPTION_STEP}.`
+            );
+
+        }
+
+
+        /*
+        ----------------------------------------------------
+        AVAILABLE CUSTOMER POINTS
+        ----------------------------------------------------
+        */
+
+        const availablePoints =
+            Number(
+                customer.loyaltyPoints
+            ) || 0;
+
+
+        if (
+            requestedPoints >
+            availablePoints
+        ) {
+
+            throw new ApiError(
+                400,
+                `Customer only has ${availablePoints} loyalty point(s).`
+            );
+
+        }
+
+
+        /*
+        ----------------------------------------------------
+        POINTS → PESO DISCOUNT
+        ----------------------------------------------------
+        */
+
+        const requestedDiscount =
+            requestedPoints *
+            LOYALTY_POINT_VALUE;
+
+
+        /*
+        ----------------------------------------------------
+        MAXIMUM REDEMPTION
+
+        Maximum = 50% of total before loyalty.
+
+        We floor this to whole pesos because:
+        1 point = ₱1
+        ----------------------------------------------------
+        */
+
+        const maximumLoyaltyDiscount =
+            Math.floor(
+                totalBeforeLoyalty *
+                LOYALTY_MAX_REDEMPTION_RATE
+            );
+
+
+        if (
+            requestedDiscount >
+            maximumLoyaltyDiscount
+        ) {
+
+            throw new ApiError(
+                400,
+                `Loyalty redemption cannot exceed 50% of the purchase. Maximum loyalty discount is ₱${maximumLoyaltyDiscount.toFixed(
+                    2
+                )}.`
+            );
+
+        }
+
+
+        loyaltyPointsRedeemed =
+            requestedPoints;
+
+
+        loyaltyDiscount =
+            requestedDiscount;
+
+    }
+
+
+    /*
+    ========================================================
+    FINAL TOTAL
+    ========================================================
+    */
+
+    const total =
+        Math.max(
+            0,
+            totalBeforeLoyalty -
+            loyaltyDiscount
+        );
+
+
+    /*
+    ========================================================
+    LOYALTY POINTS EARNED
+    ========================================================
+
+    Registered customers only.
+
+    Points are based on the amount AFTER:
+
+    - normal discount
+    - loyalty redemption
+    ========================================================
+    */
+
+    const loyaltyPointsEarned =
+        customer
+            ? calculateLoyaltyPoints(
+                total
+            )
+            : 0;
+
+
+    /*
+    ========================================================
+    PAYMENT
+    ========================================================
+    */
 
     const numericPayment =
         Number(
@@ -429,17 +1008,40 @@ const checkout = async (
 
             receiptNumber,
 
+
+            /*
+            ------------------------------------------------
+            CASHIER
+            ------------------------------------------------
+            */
+
             cashier:
                 userId ||
                 null,
 
+
+            /*
+            ------------------------------------------------
+            CUSTOMER
+            ------------------------------------------------
+            */
+
+            customer:
+                customer?._id ||
+                null,
+
+
+            /*
+            ------------------------------------------------
+            ITEMS
+            ------------------------------------------------
+            */
+
             items:
                 saleItems.map(
-                    (item) => ({
-
-                        /*
-                        Product is null for Grocery.
-                        */
+                    (
+                        item
+                    ) => ({
 
                         product:
                             item.product,
@@ -453,6 +1055,23 @@ const checkout = async (
                         name:
                             item.name,
 
+
+                        /*
+                        ====================================
+                        ITEM NOTE
+                        ====================================
+
+                        For Grocery/open-price items this
+                        contains the cashier's description.
+
+                        Normal products contain "".
+                        ====================================
+                        */
+
+                        note:
+                            item.note ||
+                            "",
+
                         quantity:
                             item.quantity,
 
@@ -465,12 +1084,52 @@ const checkout = async (
                     })
                 ),
 
+
+            /*
+            ------------------------------------------------
+            TOTALS
+            ------------------------------------------------
+            */
+
             subtotal,
 
             discount:
                 numericDiscount,
 
+
+            /*
+            ------------------------------------------------
+            LOYALTY
+            ------------------------------------------------
+            */
+
+            loyaltyPointsRedeemed,
+
+            loyaltyDiscount,
+
+            loyaltyPointsEarned,
+
+            loyaltyEarnedPointsReversed:
+                0,
+
+            loyaltyRedeemedPointsRestored:
+                0,
+
+
+            /*
+            ------------------------------------------------
+            FINAL TOTAL
+            ------------------------------------------------
+            */
+
             total,
+
+
+            /*
+            ------------------------------------------------
+            PAYMENT
+            ------------------------------------------------
+            */
 
             payment:
                 numericPayment,
@@ -487,25 +1146,16 @@ const checkout = async (
     DEDUCT INVENTORY
     ========================================================
 
-    ONLY normal products reach this section.
+    Only normal products affect inventory.
 
-    Open-price Grocery items have:
-
-    productDocument = null
-
-    and are skipped.
+    Open-price Grocery items are skipped completely.
     ========================================================
     */
 
     for (
-        const item of saleItems
+        const item
+        of saleItems
     ) {
-
-        /*
-        ----------------------------------------------------
-        SKIP OPEN PRICE
-        ----------------------------------------------------
-        */
 
         if (
             item.isOpenPrice ||
@@ -573,11 +1223,228 @@ const checkout = async (
 
     /*
     ========================================================
-    RETURN SALE
+    PROCESS CUSTOMER LOYALTY
+    ========================================================
+
+    IMPORTANT ORDER:
+
+    1. Redeem old points
+    2. Award newly earned points
+
+    Example:
+
+    Starting = 128
+
+    Redeem 50
+    → 78
+
+    Earn 4
+    → 82
     ========================================================
     */
 
-    return sale;
+    if (
+        customer
+    ) {
+
+        /*
+        ====================================================
+        REDEEM POINTS
+        ====================================================
+        */
+
+        if (
+            loyaltyPointsRedeemed >
+            0
+        ) {
+
+            const balanceBefore =
+                Number(
+                    customer.loyaltyPoints
+                ) || 0;
+
+
+            const balanceAfter =
+                balanceBefore -
+                loyaltyPointsRedeemed;
+
+
+            /*
+            ------------------------------------------------
+            SAFETY CHECK
+            ------------------------------------------------
+            */
+
+            if (
+                balanceAfter < 0
+            ) {
+
+                throw new ApiError(
+                    400,
+                    "Customer does not have enough loyalty points."
+                );
+
+            }
+
+
+            customer.loyaltyPoints =
+                balanceAfter;
+
+
+            await customer.save();
+
+
+            /*
+            ------------------------------------------------
+            LOYALTY AUDIT RECORD
+            ------------------------------------------------
+            */
+
+            await LoyaltyTransaction.create({
+
+                customer:
+                    customer._id,
+
+                sale:
+                    sale._id,
+
+                type:
+                    "REDEEM",
+
+                points:
+                    -loyaltyPointsRedeemed,
+
+                balanceBefore,
+
+                balanceAfter,
+
+                description:
+                    `${loyaltyPointsRedeemed} point(s) redeemed on Receipt ${receiptNumber}`,
+
+                createdBy:
+                    userId ||
+                    null,
+
+            });
+
+        }
+
+
+        /*
+        ====================================================
+        EARN NEW POINTS
+        ====================================================
+        */
+
+        if (
+            loyaltyPointsEarned >
+            0
+        ) {
+
+            const balanceBefore =
+                Number(
+                    customer.loyaltyPoints
+                ) || 0;
+
+
+            const balanceAfter =
+                balanceBefore +
+                loyaltyPointsEarned;
+
+
+            /*
+            ------------------------------------------------
+            AVAILABLE POINT BALANCE
+            ------------------------------------------------
+            */
+
+            customer.loyaltyPoints =
+                balanceAfter;
+
+
+            /*
+            ------------------------------------------------
+            LIFETIME POINTS
+
+            Lifetime points represent all points earned.
+
+            Redemption does NOT decrease lifetimePoints.
+            ------------------------------------------------
+            */
+
+            customer.lifetimePoints =
+                (
+                    Number(
+                        customer.lifetimePoints
+                    ) || 0
+                ) +
+                loyaltyPointsEarned;
+
+
+            await customer.save();
+
+
+            /*
+            ------------------------------------------------
+            LOYALTY AUDIT RECORD
+            ------------------------------------------------
+            */
+
+            await LoyaltyTransaction.create({
+
+                customer:
+                    customer._id,
+
+                sale:
+                    sale._id,
+
+                type:
+                    "EARN",
+
+                points:
+                    loyaltyPointsEarned,
+
+                balanceBefore,
+
+                balanceAfter,
+
+                description:
+                    `${loyaltyPointsEarned} point(s) earned from Receipt ${receiptNumber}`,
+
+                createdBy:
+                    userId ||
+                    null,
+
+            });
+
+        }
+
+    }
+
+
+    /*
+    ========================================================
+    RETURN POPULATED SALE
+    ========================================================
+    */
+
+    const completedSale =
+        await Sale.findById(
+            sale._id
+        )
+
+            .populate(
+                "cashier",
+                "name username"
+            )
+
+            .populate(
+                "customer",
+                CUSTOMER_POPULATE_FIELDS
+            );
+
+
+    return completedSale;
 
 };
 
@@ -591,10 +1458,17 @@ GET SALES
 const getSales = async () => {
 
     return await Sale.find()
+
         .populate(
             "cashier",
             "name username"
         )
+
+        .populate(
+            "customer",
+            CUSTOMER_POPULATE_FIELDS
+        )
+
         .sort({
             createdAt:
                 -1,
@@ -613,17 +1487,46 @@ const getSaleById = async (
     id
 ) => {
 
+    /*
+    --------------------------------------------------------
+    VALIDATE SALE ID
+    --------------------------------------------------------
+    */
+
+    if (
+        !mongoose.Types.ObjectId
+            .isValid(
+                id
+            )
+    ) {
+
+        throw new ApiError(
+            400,
+            "Invalid sale ID."
+        );
+
+    }
+
+
     const sale =
         await Sale.findById(
             id
         )
+
             .populate(
                 "cashier",
                 "name username"
+            )
+
+            .populate(
+                "customer",
+                CUSTOMER_POPULATE_FIELDS
             );
 
 
-    if (!sale) {
+    if (
+        !sale
+    ) {
 
         throw new ApiError(
             404,
@@ -643,11 +1546,22 @@ const getSaleById = async (
 VOID SALE
 ============================================================
 
-Normal products:
-    restore inventory
+Normal product:
+→ restore inventory
 
-Open-price Grocery:
-    no inventory exists, so skip inventory restoration
+Open-price item:
+→ no inventory restoration
+
+Grocery note:
+→ remains part of the original sale item
+
+Loyalty:
+
+If sale earned points:
+→ remove earned points
+
+If sale redeemed points:
+→ restore redeemed points
 ============================================================
 */
 
@@ -656,13 +1570,36 @@ const voidSale = async (
     userId
 ) => {
 
+    /*
+    --------------------------------------------------------
+    VALIDATE SALE ID
+    --------------------------------------------------------
+    */
+
+    if (
+        !mongoose.Types.ObjectId
+            .isValid(
+                saleId
+            )
+    ) {
+
+        throw new ApiError(
+            400,
+            "Invalid sale ID."
+        );
+
+    }
+
+
     const sale =
         await Sale.findById(
             saleId
         );
 
 
-    if (!sale) {
+    if (
+        !sale
+    ) {
 
         throw new ApiError(
             404,
@@ -724,20 +1661,19 @@ const voidSale = async (
     */
 
     for (
-        const item of sale.items
+        const item
+        of sale.items
     ) {
 
         /*
         ----------------------------------------------------
-        OPEN PRICE ITEM
-
-        No inventory to restore.
+        OPEN PRICE
         ----------------------------------------------------
         */
 
         if (
             item.isOpenPrice ===
-            true ||
+                true ||
             !item.product
         ) {
 
@@ -758,7 +1694,9 @@ const voidSale = async (
             );
 
 
-        if (!product) {
+        if (
+            !product
+        ) {
 
             throw new ApiError(
                 404,
@@ -822,6 +1760,217 @@ const voidSale = async (
 
     /*
     ========================================================
+    LOYALTY REVERSAL
+    ========================================================
+    */
+
+    if (
+        sale.customer
+    ) {
+
+        const customer =
+            await Customer.findById(
+                sale.customer
+            );
+
+
+        if (
+            customer
+        ) {
+
+            /*
+            =================================================
+            REMOVE EARNED POINTS
+            =================================================
+            */
+
+            const earnedPoints =
+                Number(
+                    sale.loyaltyPointsEarned
+                ) || 0;
+
+
+            const alreadyReversed =
+                Number(
+                    sale.loyaltyEarnedPointsReversed
+                ) || 0;
+
+
+            const pointsToReverse =
+                Math.max(
+                    0,
+                    earnedPoints -
+                    alreadyReversed
+                );
+
+
+            if (
+                pointsToReverse >
+                0
+            ) {
+
+                const balanceBefore =
+                    Number(
+                        customer.loyaltyPoints
+                    ) || 0;
+
+
+                const actualPointsRemoved =
+                    Math.min(
+                        balanceBefore,
+                        pointsToReverse
+                    );
+
+
+                const balanceAfter =
+                    balanceBefore -
+                    actualPointsRemoved;
+
+
+                customer.loyaltyPoints =
+                    balanceAfter;
+
+
+                customer.lifetimePoints =
+                    Math.max(
+                        0,
+                        (
+                            Number(
+                                customer.lifetimePoints
+                            ) || 0
+                        ) -
+                        pointsToReverse
+                    );
+
+
+                sale.loyaltyEarnedPointsReversed =
+                    alreadyReversed +
+                    pointsToReverse;
+
+
+                await customer.save();
+
+
+                await LoyaltyTransaction.create({
+
+                    customer:
+                        customer._id,
+
+                    sale:
+                        sale._id,
+
+                    type:
+                        "REVERSAL",
+
+                    points:
+                        -actualPointsRemoved,
+
+                    balanceBefore,
+
+                    balanceAfter,
+
+                    description:
+                        `Earned loyalty points reversed because Receipt ${sale.receiptNumber} was voided.`,
+
+                    createdBy:
+                        userId ||
+                        null,
+
+                });
+
+            }
+
+
+            /*
+            =================================================
+            RESTORE REDEEMED POINTS
+            =================================================
+            */
+
+            const redeemedPoints =
+                Number(
+                    sale.loyaltyPointsRedeemed
+                ) || 0;
+
+
+            const alreadyRestored =
+                Number(
+                    sale.loyaltyRedeemedPointsRestored
+                ) || 0;
+
+
+            const pointsToRestore =
+                Math.max(
+                    0,
+                    redeemedPoints -
+                    alreadyRestored
+                );
+
+
+            if (
+                pointsToRestore >
+                0
+            ) {
+
+                const balanceBefore =
+                    Number(
+                        customer.loyaltyPoints
+                    ) || 0;
+
+
+                const balanceAfter =
+                    balanceBefore +
+                    pointsToRestore;
+
+
+                customer.loyaltyPoints =
+                    balanceAfter;
+
+
+                sale.loyaltyRedeemedPointsRestored =
+                    alreadyRestored +
+                    pointsToRestore;
+
+
+                await customer.save();
+
+
+                await LoyaltyTransaction.create({
+
+                    customer:
+                        customer._id,
+
+                    sale:
+                        sale._id,
+
+                    type:
+                        "REVERSAL",
+
+                    points:
+                        pointsToRestore,
+
+                    balanceBefore,
+
+                    balanceAfter,
+
+                    description:
+                        `Redeemed loyalty points restored because Receipt ${sale.receiptNumber} was voided.`,
+
+                    createdBy:
+                        userId ||
+                        null,
+
+                });
+
+            }
+
+        }
+
+    }
+
+
+    /*
+    ========================================================
     UPDATE SALE
     ========================================================
     */
@@ -833,7 +1982,25 @@ const voidSale = async (
     await sale.save();
 
 
-    return sale;
+    /*
+    ========================================================
+    RETURN POPULATED SALE
+    ========================================================
+    */
+
+    return await Sale.findById(
+        sale._id
+    )
+
+        .populate(
+            "cashier",
+            "name username"
+        )
+
+        .populate(
+            "customer",
+            CUSTOMER_POPULATE_FIELDS
+        );
 
 };
 
@@ -843,17 +2010,29 @@ const voidSale = async (
 REFUND SALE
 ============================================================
 
-Supports both:
+Supports:
 
-Normal product refund
-Open-price Grocery refund
+- normal inventory products
+- open-price Grocery items
 
-IMPORTANT:
+Normal product:
+→ inventory restored
 
-Normal products restore inventory.
+Open-price:
+→ no inventory restoration
 
-Open-price items only update refundedQuantity because
-there is no inventory record to restore.
+Grocery note:
+→ does not affect refund calculations
+
+FULL REFUND:
+→ earned points reversed
+→ redeemed points restored
+
+PARTIAL REFUND:
+→ inventory/refunded quantities are updated
+
+We deliberately do NOT perform proportional loyalty
+recalculation for partial refunds yet.
 ============================================================
 */
 
@@ -863,13 +2042,36 @@ const refundSale = async (
     userId
 ) => {
 
+    /*
+    --------------------------------------------------------
+    VALIDATE SALE ID
+    --------------------------------------------------------
+    */
+
+    if (
+        !mongoose.Types.ObjectId
+            .isValid(
+                saleId
+            )
+    ) {
+
+        throw new ApiError(
+            400,
+            "Invalid sale ID."
+        );
+
+    }
+
+
     const sale =
         await Sale.findById(
             saleId
         );
 
 
-    if (!sale) {
+    if (
+        !sale
+    ) {
 
         throw new ApiError(
             404,
@@ -915,8 +2117,7 @@ const refundSale = async (
         !Array.isArray(
             refundItems
         ) ||
-        refundItems.length ===
-        0
+        refundItems.length === 0
     ) {
 
         throw new ApiError(
@@ -934,8 +2135,8 @@ const refundSale = async (
     */
 
     for (
-        const refundItem of
-        refundItems
+        const refundItem
+        of refundItems
     ) {
 
         const quantity =
@@ -963,13 +2164,6 @@ const refundSale = async (
         ====================================================
         FIND SALE ITEM
         ====================================================
-
-        Preferred:
-        saleItemId
-
-        Existing normal-product refund:
-        productId
-        ====================================================
         */
 
         let saleItem;
@@ -978,8 +2172,6 @@ const refundSale = async (
         /*
         ----------------------------------------------------
         SALE ITEM ID
-
-        This works for both normal and open-price items.
         ----------------------------------------------------
         */
 
@@ -998,8 +2190,6 @@ const refundSale = async (
         /*
         ----------------------------------------------------
         PRODUCT ID FALLBACK
-
-        Maintains compatibility with your existing frontend.
         ----------------------------------------------------
         */
 
@@ -1010,7 +2200,9 @@ const refundSale = async (
 
             saleItem =
                 sale.items.find(
-                    (item) =>
+                    (
+                        item
+                    ) =>
 
                         item.product &&
 
@@ -1024,7 +2216,9 @@ const refundSale = async (
         }
 
 
-        if (!saleItem) {
+        if (
+            !saleItem
+        ) {
 
             throw new ApiError(
                 400,
@@ -1088,7 +2282,9 @@ const refundSale = async (
                 );
 
 
-            if (!product) {
+            if (
+                !product
+            ) {
 
                 throw new ApiError(
                     404,
@@ -1150,8 +2346,6 @@ const refundSale = async (
         /*
         ====================================================
         UPDATE REFUNDED QUANTITY
-
-        Applies to BOTH normal and open-price items.
         ====================================================
         */
 
@@ -1170,7 +2364,9 @@ const refundSale = async (
 
     const fullyRefunded =
         sale.items.every(
-            (item) =>
+            (
+                item
+            ) =>
 
                 Number(
                     item.refundedQuantity ||
@@ -1189,10 +2385,255 @@ const refundSale = async (
             : "PARTIALLY_REFUNDED";
 
 
+    /*
+    ========================================================
+    FULL REFUND LOYALTY REVERSAL
+    ========================================================
+
+    Full refund:
+
+    1. Remove points earned by this sale
+    2. Restore points redeemed on this sale
+
+    Partial refunds are intentionally handled separately
+    later.
+    ========================================================
+    */
+
+    if (
+        fullyRefunded &&
+        sale.customer
+    ) {
+
+        const customer =
+            await Customer.findById(
+                sale.customer
+            );
+
+
+        if (
+            customer
+        ) {
+
+            /*
+            =================================================
+            REMOVE EARNED POINTS
+            =================================================
+            */
+
+            const earnedPoints =
+                Number(
+                    sale.loyaltyPointsEarned
+                ) || 0;
+
+
+            const alreadyReversed =
+                Number(
+                    sale.loyaltyEarnedPointsReversed
+                ) || 0;
+
+
+            const pointsToReverse =
+                Math.max(
+                    0,
+                    earnedPoints -
+                    alreadyReversed
+                );
+
+
+            if (
+                pointsToReverse >
+                0
+            ) {
+
+                const balanceBefore =
+                    Number(
+                        customer.loyaltyPoints
+                    ) || 0;
+
+
+                const actualPointsRemoved =
+                    Math.min(
+                        balanceBefore,
+                        pointsToReverse
+                    );
+
+
+                const balanceAfter =
+                    balanceBefore -
+                    actualPointsRemoved;
+
+
+                customer.loyaltyPoints =
+                    balanceAfter;
+
+
+                customer.lifetimePoints =
+                    Math.max(
+                        0,
+                        (
+                            Number(
+                                customer.lifetimePoints
+                            ) || 0
+                        ) -
+                        pointsToReverse
+                    );
+
+
+                sale.loyaltyEarnedPointsReversed =
+                    alreadyReversed +
+                    pointsToReverse;
+
+
+                await customer.save();
+
+
+                await LoyaltyTransaction.create({
+
+                    customer:
+                        customer._id,
+
+                    sale:
+                        sale._id,
+
+                    type:
+                        "REVERSAL",
+
+                    points:
+                        -actualPointsRemoved,
+
+                    balanceBefore,
+
+                    balanceAfter,
+
+                    description:
+                        `Earned loyalty points reversed because Receipt ${sale.receiptNumber} was fully refunded.`,
+
+                    createdBy:
+                        userId ||
+                        null,
+
+                });
+
+            }
+
+
+            /*
+            =================================================
+            RESTORE REDEEMED POINTS
+            =================================================
+            */
+
+            const redeemedPoints =
+                Number(
+                    sale.loyaltyPointsRedeemed
+                ) || 0;
+
+
+            const alreadyRestored =
+                Number(
+                    sale.loyaltyRedeemedPointsRestored
+                ) || 0;
+
+
+            const pointsToRestore =
+                Math.max(
+                    0,
+                    redeemedPoints -
+                    alreadyRestored
+                );
+
+
+            if (
+                pointsToRestore >
+                0
+            ) {
+
+                const balanceBefore =
+                    Number(
+                        customer.loyaltyPoints
+                    ) || 0;
+
+
+                const balanceAfter =
+                    balanceBefore +
+                    pointsToRestore;
+
+
+                customer.loyaltyPoints =
+                    balanceAfter;
+
+
+                sale.loyaltyRedeemedPointsRestored =
+                    alreadyRestored +
+                    pointsToRestore;
+
+
+                await customer.save();
+
+
+                await LoyaltyTransaction.create({
+
+                    customer:
+                        customer._id,
+
+                    sale:
+                        sale._id,
+
+                    type:
+                        "REVERSAL",
+
+                    points:
+                        pointsToRestore,
+
+                    balanceBefore,
+
+                    balanceAfter,
+
+                    description:
+                        `Redeemed loyalty points restored because Receipt ${sale.receiptNumber} was fully refunded.`,
+
+                    createdBy:
+                        userId ||
+                        null,
+
+                });
+
+            }
+
+        }
+
+    }
+
+
+    /*
+    ========================================================
+    SAVE SALE
+    ========================================================
+    */
+
     await sale.save();
 
 
-    return sale;
+    /*
+    ========================================================
+    RETURN POPULATED SALE
+    ========================================================
+    */
+
+    return await Sale.findById(
+        sale._id
+    )
+
+        .populate(
+            "cashier",
+            "name username"
+        )
+
+        .populate(
+            "customer",
+            CUSTOMER_POPULATE_FIELDS
+        );
 
 };
 
