@@ -1,93 +1,285 @@
-
 import productService from "../services/product.service.js";
+
 import ApiResponse from "../utils/ApiResponse.js";
 
-const createProduct = async (req, res, next) => {
-    try {
-        const product = await productService.createProduct(req.body);
 
-        res.status(201).json(
-            new ApiResponse(
-                true,
-                "Product created successfully",
-                product
-            )
-        );
-    } catch (error) {
-        next(error);
-    }
-};
+/*
+============================================================
+CREATE PRODUCT
+============================================================
 
-const getProducts = async (req, res, next) => {
-    try {
-        const products = await productService.getProducts();
+Products are global.
 
-        res.status(200).json(
-            new ApiResponse(
-                true,
-                "Products retrieved successfully",
-                products
-            )
-        );
-    } catch (error) {
-        next(error);
-    }
-};
+Initial inventory is created for the currently selected
+branch.
 
-const getProductById = async (req, res, next) => {
-    try {
-        const product = await productService.getProductById(req.params.id);
+resolveActiveBranch has already validated req.branchId.
+============================================================
+*/
 
-        res.status(200).json(
-            new ApiResponse(
-                true,
-                "Product retrieved successfully",
-                product
-            )
-        );
-    } catch (error) {
-        next(error);
-    }
-};
-const updateProduct = async (req, res, next) => {
-    try {
+const createProduct =
+    async (
+        req,
+        res,
+        next
+    ) => {
 
-        const product = await productService.updateProduct(
-            req.params.id,
-            req.body
-        );
+        try {
 
-        res.status(200).json(
-            new ApiResponse(
-                true,
-                "Product updated successfully",
-                product
-            )
-        );
+            const product =
+                await productService
+                    .createProduct(
+                        req.body,
+                        req.branchId
+                    );
 
-    } catch (error) {
-        next(error);
-    }
-};
 
-const updateProductStatus = async (req, res, next) => {
-    try {
-        const product = await productService.updateProductStatus(
-            req.params.id,
-            req.body.isActive
-        );
+            res
+                .status(
+                    201
+                )
+                .json(
+                    new ApiResponse(
+                        true,
+                        "Product created successfully",
+                        product
+                    )
+                );
 
-        res.status(200).json(
-            new ApiResponse(
-                true,
-                "Product status updated successfully",
-                product
-            )
-        );
-    } catch (error) {
-        next(error);
-    }
-};
+
+        } catch (
+            error
+        ) {
+
+            next(
+                error
+            );
+
+        }
+
+    };
+
+
+/*
+============================================================
+GET ALL PRODUCTS
+============================================================
+
+Returns global products decorated with inventory belonging
+to the active branch.
+============================================================
+*/
+
+const getProducts =
+    async (
+        req,
+        res,
+        next
+    ) => {
+
+        try {
+
+            const products =
+                await productService
+                    .getProducts(
+                        req.branchId
+                    );
+
+
+            res
+                .status(
+                    200
+                )
+                .json(
+                    new ApiResponse(
+                        true,
+                        "Products retrieved successfully",
+                        products
+                    )
+                );
+
+
+        } catch (
+            error
+        ) {
+
+            next(
+                error
+            );
+
+        }
+
+    };
+
+
+/*
+============================================================
+GET PRODUCT BY ID
+============================================================
+*/
+
+const getProductById =
+    async (
+        req,
+        res,
+        next
+    ) => {
+
+        try {
+
+            const product =
+                await productService
+                    .getProductById(
+                        req.params.id,
+                        req.branchId
+                    );
+
+
+            res
+                .status(
+                    200
+                )
+                .json(
+                    new ApiResponse(
+                        true,
+                        "Product retrieved successfully",
+                        product
+                    )
+                );
+
+
+        } catch (
+            error
+        ) {
+
+            next(
+                error
+            );
+
+        }
+
+    };
+
+
+/*
+============================================================
+UPDATE PRODUCT
+============================================================
+
+Global product fields are updated on Product.
+
+Branch-specific fields such as minimumStock are handled
+against the currently selected BranchInventory.
+
+Stock itself must still be changed through Inventory
+Adjustment.
+============================================================
+*/
+
+const updateProduct =
+    async (
+        req,
+        res,
+        next
+    ) => {
+
+        try {
+
+            const product =
+                await productService
+                    .updateProduct(
+                        req.params.id,
+                        req.body,
+                        req.branchId
+                    );
+
+
+            res
+                .status(
+                    200
+                )
+                .json(
+                    new ApiResponse(
+                        true,
+                        "Product updated successfully",
+                        product
+                    )
+                );
+
+
+        } catch (
+            error
+        ) {
+
+            next(
+                error
+            );
+
+        }
+
+    };
+
+
+/*
+============================================================
+UPDATE PRODUCT STATUS
+============================================================
+
+Product status remains global.
+
+Response is decorated with the current branch inventory.
+============================================================
+*/
+
+const updateProductStatus =
+    async (
+        req,
+        res,
+        next
+    ) => {
+
+        try {
+
+            const product =
+                await productService
+                    .updateProductStatus(
+                        req.params.id,
+                        req.body.isActive,
+                        req.branchId
+                    );
+
+
+            res
+                .status(
+                    200
+                )
+                .json(
+                    new ApiResponse(
+                        true,
+                        "Product status updated successfully",
+                        product
+                    )
+                );
+
+
+        } catch (
+            error
+        ) {
+
+            next(
+                error
+            );
+
+        }
+
+    };
+
+
+/*
+============================================================
+GENERATE BARCODE
+============================================================
+*/
 
 const generateBarcode =
     async (
@@ -103,19 +295,30 @@ const generateBarcode =
                     .generateUniqueBarcode();
 
 
-            res.status(200).json({
-                success: true,
+            res
+                .status(
+                    200
+                )
+                .json({
 
-                message:
-                    "Barcode generated successfully.",
+                    success:
+                        true,
 
-                data: {
-                    barcode,
-                },
-            });
+                    message:
+                        "Barcode generated successfully.",
+
+                    data: {
+
+                        barcode,
+
+                    },
+
+                });
 
 
-        } catch (error) {
+        } catch (
+            error
+        ) {
 
             next(
                 error
@@ -125,11 +328,25 @@ const generateBarcode =
 
     };
 
+
+/*
+============================================================
+EXPORT
+============================================================
+*/
+
 export default {
+
     createProduct,
+
     getProducts,
+
     getProductById,
+
     updateProduct,
+
     updateProductStatus,
-    generateBarcode
+
+    generateBarcode,
+
 };

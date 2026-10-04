@@ -3,6 +3,9 @@ import express from "express";
 import saleController from "../controllers/sale.controller.js";
 
 import protect from "../middleware/auth.middleware.js";
+
+import resolveActiveBranch from "../middleware/branch.middleware.js";
+
 import permit from "../middleware/permission.middleware.js";
 
 import validate from "../middleware/validate.middleware.js";
@@ -10,7 +13,8 @@ import validate from "../middleware/validate.middleware.js";
 import saleValidator from "../validators/sale.validator.js";
 
 
-const router = express.Router();
+const router =
+    express.Router();
 
 
 /*
@@ -20,39 +24,64 @@ CHECKOUT
 
 POST /api/sales/checkout
 
-Requires POS access.
+Flow:
 
-Admin automatically bypasses permission checks
-inside permit().
+protect
+→ resolve current user
+→ resolve active branch
+→ permission check
+→ validate request
+→ checkout
+
+The branch comes from backend branch context.
+It is never trusted from req.body.
 ============================================================
 */
 
 router.post(
     "/checkout",
+
     protect,
-    permit("pos"),
+
+    resolveActiveBranch,
+
+    permit(
+        "pos"
+    ),
+
     validate(
         saleValidator.checkoutSchema
     ),
+
     saleController.checkout
 );
 
 
 /*
 ============================================================
-GET ALL SALES
+GET SALES
 ============================================================
 
-GET /api/sales
+Returns sales for the ACTIVE branch only.
 
-Requires Sales page access.
+Admin users still operate inside the selected/default branch
+for this endpoint.
+
+All-branch reporting will be implemented separately.
 ============================================================
 */
 
 router.get(
     "/",
+
     protect,
-    permit("sales"),
+
+    resolveActiveBranch,
+
+    permit(
+        "sales"
+    ),
+
     saleController.getSales
 );
 
@@ -62,16 +91,21 @@ router.get(
 GET SALE BY ID
 ============================================================
 
-GET /api/sales/:id
-
-Anyone with Sales access can view receipt details.
+The sale must belong to the active branch.
 ============================================================
 */
 
 router.get(
     "/:id",
+
     protect,
-    permit("sales"),
+
+    resolveActiveBranch,
+
+    permit(
+        "sales"
+    ),
+
     saleController.getSaleById
 );
 
@@ -81,16 +115,21 @@ router.get(
 VOID SALE
 ============================================================
 
-PATCH /api/sales/:id/void
-
-Requires specific Void permission.
+The sale must belong to the active branch.
 ============================================================
 */
 
 router.patch(
     "/:id/void",
+
     protect,
-    permit("salesVoid"),
+
+    resolveActiveBranch,
+
+    permit(
+        "salesVoid"
+    ),
+
     saleController.voidSale
 );
 
@@ -100,19 +139,25 @@ router.patch(
 REFUND SALE
 ============================================================
 
-PATCH /api/sales/:id/refund
-
-Requires specific Refund permission.
+The sale must belong to the active branch.
 ============================================================
 */
 
 router.patch(
     "/:id/refund",
+
     protect,
-    permit("salesRefund"),
+
+    resolveActiveBranch,
+
+    permit(
+        "salesRefund"
+    ),
+
     validate(
         saleValidator.refundSchema
     ),
+
     saleController.refundSale
 );
 
@@ -122,16 +167,22 @@ router.patch(
 PRINT / REPRINT SALE
 ============================================================
 
-POST /api/sales/:id/print
-
-Requires specific receipt reprint permission.
+A receipt from another branch cannot be retrieved simply by
+supplying its MongoDB ID.
 ============================================================
 */
 
 router.post(
     "/:id/print",
+
     protect,
-    permit("salesReprint"),
+
+    resolveActiveBranch,
+
+    permit(
+        "salesReprint"
+    ),
+
     saleController.printSale
 );
 

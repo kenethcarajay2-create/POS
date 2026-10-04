@@ -4,7 +4,9 @@ import {
     useState,
 } from "react";
 
-import { useNavigate } from "react-router-dom";
+import {
+    useNavigate,
+} from "react-router-dom";
 
 import {
     FaArrowLeft,
@@ -22,6 +24,7 @@ import {
     FaExchangeAlt,
     FaTimes,
     FaCheck,
+    FaBuilding,
 } from "react-icons/fa";
 
 import {
@@ -35,6 +38,7 @@ import {
 } from "recharts";
 
 import useSaleStore from "../../store/sale.store";
+import useBranchStore from "../../store/branch.store";
 
 
 /*
@@ -43,49 +47,90 @@ DATE HELPERS
 ==========================================================
 */
 
-const parseLocalDateString = (value) => {
+const parseLocalDateString = (
+    value
+) => {
+
     if (!value) {
         return null;
     }
 
-    const [year, month, day] = value
-        .split("-")
-        .map(Number);
 
-    if (!year || !month || !day) {
+    const [
+        year,
+        month,
+        day,
+    ] = String(
+        value
+    )
+        .split("-")
+        .map(
+            Number
+        );
+
+
+    if (
+        !year ||
+        !month ||
+        !day
+    ) {
         return null;
     }
+
 
     return new Date(
         year,
         month - 1,
         day
     );
+
 };
 
 
-const getSaleDate = (sale) => {
+const getSaleDate = (
+    sale
+) => {
+
     const value =
         sale?.createdAt ||
         sale?.saleDate ||
         sale?.date;
 
+
     if (!value) {
         return null;
     }
 
-    const date = new Date(value);
 
-    if (Number.isNaN(date.getTime())) {
+    const date =
+        new Date(
+            value
+        );
+
+
+    if (
+        Number.isNaN(
+            date.getTime()
+        )
+    ) {
         return null;
     }
 
+
     return date;
+
 };
 
 
-const startOfDay = (value) => {
-    const date = new Date(value);
+const startOfDay = (
+    value
+) => {
+
+    const date =
+        new Date(
+            value
+        );
+
 
     date.setHours(
         0,
@@ -94,12 +139,21 @@ const startOfDay = (value) => {
         0
     );
 
+
     return date;
+
 };
 
 
-const endOfDay = (value) => {
-    const date = new Date(value);
+const endOfDay = (
+    value
+) => {
+
+    const date =
+        new Date(
+            value
+        );
+
 
     date.setHours(
         23,
@@ -108,50 +162,85 @@ const endOfDay = (value) => {
         999
     );
 
+
     return date;
+
 };
 
 
-const startOfWeek = (value) => {
+const startOfWeek = (
+    value
+) => {
+
     const date =
-        startOfDay(value);
+        startOfDay(
+            value
+        );
+
 
     const day =
         date.getDay();
 
-    // Monday = first day of week.
+
+    /*
+    Monday = first day of week.
+    */
+
     const difference =
         day === 0
             ? -6
             : 1 - day;
+
 
     date.setDate(
         date.getDate() +
         difference
     );
 
+
     return date;
+
 };
 
 
-const endOfWeek = (value) => {
+const endOfWeek = (
+    value
+) => {
+
     const start =
-        startOfWeek(value);
+        startOfWeek(
+            value
+        );
+
 
     const end =
-        new Date(start);
+        new Date(
+            start
+        );
+
 
     end.setDate(
-        end.getDate() + 6
+        end.getDate() +
+        6
     );
 
-    return endOfDay(end);
+
+    return endOfDay(
+        end
+    );
+
 };
 
 
-const startOfMonth = (value) => {
+const startOfMonth = (
+    value
+) => {
+
     const date =
-        new Date(value);
+        new Date(
+            value
+        );
+
 
     return new Date(
         date.getFullYear(),
@@ -162,12 +251,19 @@ const startOfMonth = (value) => {
         0,
         0
     );
+
 };
 
 
-const endOfMonth = (value) => {
+const endOfMonth = (
+    value
+) => {
+
     const date =
-        new Date(value);
+        new Date(
+            value
+        );
+
 
     return new Date(
         date.getFullYear(),
@@ -178,12 +274,19 @@ const endOfMonth = (value) => {
         59,
         999
     );
+
 };
 
 
-const startOfYear = (value) => {
+const startOfYear = (
+    value
+) => {
+
     const date =
-        new Date(value);
+        new Date(
+            value
+        );
+
 
     return new Date(
         date.getFullYear(),
@@ -194,12 +297,19 @@ const startOfYear = (value) => {
         0,
         0
     );
+
 };
 
 
-const endOfYear = (value) => {
+const endOfYear = (
+    value
+) => {
+
     const date =
-        new Date(value);
+        new Date(
+            value
+        );
+
 
     return new Date(
         date.getFullYear(),
@@ -210,6 +320,7 @@ const endOfYear = (value) => {
         59,
         999
     );
+
 };
 
 
@@ -217,15 +328,21 @@ const addDays = (
     value,
     amount
 ) => {
+
     const date =
-        new Date(value);
+        new Date(
+            value
+        );
+
 
     date.setDate(
         date.getDate() +
         amount
     );
 
+
     return date;
+
 };
 
 
@@ -233,15 +350,20 @@ const addMonths = (
     value,
     amount
 ) => {
+
     const date =
-        new Date(value);
+        new Date(
+            value
+        );
+
 
     return new Date(
         date.getFullYear(),
         date.getMonth() +
-            amount,
+        amount,
         1
     );
+
 };
 
 
@@ -249,18 +371,87 @@ const daysBetween = (
     start,
     end
 ) => {
+
     const first =
-        startOfDay(start);
+        startOfDay(
+            start
+        );
+
 
     const second =
-        startOfDay(end);
+        startOfDay(
+            end
+        );
+
 
     return (
         Math.floor(
-            (second - first) /
-                86400000
+            (
+                second -
+                first
+            ) /
+            86400000
         ) + 1
     );
+
+};
+
+
+/*
+==========================================================
+BRANCH HELPERS
+==========================================================
+*/
+
+const normalizeId = (
+    value
+) => {
+
+    if (!value) {
+        return "";
+    }
+
+
+    if (
+        typeof value ===
+        "object"
+    ) {
+
+        return String(
+            value._id ||
+            value.id ||
+            ""
+        );
+
+    }
+
+
+    return String(
+        value
+    );
+
+};
+
+
+const sanitizeFilePart = (
+    value
+) => {
+
+    return String(
+        value || "branch"
+    )
+        .trim()
+        .toLowerCase()
+        .replace(
+            /[^a-z0-9-_]+/g,
+            "-"
+        )
+        .replace(
+            /^-+|-+$/g,
+            ""
+        ) ||
+        "branch";
+
 };
 
 
@@ -270,11 +461,16 @@ SALE CALCULATION HELPERS
 ==========================================================
 */
 
-const getRemainingQuantity = (item) => {
+const getRemainingQuantity = (
+    item
+) => {
+
     const quantity =
         Number(
-            item?.quantity || 0
+            item?.quantity ||
+            0
         );
+
 
     const refundedQuantity =
         Number(
@@ -282,22 +478,27 @@ const getRemainingQuantity = (item) => {
             0
         );
 
+
     return Math.max(
         quantity -
-            refundedQuantity,
+        refundedQuantity,
         0
     );
+
 };
 
 
 const getSaleRemainingQuantity = (
     sale
 ) => {
+
     if (
-        sale?.status === "VOIDED"
+        sale?.status ===
+        "VOIDED"
     ) {
         return 0;
     }
+
 
     if (
         !Array.isArray(
@@ -307,38 +508,48 @@ const getSaleRemainingQuantity = (
         return 0;
     }
 
+
     return sale.items.reduce(
-        (sum, item) =>
+        (
+            sum,
+            item
+        ) =>
             sum +
             getRemainingQuantity(
                 item
             ),
         0
     );
+
 };
 
+
+/*
+==========================================================
+REFUND AMOUNT
+==========================================================
+*/
 
 const getSaleRefundAmount = (
     sale
 ) => {
-    /*
-    If your backend stores an explicit
-    refund amount, use that first.
-    */
 
     const recordedRefund =
         Number(
             sale?.refundAmount
         );
 
+
     if (
         Number.isFinite(
             recordedRefund
         ) &&
-        recordedRefund > 0
+        recordedRefund >
+        0
     ) {
         return recordedRefund;
     }
+
 
     if (
         !Array.isArray(
@@ -348,13 +559,19 @@ const getSaleRefundAmount = (
         return 0;
     }
 
+
     return sale.items.reduce(
-        (sum, item) => {
+        (
+            sum,
+            item
+        ) => {
+
             const refundedQuantity =
                 Number(
                     item?.refundedQuantity ||
                     0
                 );
+
 
             const unitPrice =
                 Number(
@@ -363,20 +580,30 @@ const getSaleRefundAmount = (
                     0
                 );
 
+
             return (
                 sum +
                 refundedQuantity *
-                    unitPrice
+                unitPrice
             );
+
         },
         0
     );
+
 };
 
+
+/*
+==========================================================
+ORIGINAL SALE TOTAL
+==========================================================
+*/
 
 const getSaleOriginalTotal = (
     sale
 ) => {
+
     const total =
         Number(
             sale?.total ??
@@ -384,11 +611,15 @@ const getSaleOriginalTotal = (
             sale?.totalAmount
         );
 
+
     if (
-        Number.isFinite(total)
+        Number.isFinite(
+            total
+        )
     ) {
         return total;
     }
+
 
     if (
         !Array.isArray(
@@ -398,80 +629,224 @@ const getSaleOriginalTotal = (
         return 0;
     }
 
-    return sale.items.reduce(
-        (sum, item) => {
-            const quantity =
-                Number(
-                    item?.quantity ||
-                    0
+
+    const subtotal =
+        sale.items.reduce(
+            (
+                sum,
+                item
+            ) => {
+
+                const quantity =
+                    Number(
+                        item?.quantity ||
+                        0
+                    );
+
+
+                const price =
+                    Number(
+                        item?.unitPrice ||
+                        item?.price ||
+                        0
+                    );
+
+
+                return (
+                    sum +
+                    quantity *
+                    price
                 );
 
-            const price =
-                Number(
-                    item?.unitPrice ||
-                    item?.price ||
-                    0
-                );
+            },
+            0
+        );
 
-            return (
-                sum +
-                quantity * price
-            );
-        },
+
+    const discount =
+        Number(
+            sale?.discount ||
+            0
+        );
+
+
+    return Math.max(
+        subtotal -
+        discount,
         0
     );
+
 };
 
+
+/*
+==========================================================
+NET SALE TOTAL
+==========================================================
+
+Matches Sales History semantics:
+
+VOIDED
+    = 0
+
+PARTIALLY_REFUNDED
+    = remaining quantity × unit price
+      minus discount
+
+REFUNDED
+    = 0 when all quantities were refunded
+
+COMPLETED
+    = normal sale total
+
+Older sales without items:
+    falls back to stored total.
+==========================================================
+*/
 
 const getSaleNetTotal = (
     sale
 ) => {
+
     if (
-        sale?.status === "VOIDED"
+        sale?.status ===
+        "VOIDED"
     ) {
         return 0;
     }
 
-    const total =
-        getSaleOriginalTotal(
-            sale
+
+    /*
+    Compatibility fallback for older
+    sales without embedded item data.
+    */
+
+    if (
+        !Array.isArray(
+            sale?.items
+        )
+    ) {
+
+        if (
+            sale?.status ===
+            "REFUNDED"
+        ) {
+            return 0;
+        }
+
+
+        return Number(
+            sale?.total ||
+            sale?.grandTotal ||
+            sale?.totalAmount ||
+            0
         );
 
-    const refund =
-        getSaleRefundAmount(
-            sale
+    }
+
+
+    const netSubtotal =
+        sale.items.reduce(
+            (
+                sum,
+                item
+            ) => {
+
+                const remainingQuantity =
+                    getRemainingQuantity(
+                        item
+                    );
+
+
+                const unitPrice =
+                    Number(
+                        item?.unitPrice ||
+                        item?.price ||
+                        0
+                    );
+
+
+                return (
+                    sum +
+                    remainingQuantity *
+                    unitPrice
+                );
+
+            },
+            0
         );
+
+
+    const discount =
+        Number(
+            sale?.discount ||
+            sale?.discountAmount ||
+            0
+        );
+
 
     return Math.max(
-        total - refund,
+        netSubtotal -
+        discount,
         0
     );
+
 };
 
 
 const getSaleDiscount = (
     sale
 ) => {
+
     if (
-        sale?.status === "VOIDED"
+        sale?.status ===
+        "VOIDED"
     ) {
         return 0;
     }
+
 
     return Number(
         sale?.discount ??
         sale?.discountAmount ??
         0
-    );
+    ) || 0;
+
 };
 
+
+/*
+==========================================================
+COUNTED TRANSACTION
+==========================================================
+
+Matches Sales History:
+
+COMPLETED
+    counted
+
+PARTIALLY_REFUNDED
+    counted
+
+REFUNDED
+    not counted
+
+VOIDED
+    not counted
+==========================================================
+*/
 
 const isCountedTransaction = (
     sale
 ) => {
+
     return (
-        sale?.status !== "VOIDED"
+        sale?.status !==
+            "VOIDED" &&
+        sale?.status !==
+            "REFUNDED"
     );
+
 };
 
 
@@ -497,7 +872,52 @@ function SalesReportPage() {
         sales,
         loading,
         fetchSales,
-    } = useSaleStore();
+    } =
+        useSaleStore();
+
+
+    /*
+    ======================================================
+    ACTIVE BRANCH
+    ======================================================
+    */
+
+    const activeBranch =
+        useBranchStore(
+            (
+                state
+            ) =>
+                state.activeBranch
+        );
+
+
+    const activeBranchId =
+        normalizeId(
+            activeBranch
+        );
+
+
+    const activeBranchCode =
+        String(
+            activeBranch?.code ||
+            ""
+        );
+
+
+    const activeBranchName =
+        String(
+            activeBranch?.name ||
+            ""
+        );
+
+
+    const activeBranchLabel =
+        activeBranchCode &&
+        activeBranchName
+            ? `${activeBranchCode} — ${activeBranchName}`
+            : activeBranchName ||
+              activeBranchCode ||
+              "Active Branch";
 
 
     /*
@@ -523,48 +943,87 @@ function SalesReportPage() {
     const [
         showCustomRange,
         setShowCustomRange,
-    ] = useState(false);
+    ] = useState(
+        false
+    );
 
 
     const [
         customStartDate,
         setCustomStartDate,
-    ] = useState("");
+    ] = useState(
+        ""
+    );
 
 
     const [
         customEndDate,
         setCustomEndDate,
-    ] = useState("");
+    ] = useState(
+        ""
+    );
 
 
     const [
         appliedStartDate,
         setAppliedStartDate,
-    ] = useState("");
+    ] = useState(
+        ""
+    );
 
 
     const [
         appliedEndDate,
         setAppliedEndDate,
-    ] = useState("");
+    ] = useState(
+        ""
+    );
 
 
     const [
         dateError,
         setDateError,
-    ] = useState("");
+    ] = useState(
+        ""
+    );
 
 
     /*
     ======================================================
     LOAD REAL SALES
     ======================================================
+
+    activeBranchId is intentionally included.
+
+    When the Navbar changes branch:
+
+        MAIN -> BR02
+
+    this report immediately fetches the sales
+    for the newly active branch.
+
+    api.js provides X-Branch-Id.
+    ======================================================
     */
 
-    useEffect(() => {
-        fetchSales();
-    }, [fetchSales]);
+    useEffect(
+        () => {
+
+            if (
+                !activeBranchId
+            ) {
+                return;
+            }
+
+
+            fetchSales();
+
+        },
+        [
+            fetchSales,
+            activeBranchId,
+        ]
+    );
 
 
     /*
@@ -576,8 +1035,13 @@ function SalesReportPage() {
     const formatCurrency = (
         value
     ) => {
+
         const number =
-            Number(value) || 0;
+            Number(
+                value
+            ) ||
+            0;
+
 
         return `₱${number.toLocaleString(
             "en-PH",
@@ -589,6 +1053,7 @@ function SalesReportPage() {
                     2,
             }
         )}`;
+
     };
 
 
@@ -601,23 +1066,32 @@ function SalesReportPage() {
     const formatDate = (
         dateString
     ) => {
+
         const date =
             parseLocalDateString(
                 dateString
             );
 
+
         if (!date) {
             return "";
         }
 
+
         return date.toLocaleDateString(
             "en-PH",
             {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
+                month:
+                    "short",
+
+                day:
+                    "numeric",
+
+                year:
+                    "numeric",
             }
         );
+
     };
 
 
@@ -663,150 +1137,183 @@ function SalesReportPage() {
     */
 
     const selectedDateRange =
-        useMemo(() => {
-            const now =
-                new Date();
+        useMemo(
+            () => {
 
+                const now =
+                    new Date();
 
-            if (
-                period === "Today"
-            ) {
-                return {
-                    start:
-                        startOfDay(
-                            now
-                        ),
-
-                    end:
-                        endOfDay(
-                            now
-                        ),
-                };
-            }
-
-
-            if (
-                period ===
-                "Yesterday"
-            ) {
-                const yesterday =
-                    addDays(
-                        now,
-                        -1
-                    );
-
-                return {
-                    start:
-                        startOfDay(
-                            yesterday
-                        ),
-
-                    end:
-                        endOfDay(
-                            yesterday
-                        ),
-                };
-            }
-
-
-            if (
-                period ===
-                "This Week"
-            ) {
-                return {
-                    start:
-                        startOfWeek(
-                            now
-                        ),
-
-                    end:
-                        endOfWeek(
-                            now
-                        ),
-                };
-            }
-
-
-            if (
-                period ===
-                "This Month"
-            ) {
-                return {
-                    start:
-                        startOfMonth(
-                            now
-                        ),
-
-                    end:
-                        endOfMonth(
-                            now
-                        ),
-                };
-            }
-
-
-            if (
-                period ===
-                "This Year"
-            ) {
-                return {
-                    start:
-                        startOfYear(
-                            now
-                        ),
-
-                    end:
-                        endOfYear(
-                            now
-                        ),
-                };
-            }
-
-
-            if (
-                period ===
-                    "Custom Range" &&
-                appliedStartDate &&
-                appliedEndDate
-            ) {
-                const start =
-                    parseLocalDateString(
-                        appliedStartDate
-                    );
-
-                const end =
-                    parseLocalDateString(
-                        appliedEndDate
-                    );
 
                 if (
-                    !start ||
-                    !end
+                    period ===
+                    "Today"
                 ) {
-                    return null;
+
+                    return {
+
+                        start:
+                            startOfDay(
+                                now
+                            ),
+
+                        end:
+                            endOfDay(
+                                now
+                            ),
+
+                    };
+
                 }
 
-                return {
-                    start:
-                        startOfDay(
-                            start
-                        ),
 
-                    end:
-                        endOfDay(
-                            end
-                        ),
-                };
-            }
+                if (
+                    period ===
+                    "Yesterday"
+                ) {
+
+                    const yesterday =
+                        addDays(
+                            now,
+                            -1
+                        );
 
 
-            return null;
+                    return {
 
-        }, [
-            period,
-            appliedStartDate,
-            appliedEndDate,
-        ]);
+                        start:
+                            startOfDay(
+                                yesterday
+                            ),
+
+                        end:
+                            endOfDay(
+                                yesterday
+                            ),
+
+                    };
+
+                }
+
+
+                if (
+                    period ===
+                    "This Week"
+                ) {
+
+                    return {
+
+                        start:
+                            startOfWeek(
+                                now
+                            ),
+
+                        end:
+                            endOfWeek(
+                                now
+                            ),
+
+                    };
+
+                }
+
+
+                if (
+                    period ===
+                    "This Month"
+                ) {
+
+                    return {
+
+                        start:
+                            startOfMonth(
+                                now
+                            ),
+
+                        end:
+                            endOfMonth(
+                                now
+                            ),
+
+                    };
+
+                }
+
+
+                if (
+                    period ===
+                    "This Year"
+                ) {
+
+                    return {
+
+                        start:
+                            startOfYear(
+                                now
+                            ),
+
+                        end:
+                            endOfYear(
+                                now
+                            ),
+
+                    };
+
+                }
+
+
+                if (
+                    period ===
+                        "Custom Range" &&
+                    appliedStartDate &&
+                    appliedEndDate
+                ) {
+
+                    const start =
+                        parseLocalDateString(
+                            appliedStartDate
+                        );
+
+
+                    const end =
+                        parseLocalDateString(
+                            appliedEndDate
+                        );
+
+
+                    if (
+                        !start ||
+                        !end
+                    ) {
+                        return null;
+                    }
+
+
+                    return {
+
+                        start:
+                            startOfDay(
+                                start
+                            ),
+
+                        end:
+                            endOfDay(
+                                end
+                            ),
+
+                    };
+
+                }
+
+
+                return null;
+
+            },
+            [
+                period,
+                appliedStartDate,
+                appliedEndDate,
+            ]
+        );
 
 
     /*
@@ -816,42 +1323,53 @@ function SalesReportPage() {
     */
 
     const filteredSales =
-        useMemo(() => {
-            if (
-                !Array.isArray(
-                    sales
-                ) ||
-                !selectedDateRange
-            ) {
-                return [];
-            }
+        useMemo(
+            () => {
+
+                if (
+                    !Array.isArray(
+                        sales
+                    ) ||
+                    !selectedDateRange
+                ) {
+                    return [];
+                }
 
 
-            return sales.filter(
-                (sale) => {
-                    const saleDate =
-                        getSaleDate(
-                            sale
+                return sales.filter(
+                    (
+                        sale
+                    ) => {
+
+                        const saleDate =
+                            getSaleDate(
+                                sale
+                            );
+
+
+                        if (!saleDate) {
+                            return false;
+                        }
+
+
+                        return (
+                            saleDate >=
+                                selectedDateRange
+                                    .start &&
+                            saleDate <=
+                                selectedDateRange
+                                    .end
                         );
 
-                    if (!saleDate) {
-                        return false;
                     }
+                );
 
-
-                    return (
-                        saleDate >=
-                            selectedDateRange.start &&
-                        saleDate <=
-                            selectedDateRange.end
-                    );
-                }
-            );
-
-        }, [
-            sales,
-            selectedDateRange,
-        ]);
+            },
+            [
+                sales,
+                selectedDateRange,
+            ]
+        );
 
 
     /*
@@ -873,60 +1391,71 @@ function SalesReportPage() {
 
     More than 730 days:
         Yearly
+    ======================================================
     */
 
     const customGranularity =
-        useMemo(() => {
-            if (
-                period !==
-                    "Custom Range" ||
-                !selectedDateRange
-            ) {
-                return null;
-            }
+        useMemo(
+            () => {
+
+                if (
+                    period !==
+                        "Custom Range" ||
+                    !selectedDateRange
+                ) {
+                    return null;
+                }
 
 
-            const totalDays =
-                daysBetween(
-                    selectedDateRange.start,
-                    selectedDateRange.end
-                );
+                const totalDays =
+                    daysBetween(
+                        selectedDateRange
+                            .start,
+                        selectedDateRange
+                            .end
+                    );
 
 
-            if (
-                totalDays === 1
-            ) {
-                return "hour";
-            }
+                if (
+                    totalDays ===
+                    1
+                ) {
+                    return "hour";
+                }
 
 
-            if (
-                totalDays <= 31
-            ) {
-                return "day";
-            }
+                if (
+                    totalDays <=
+                    31
+                ) {
+                    return "day";
+                }
 
 
-            if (
-                totalDays <= 180
-            ) {
-                return "week";
-            }
+                if (
+                    totalDays <=
+                    180
+                ) {
+                    return "week";
+                }
 
 
-            if (
-                totalDays <= 730
-            ) {
-                return "month";
-            }
+                if (
+                    totalDays <=
+                    730
+                ) {
+                    return "month";
+                }
 
 
-            return "year";
+                return "year";
 
-        }, [
-            period,
-            selectedDateRange,
-        ]);
+            },
+            [
+                period,
+                selectedDateRange,
+            ]
+        );
 
 
     /*
@@ -936,8 +1465,10 @@ function SalesReportPage() {
     */
 
     const graphGranularity =
-        period === "Today" ||
-        period === "Yesterday"
+        period ===
+            "Today" ||
+        period ===
+            "Yesterday"
             ? "hour"
 
             : period ===
@@ -962,14 +1493,20 @@ function SalesReportPage() {
     */
 
     const createHourlyData =
-        (salesData) => {
+        (
+            salesData
+        ) => {
 
             const buckets =
                 Array.from(
                     {
-                        length: 24,
+                        length:
+                            24,
                     },
-                    (_, hour) => {
+                    (
+                        _,
+                        hour
+                    ) => {
 
                         const label =
                             new Date(
@@ -977,34 +1514,47 @@ function SalesReportPage() {
                                 0,
                                 1,
                                 hour
-                            ).toLocaleTimeString(
-                                "en-PH",
-                                {
-                                    hour:
-                                        "numeric",
+                            )
+                                .toLocaleTimeString(
+                                    "en-PH",
+                                    {
+                                        hour:
+                                            "numeric",
 
-                                    hour12:
-                                        true,
-                                }
-                            );
+                                        hour12:
+                                            true,
+                                    }
+                                );
 
 
                         return {
+
                             label,
+
                             hour,
-                            sales: 0,
-                            transactions: 0,
+
+                            sales:
+                                0,
+
+                            transactions:
+                                0,
+
                         };
+
                     }
                 );
 
 
             salesData.forEach(
-                (sale) => {
+                (
+                    sale
+                ) => {
+
                     const saleDate =
                         getSaleDate(
                             sale
                         );
+
 
                     if (!saleDate) {
                         return;
@@ -1028,11 +1578,14 @@ function SalesReportPage() {
                             sale
                         )
                     ) {
+
                         buckets[
                             hour
                         ].transactions +=
                             1;
+
                     }
+
                 }
             );
 
@@ -1041,8 +1594,10 @@ function SalesReportPage() {
                 ({
                     hour,
                     ...item
-                }) => item
+                }) =>
+                    item
             );
+
         };
 
 
@@ -1053,6 +1608,7 @@ function SalesReportPage() {
 
     Always shows:
     Mon Tue Wed Thu Fri Sat Sun
+    ======================================================
     */
 
     const createWeekDayData =
@@ -1061,14 +1617,20 @@ function SalesReportPage() {
             rangeStart
         ) => {
 
-            const buckets = [];
+            const buckets =
+                [];
 
 
             for (
-                let index = 0;
-                index < 7;
+                let index =
+                    0;
+
+                index <
+                7;
+
                 index++
             ) {
+
                 const date =
                     addDays(
                         rangeStart,
@@ -1077,33 +1639,43 @@ function SalesReportPage() {
 
 
                 buckets.push({
+
                     date:
                         startOfDay(
                             date
                         ),
 
                     label:
-                        date.toLocaleDateString(
-                            "en-PH",
-                            {
-                                weekday:
-                                    "short",
-                            }
-                        ),
+                        date
+                            .toLocaleDateString(
+                                "en-PH",
+                                {
+                                    weekday:
+                                        "short",
+                                }
+                            ),
 
-                    sales: 0,
+                    sales:
+                        0,
 
-                    transactions: 0,
+                    transactions:
+                        0,
+
                 });
+
             }
 
 
             salesData.forEach(
-                (sale) => {
+                (
+                    sale
+                ) => {
+
                     const saleDate =
                         getSaleDate(
                             sale
                         );
+
 
                     if (!saleDate) {
                         return;
@@ -1114,12 +1686,15 @@ function SalesReportPage() {
                         daysBetween(
                             rangeStart,
                             saleDate
-                        ) - 1;
+                        ) -
+                        1;
 
 
                     if (
-                        index < 0 ||
-                        index >= 7
+                        index <
+                            0 ||
+                        index >=
+                            7
                     ) {
                         return;
                     }
@@ -1138,11 +1713,14 @@ function SalesReportPage() {
                             sale
                         )
                     ) {
+
                         buckets[
                             index
                         ].transactions +=
                             1;
+
                     }
+
                 }
             );
 
@@ -1151,8 +1729,10 @@ function SalesReportPage() {
                 ({
                     date,
                     ...item
-                }) => item
+                }) =>
+                    item
             );
+
         };
 
 
@@ -1169,7 +1749,9 @@ function SalesReportPage() {
             rangeEnd
         ) => {
 
-            const buckets = [];
+            const buckets =
+                [];
+
 
             const bucketMap =
                 new Map();
@@ -1188,12 +1770,14 @@ function SalesReportPage() {
 
 
             while (
-                cursor <= finish
+                cursor <=
+                finish
             ) {
+
                 const key =
                     `${cursor.getFullYear()}-${String(
                         cursor.getMonth() +
-                            1
+                        1
                     ).padStart(
                         2,
                         "0"
@@ -1206,23 +1790,28 @@ function SalesReportPage() {
 
 
                 const bucket = {
+
                     key,
 
                     label:
-                        cursor.toLocaleDateString(
-                            "en-PH",
-                            {
-                                month:
-                                    "short",
+                        cursor
+                            .toLocaleDateString(
+                                "en-PH",
+                                {
+                                    month:
+                                        "short",
 
-                                day:
-                                    "numeric",
-                            }
-                        ),
+                                    day:
+                                        "numeric",
+                                }
+                            ),
 
-                    sales: 0,
+                    sales:
+                        0,
 
-                    transactions: 0,
+                    transactions:
+                        0,
+
                 };
 
 
@@ -1242,15 +1831,20 @@ function SalesReportPage() {
                         cursor,
                         1
                     );
+
             }
 
 
             salesData.forEach(
-                (sale) => {
+                (
+                    sale
+                ) => {
+
                     const saleDate =
                         getSaleDate(
                             sale
                         );
+
 
                     if (!saleDate) {
                         return;
@@ -1260,7 +1854,7 @@ function SalesReportPage() {
                     const key =
                         `${saleDate.getFullYear()}-${String(
                             saleDate.getMonth() +
-                                1
+                            1
                         ).padStart(
                             2,
                             "0"
@@ -1294,9 +1888,12 @@ function SalesReportPage() {
                             sale
                         )
                     ) {
+
                         bucket.transactions +=
                             1;
+
                     }
+
                 }
             );
 
@@ -1305,8 +1902,10 @@ function SalesReportPage() {
                 ({
                     key,
                     ...item
-                }) => item
+                }) =>
+                    item
             );
+
         };
 
 
@@ -1317,10 +1916,7 @@ function SalesReportPage() {
 
     Custom ranges between 32 and 180 days
     are grouped into 7-day blocks.
-
-    Example:
-    Sep 1 - Sep 7
-    Sep 8 - Sep 14
+    ======================================================
     */
 
     const createWeeklyData =
@@ -1330,7 +1926,8 @@ function SalesReportPage() {
             rangeEnd
         ) => {
 
-            const buckets = [];
+            const buckets =
+                [];
 
 
             let cursor =
@@ -1346,8 +1943,10 @@ function SalesReportPage() {
 
 
             while (
-                cursor <= finish
+                cursor <=
+                finish
             ) {
+
                 const bucketStart =
                     new Date(
                         cursor
@@ -1365,14 +1964,17 @@ function SalesReportPage() {
                     bucketEnd >
                     finish
                 ) {
+
                     bucketEnd =
                         new Date(
                             finish
                         );
+
                 }
 
 
                 buckets.push({
+
                     start:
                         startOfDay(
                             bucketStart
@@ -1404,9 +2006,12 @@ function SalesReportPage() {
                             }
                         )}`,
 
-                    sales: 0,
+                    sales:
+                        0,
 
-                    transactions: 0,
+                    transactions:
+                        0,
+
                 });
 
 
@@ -1415,15 +2020,20 @@ function SalesReportPage() {
                         bucketEnd,
                         1
                     );
+
             }
 
 
             salesData.forEach(
-                (sale) => {
+                (
+                    sale
+                ) => {
+
                     const saleDate =
                         getSaleDate(
                             sale
                         );
+
 
                     if (!saleDate) {
                         return;
@@ -1432,7 +2042,9 @@ function SalesReportPage() {
 
                     const bucket =
                         buckets.find(
-                            (item) =>
+                            (
+                                item
+                            ) =>
                                 saleDate >=
                                     item.start &&
                                 saleDate <=
@@ -1456,9 +2068,12 @@ function SalesReportPage() {
                             sale
                         )
                     ) {
+
                         bucket.transactions +=
                             1;
+
                     }
+
                 }
             );
 
@@ -1468,8 +2083,10 @@ function SalesReportPage() {
                     start,
                     end,
                     ...item
-                }) => item
+                }) =>
+                    item
             );
+
         };
 
 
@@ -1486,7 +2103,9 @@ function SalesReportPage() {
             rangeEnd
         ) => {
 
-            const buckets = [];
+            const buckets =
+                [];
+
 
             const bucketMap =
                 new Map();
@@ -1509,8 +2128,10 @@ function SalesReportPage() {
 
 
             while (
-                cursor <= finish
+                cursor <=
+                finish
             ) {
+
                 const key =
                     `${cursor.getFullYear()}-${cursor.getMonth()}`;
 
@@ -1521,27 +2142,32 @@ function SalesReportPage() {
 
 
                 const bucket = {
+
                     key,
 
                     label:
-                        cursor.toLocaleDateString(
-                            "en-PH",
-                            {
-                                month:
-                                    "short",
+                        cursor
+                            .toLocaleDateString(
+                                "en-PH",
+                                {
+                                    month:
+                                        "short",
 
-                                ...(showYear
-                                    ? {
-                                          year:
-                                              "numeric",
-                                      }
-                                    : {}),
-                            }
-                        ),
+                                    ...(showYear
+                                        ? {
+                                              year:
+                                                  "numeric",
+                                          }
+                                        : {}),
+                                }
+                            ),
 
-                    sales: 0,
+                    sales:
+                        0,
 
-                    transactions: 0,
+                    transactions:
+                        0,
+
                 };
 
 
@@ -1561,15 +2187,20 @@ function SalesReportPage() {
                         cursor,
                         1
                     );
+
             }
 
 
             salesData.forEach(
-                (sale) => {
+                (
+                    sale
+                ) => {
+
                     const saleDate =
                         getSaleDate(
                             sale
                         );
+
 
                     if (!saleDate) {
                         return;
@@ -1602,9 +2233,12 @@ function SalesReportPage() {
                             sale
                         )
                     ) {
+
                         bucket.transactions +=
                             1;
+
                     }
+
                 }
             );
 
@@ -1613,8 +2247,10 @@ function SalesReportPage() {
                 ({
                     key,
                     ...item
-                }) => item
+                }) =>
+                    item
             );
+
         };
 
 
@@ -1631,7 +2267,9 @@ function SalesReportPage() {
             rangeEnd
         ) => {
 
-            const buckets = [];
+            const buckets =
+                [];
+
 
             const bucketMap =
                 new Map();
@@ -1642,19 +2280,26 @@ function SalesReportPage() {
                     rangeStart.getFullYear();
 
                 year <=
-                rangeEnd.getFullYear();
+                    rangeEnd.getFullYear();
 
                 year++
             ) {
+
                 const bucket = {
+
                     year,
 
                     label:
-                        String(year),
+                        String(
+                            year
+                        ),
 
-                    sales: 0,
+                    sales:
+                        0,
 
-                    transactions: 0,
+                    transactions:
+                        0,
+
                 };
 
 
@@ -1667,15 +2312,20 @@ function SalesReportPage() {
                 buckets.push(
                     bucket
                 );
+
             }
 
 
             salesData.forEach(
-                (sale) => {
+                (
+                    sale
+                ) => {
+
                     const saleDate =
                         getSaleDate(
                             sale
                         );
+
 
                     if (!saleDate) {
                         return;
@@ -1708,9 +2358,12 @@ function SalesReportPage() {
                             sale
                         )
                     ) {
+
                         bucket.transactions +=
                             1;
+
                     }
+
                 }
             );
 
@@ -1719,8 +2372,10 @@ function SalesReportPage() {
                 ({
                     year,
                     ...item
-                }) => item
+                }) =>
+                    item
             );
+
         };
 
 
@@ -1731,115 +2386,115 @@ function SalesReportPage() {
     */
 
     const currentData =
-        useMemo(() => {
+        useMemo(
+            () => {
 
-            if (
-                !selectedDateRange
-            ) {
+                if (
+                    !selectedDateRange
+                ) {
+                    return [];
+                }
+
+
+                if (
+                    graphGranularity ===
+                    "hour"
+                ) {
+
+                    return createHourlyData(
+                        filteredSales
+                    );
+
+                }
+
+
+                if (
+                    graphGranularity ===
+                    "week-day"
+                ) {
+
+                    return createWeekDayData(
+                        filteredSales,
+                        selectedDateRange
+                            .start
+                    );
+
+                }
+
+
+                if (
+                    graphGranularity ===
+                    "day"
+                ) {
+
+                    return createDailyData(
+                        filteredSales,
+                        selectedDateRange
+                            .start,
+                        selectedDateRange
+                            .end
+                    );
+
+                }
+
+
+                if (
+                    graphGranularity ===
+                    "week"
+                ) {
+
+                    return createWeeklyData(
+                        filteredSales,
+                        selectedDateRange
+                            .start,
+                        selectedDateRange
+                            .end
+                    );
+
+                }
+
+
+                if (
+                    graphGranularity ===
+                    "month"
+                ) {
+
+                    return createMonthlyData(
+                        filteredSales,
+                        selectedDateRange
+                            .start,
+                        selectedDateRange
+                            .end
+                    );
+
+                }
+
+
+                if (
+                    graphGranularity ===
+                    "year"
+                ) {
+
+                    return createYearlyData(
+                        filteredSales,
+                        selectedDateRange
+                            .start,
+                        selectedDateRange
+                            .end
+                    );
+
+                }
+
+
                 return [];
-            }
 
-
-            /*
-            TODAY / YESTERDAY
-            */
-
-            if (
-                graphGranularity ===
-                "hour"
-            ) {
-                return createHourlyData(
-                    filteredSales
-                );
-            }
-
-
-            /*
-            THIS WEEK
-            */
-
-            if (
-                graphGranularity ===
-                "week-day"
-            ) {
-                return createWeekDayData(
-                    filteredSales,
-                    selectedDateRange.start
-                );
-            }
-
-
-            /*
-            MONTH OR SHORT CUSTOM
-            */
-
-            if (
-                graphGranularity ===
-                "day"
-            ) {
-                return createDailyData(
-                    filteredSales,
-                    selectedDateRange.start,
-                    selectedDateRange.end
-                );
-            }
-
-
-            /*
-            MEDIUM CUSTOM RANGE
-            */
-
-            if (
-                graphGranularity ===
-                "week"
-            ) {
-                return createWeeklyData(
-                    filteredSales,
-                    selectedDateRange.start,
-                    selectedDateRange.end
-                );
-            }
-
-
-            /*
-            YEAR OR LONG CUSTOM
-            */
-
-            if (
-                graphGranularity ===
-                "month"
-            ) {
-                return createMonthlyData(
-                    filteredSales,
-                    selectedDateRange.start,
-                    selectedDateRange.end
-                );
-            }
-
-
-            /*
-            VERY LONG CUSTOM RANGE
-            */
-
-            if (
-                graphGranularity ===
-                "year"
-            ) {
-                return createYearlyData(
-                    filteredSales,
-                    selectedDateRange.start,
-                    selectedDateRange.end
-                );
-            }
-
-
-            return [];
-
-        }, [
-            filteredSales,
-            selectedDateRange,
-            graphGranularity,
-        ]);
+            },
+            [
+                filteredSales,
+                selectedDateRange,
+                graphGranularity,
+            ]
+        );
 
 
     /*
@@ -1849,88 +2504,106 @@ function SalesReportPage() {
     */
 
     const summary =
-        useMemo(() => {
+        useMemo(
+            () => {
 
-            const totalSales =
-                currentData.reduce(
-                    (sum, item) =>
-                        sum +
-                        Number(
-                            item.sales ||
-                            0
-                        ),
-                    0
-                );
-
-
-            const transactions =
-                currentData.reduce(
-                    (sum, item) =>
-                        sum +
-                        Number(
-                            item.transactions ||
-                            0
-                        ),
-                    0
-                );
-
-
-            const averageSale =
-                transactions > 0
-                    ? totalSales /
-                      transactions
-                    : 0;
-
-
-            let bestPeriod =
-                null;
-
-
-            currentData.forEach(
-                (item) => {
-
-                    if (
-                        !bestPeriod ||
-                        Number(
-                            item.sales
-                        ) >
+                const totalSales =
+                    currentData.reduce(
+                        (
+                            sum,
+                            item
+                        ) =>
+                            sum +
                             Number(
-                                bestPeriod.sales
-                            )
-                    ) {
-                        bestPeriod =
-                            item;
+                                item.sales ||
+                                0
+                            ),
+                        0
+                    );
+
+
+                const transactions =
+                    currentData.reduce(
+                        (
+                            sum,
+                            item
+                        ) =>
+                            sum +
+                            Number(
+                                item.transactions ||
+                                0
+                            ),
+                        0
+                    );
+
+
+                const averageSale =
+                    transactions >
+                    0
+                        ? totalSales /
+                          transactions
+                        : 0;
+
+
+                let bestPeriod =
+                    null;
+
+
+                currentData.forEach(
+                    (
+                        item
+                    ) => {
+
+                        if (
+                            !bestPeriod ||
+                            Number(
+                                item.sales
+                            ) >
+                                Number(
+                                    bestPeriod.sales
+                                )
+                        ) {
+
+                            bestPeriod =
+                                item;
+
+                        }
+
                     }
+                );
+
+
+                if (
+                    !bestPeriod ||
+                    Number(
+                        bestPeriod.sales
+                    ) <=
+                        0
+                ) {
+
+                    bestPeriod =
+                        null;
 
                 }
-            );
 
 
-            /*
-            Don't call a zero-value bucket
-            the "best period" when there
-            were no sales at all.
-            */
+                return {
 
-            if (
-                !bestPeriod ||
-                Number(
-                    bestPeriod.sales
-                ) <= 0
-            ) {
-                bestPeriod =
-                    null;
-            }
+                    totalSales,
 
+                    transactions,
 
-            return {
-                totalSales,
-                transactions,
-                averageSale,
-                bestPeriod,
-            };
+                    averageSale,
 
-        }, [currentData]);
+                    bestPeriod,
+
+                };
+
+            },
+            [
+                currentData,
+            ]
+        );
 
 
     /*
@@ -1940,18 +2613,26 @@ function SalesReportPage() {
     */
 
     const itemsSold =
-        useMemo(() => {
+        useMemo(
+            () => {
 
-            return filteredSales.reduce(
-                (sum, sale) =>
-                    sum +
-                    getSaleRemainingQuantity(
+                return filteredSales.reduce(
+                    (
+                        sum,
                         sale
-                    ),
-                0
-            );
+                    ) =>
+                        sum +
+                        getSaleRemainingQuantity(
+                            sale
+                        ),
+                    0
+                );
 
-        }, [filteredSales]);
+            },
+            [
+                filteredSales,
+            ]
+        );
 
 
     /*
@@ -1961,18 +2642,26 @@ function SalesReportPage() {
     */
 
     const discounts =
-        useMemo(() => {
+        useMemo(
+            () => {
 
-            return filteredSales.reduce(
-                (sum, sale) =>
-                    sum +
-                    getSaleDiscount(
+                return filteredSales.reduce(
+                    (
+                        sum,
                         sale
-                    ),
-                0
-            );
+                    ) =>
+                        sum +
+                        getSaleDiscount(
+                            sale
+                        ),
+                    0
+                );
 
-        }, [filteredSales]);
+            },
+            [
+                filteredSales,
+            ]
+        );
 
 
     /*
@@ -1982,18 +2671,26 @@ function SalesReportPage() {
     */
 
     const refunds =
-        useMemo(() => {
+        useMemo(
+            () => {
 
-            return filteredSales.reduce(
-                (sum, sale) =>
-                    sum +
-                    getSaleRefundAmount(
+                return filteredSales.reduce(
+                    (
+                        sum,
                         sale
-                    ),
-                0
-            );
+                    ) =>
+                        sum +
+                        getSaleRefundAmount(
+                            sale
+                        ),
+                    0
+                );
 
-        }, [filteredSales]);
+            },
+            [
+                filteredSales,
+            ]
+        );
 
 
     /*
@@ -2003,31 +2700,39 @@ function SalesReportPage() {
     */
 
     const voidAmount =
-        useMemo(() => {
+        useMemo(
+            () => {
 
-            return filteredSales.reduce(
-                (sum, sale) => {
+                return filteredSales.reduce(
+                    (
+                        sum,
+                        sale
+                    ) => {
 
-                    if (
-                        sale?.status !==
-                        "VOIDED"
-                    ) {
-                        return sum;
-                    }
+                        if (
+                            sale?.status !==
+                            "VOIDED"
+                        ) {
+                            return sum;
+                        }
 
 
-                    return (
-                        sum +
-                        getSaleOriginalTotal(
-                            sale
-                        )
-                    );
+                        return (
+                            sum +
+                            getSaleOriginalTotal(
+                                sale
+                            )
+                        );
 
-                },
-                0
-            );
+                    },
+                    0
+                );
 
-        }, [filteredSales]);
+            },
+            [
+                filteredSales,
+            ]
+        );
 
 
     /*
@@ -2037,7 +2742,8 @@ function SalesReportPage() {
     */
 
     const averageItemsPerSale =
-        summary.transactions > 0
+        summary.transactions >
+        0
             ? itemsSold /
               summary.transactions
             : 0;
@@ -2080,6 +2786,7 @@ function SalesReportPage() {
                           "month"
                             ? "Monthly sales performance for the selected date range."
                             : "Yearly sales performance for the selected date range.",
+
     };
 
 
@@ -2175,22 +2882,26 @@ function SalesReportPage() {
         if (
             !active ||
             !payload ||
-            payload.length === 0
+            payload.length ===
+                0
         ) {
             return null;
         }
 
 
         const data =
-            payload[0]?.payload;
+            payload[0]
+                ?.payload;
 
 
         return (
 
-            <div className="bg-base-100 border border-base-300 rounded-lg shadow-xl p-3 min-w-[180px]">
+            <div className="min-w-[180px] rounded-lg border border-base-300 bg-base-100 p-3 shadow-xl">
 
-                <p className="text-xs text-base-content/50 mb-2">
+                <p className="mb-2 text-xs text-base-content/50">
+
                     {label}
+
                 </p>
 
 
@@ -2199,7 +2910,7 @@ function SalesReportPage() {
                     <div className="flex items-center gap-2">
 
                         <span
-                            className="w-2.5 h-2.5 rounded-full"
+                            className="h-2.5 w-2.5 rounded-full"
                             style={{
                                 backgroundColor:
                                     chartColor,
@@ -2214,7 +2925,7 @@ function SalesReportPage() {
                     </div>
 
 
-                    <span className="font-bold text-sm">
+                    <span className="text-sm font-bold">
 
                         {formatCurrency(
                             data?.sales ||
@@ -2226,7 +2937,7 @@ function SalesReportPage() {
                 </div>
 
 
-                <div className="flex items-center justify-between mt-2">
+                <div className="mt-2 flex items-center justify-between">
 
                     <span className="text-xs text-base-content/50">
                         Transactions
@@ -2235,8 +2946,10 @@ function SalesReportPage() {
 
                     <span className="text-xs font-semibold">
 
-                        {data?.transactions ||
-                            0}
+                        {
+                            data?.transactions ||
+                            0
+                        }
 
                     </span>
 
@@ -2256,7 +2969,9 @@ function SalesReportPage() {
     */
 
     const handlePeriodChange =
-        (event) => {
+        (
+            event
+        ) => {
 
             const selectedPeriod =
                 event.target.value;
@@ -2266,13 +2981,19 @@ function SalesReportPage() {
                 selectedPeriod ===
                 "Custom Range"
             ) {
+
                 setShowCustomRange(
                     true
                 );
 
-                setDateError("");
+
+                setDateError(
+                    ""
+                );
+
 
                 return;
+
             }
 
 
@@ -2286,7 +3007,9 @@ function SalesReportPage() {
             );
 
 
-            setDateError("");
+            setDateError(
+                ""
+            );
 
         };
 
@@ -2300,24 +3023,30 @@ function SalesReportPage() {
     const handleOpenCustomRange =
         () => {
 
-            setDateError("");
+            setDateError(
+                ""
+            );
 
 
             if (
                 appliedStartDate
             ) {
+
                 setCustomStartDate(
                     appliedStartDate
                 );
+
             }
 
 
             if (
                 appliedEndDate
             ) {
+
                 setCustomEndDate(
                     appliedEndDate
                 );
+
             }
 
 
@@ -2341,11 +3070,14 @@ function SalesReportPage() {
                 !customStartDate ||
                 !customEndDate
             ) {
+
                 setDateError(
                     "Please select both a start date and an end date."
                 );
 
+
                 return;
+
             }
 
 
@@ -2353,11 +3085,14 @@ function SalesReportPage() {
                 customStartDate >
                 customEndDate
             ) {
+
                 setDateError(
                     "The start date cannot be after the end date."
                 );
 
+
                 return;
+
             }
 
 
@@ -2376,7 +3111,9 @@ function SalesReportPage() {
             );
 
 
-            setDateError("");
+            setDateError(
+                ""
+            );
 
 
             setShowCustomRange(
@@ -2395,7 +3132,9 @@ function SalesReportPage() {
     const handleCancelCustomRange =
         () => {
 
-            setDateError("");
+            setDateError(
+                ""
+            );
 
 
             setShowCustomRange(
@@ -2410,25 +3149,48 @@ function SalesReportPage() {
     HANDLE EXPORT
     ======================================================
 
-    Exports the currently displayed
-    report breakdown as CSV.
+    Export is branch-specific.
+
+    The CSV includes branch identity and
+    the filename contains the branch code.
+    ======================================================
     */
 
     const handleExport =
         () => {
 
             const rows = [
+
+                [
+                    "Sales Report",
+                ],
+
+                [
+                    "Branch",
+                    activeBranchLabel,
+                ],
+
+                [
+                    "Report Period",
+                    currentPeriodTitle,
+                ],
+
+                [],
+
                 [
                     "Period",
                     "Transactions",
                     "Sales",
                     "Average Sale",
                 ],
+
             ];
 
 
             currentData.forEach(
-                (item) => {
+                (
+                    item
+                ) => {
 
                     const average =
                         item.transactions >
@@ -2439,21 +3201,32 @@ function SalesReportPage() {
 
 
                     rows.push([
+
                         item.label,
+
                         item.transactions,
+
                         Number(
                             item.sales
-                        ).toFixed(2),
+                        ).toFixed(
+                            2
+                        ),
+
                         Number(
                             average
-                        ).toFixed(2),
+                        ).toFixed(
+                            2
+                        ),
+
                     ]);
 
                 }
             );
 
 
-            rows.push([]);
+            rows.push(
+                []
+            );
 
 
             rows.push([
@@ -2473,6 +3246,14 @@ function SalesReportPage() {
             rows.push([
                 "Items Sold",
                 itemsSold,
+            ]);
+
+
+            rows.push([
+                "Average Sale",
+                summary.averageSale.toFixed(
+                    2
+                ),
             ]);
 
 
@@ -2502,26 +3283,38 @@ function SalesReportPage() {
 
             const csv =
                 rows
-                    .map((row) =>
-                        row
-                            .map(
-                                (value) =>
-                                    `"${String(
-                                        value ??
-                                        ""
-                                    ).replaceAll(
-                                        '"',
-                                        '""'
-                                    )}"`
-                            )
-                            .join(",")
+                    .map(
+                        (
+                            row
+                        ) =>
+                            row
+                                .map(
+                                    (
+                                        value
+                                    ) =>
+                                        `"${String(
+                                            value ??
+                                            ""
+                                        ).replaceAll(
+                                            '"',
+                                            '""'
+                                        )}"`
+                                )
+                                .join(
+                                    ","
+                                )
                     )
-                    .join("\n");
+                    .join(
+                        "\n"
+                    );
 
 
             const blob =
                 new Blob(
-                    [csv],
+                    [
+                        "\uFEFF",
+                        csv,
+                    ],
                     {
                         type:
                             "text/csv;charset=utf-8;",
@@ -2541,12 +3334,28 @@ function SalesReportPage() {
                 );
 
 
+            const branchPart =
+                sanitizeFilePart(
+                    activeBranchCode ||
+                    activeBranchName
+                );
+
+
+            const periodPart =
+                sanitizeFilePart(
+                    period ===
+                        "Custom Range"
+                        ? currentPeriodTitle
+                        : period
+                );
+
+
             link.href =
                 url;
 
 
             link.download =
-                `sales-report-${new Date()
+                `sales-report-${branchPart}-${periodPart}-${new Date()
                     .toISOString()
                     .slice(
                         0,
@@ -2580,13 +3389,14 @@ function SalesReportPage() {
     ======================================================
     */
 
-    const handleBack = () => {
+    const handleBack =
+        () => {
 
-        navigate(
-            "/reports"
-        );
+            navigate(
+                "/reports"
+            );
 
-    };
+        };
 
 
     /*
@@ -2595,7 +3405,9 @@ function SalesReportPage() {
     ======================================================
     */
 
-    if (loading) {
+    if (
+        loading
+    ) {
 
         return (
 
@@ -2625,7 +3437,7 @@ function SalesReportPage() {
                 PAGE HEADER
             ================================================== */}
 
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
 
                 <div>
 
@@ -2634,7 +3446,7 @@ function SalesReportPage() {
                         onClick={
                             handleBack
                         }
-                        className="flex items-center gap-2 text-sm text-base-content/50 hover:text-primary transition mb-2"
+                        className="mb-2 flex items-center gap-2 text-sm text-base-content/50 transition hover:text-primary"
                     >
 
                         <FaArrowLeft />
@@ -2648,7 +3460,7 @@ function SalesReportPage() {
 
                     <div className="flex items-center gap-3">
 
-                        <div className="w-11 h-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
 
                             <FaChartLine />
 
@@ -2658,9 +3470,7 @@ function SalesReportPage() {
                         <div>
 
                             <h1 className="text-2xl font-bold">
-
                                 Sales Report
-
                             </h1>
 
 
@@ -2773,12 +3583,45 @@ function SalesReportPage() {
 
 
             {/* ==================================================
+                ACTIVE BRANCH
+            ================================================== */}
+
+            <div className="flex items-center gap-3 rounded-xl border border-info/20 bg-info/5 px-4 py-3">
+
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-info/10 text-info">
+
+                    <FaBuilding />
+
+                </div>
+
+
+                <div>
+
+                    <p className="text-xs text-base-content/50">
+                        Active Branch
+                    </p>
+
+
+                    <p className="text-sm font-semibold">
+
+                        {
+                            activeBranchLabel
+                        }
+
+                    </p>
+
+                </div>
+
+            </div>
+
+
+            {/* ==================================================
                 CURRENT PERIOD INDICATOR
             ================================================== */}
 
-            <div className="bg-primary/5 border border-primary/20 rounded-xl px-4 py-3 flex items-center gap-3">
+            <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
 
-                <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
 
                     {graphGranularity ===
                     "hour" ? (
@@ -2822,12 +3665,12 @@ function SalesReportPage() {
                 SUMMARY CARDS
             ================================================== */}
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
 
 
                 {/* TOTAL SALES */}
 
-                <div className="bg-base-100 border border-base-200 rounded-xl p-4 shadow-sm">
+                <div className="rounded-xl border border-base-200 bg-base-100 p-4 shadow-sm">
 
                     <div className="flex items-center justify-between">
 
@@ -2836,7 +3679,7 @@ function SalesReportPage() {
                         </span>
 
 
-                        <div className="w-8 h-8 rounded-lg bg-success/10 text-success flex items-center justify-center">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-success/10 text-success">
 
                             <FaMoneyBillWave />
 
@@ -2845,7 +3688,7 @@ function SalesReportPage() {
                     </div>
 
 
-                    <p className="text-xl font-bold mt-3">
+                    <p className="mt-3 text-xl font-bold">
 
                         {formatCurrency(
                             summary.totalSales
@@ -2854,7 +3697,7 @@ function SalesReportPage() {
                     </p>
 
 
-                    <p className="text-[10px] text-success mt-1">
+                    <p className="mt-1 text-[10px] text-success">
                         Net sales revenue
                     </p>
 
@@ -2863,7 +3706,7 @@ function SalesReportPage() {
 
                 {/* TRANSACTIONS */}
 
-                <div className="bg-base-100 border border-base-200 rounded-xl p-4 shadow-sm">
+                <div className="rounded-xl border border-base-200 bg-base-100 p-4 shadow-sm">
 
                     <div className="flex items-center justify-between">
 
@@ -2872,7 +3715,7 @@ function SalesReportPage() {
                         </span>
 
 
-                        <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
 
                             <FaReceipt />
 
@@ -2881,15 +3724,18 @@ function SalesReportPage() {
                     </div>
 
 
-                    <p className="text-xl font-bold mt-3">
+                    <p className="mt-3 text-xl font-bold">
 
-                        {summary.transactions.toLocaleString()}
+                        {
+                            summary.transactions
+                                .toLocaleString()
+                        }
 
                     </p>
 
 
-                    <p className="text-[10px] text-base-content/50 mt-1">
-                        Non-voided transactions
+                    <p className="mt-1 text-[10px] text-base-content/50">
+                        Completed and partial-refund transactions
                     </p>
 
                 </div>
@@ -2897,7 +3743,7 @@ function SalesReportPage() {
 
                 {/* ITEMS SOLD */}
 
-                <div className="bg-base-100 border border-base-200 rounded-xl p-4 shadow-sm">
+                <div className="rounded-xl border border-base-200 bg-base-100 p-4 shadow-sm">
 
                     <div className="flex items-center justify-between">
 
@@ -2906,7 +3752,7 @@ function SalesReportPage() {
                         </span>
 
 
-                        <div className="w-8 h-8 rounded-lg bg-info/10 text-info flex items-center justify-center">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-info/10 text-info">
 
                             <FaShoppingCart />
 
@@ -2915,15 +3761,18 @@ function SalesReportPage() {
                     </div>
 
 
-                    <p className="text-xl font-bold mt-3">
+                    <p className="mt-3 text-xl font-bold">
 
-                        {itemsSold.toLocaleString()}
+                        {
+                            itemsSold
+                                .toLocaleString()
+                        }
 
                     </p>
 
 
-                    <p className="text-[10px] text-base-content/50 mt-1">
-                        Net quantity sold
+                    <p className="mt-1 text-[10px] text-base-content/50">
+                        Net quantity after refunds
                     </p>
 
                 </div>
@@ -2931,7 +3780,7 @@ function SalesReportPage() {
 
                 {/* AVERAGE SALE */}
 
-                <div className="bg-base-100 border border-base-200 rounded-xl p-4 shadow-sm">
+                <div className="rounded-xl border border-base-200 bg-base-100 p-4 shadow-sm">
 
                     <div className="flex items-center justify-between">
 
@@ -2940,7 +3789,7 @@ function SalesReportPage() {
                         </span>
 
 
-                        <div className="w-8 h-8 rounded-lg bg-secondary/10 text-secondary flex items-center justify-center">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary/10 text-secondary">
 
                             <FaChartLine />
 
@@ -2949,7 +3798,7 @@ function SalesReportPage() {
                     </div>
 
 
-                    <p className="text-xl font-bold mt-3">
+                    <p className="mt-3 text-xl font-bold">
 
                         {formatCurrency(
                             summary.averageSale
@@ -2958,8 +3807,8 @@ function SalesReportPage() {
                     </p>
 
 
-                    <p className="text-[10px] text-base-content/50 mt-1">
-                        Average transaction value
+                    <p className="mt-1 text-[10px] text-base-content/50">
+                        Average counted transaction value
                     </p>
 
                 </div>
@@ -2971,16 +3820,16 @@ function SalesReportPage() {
                 SECONDARY SUMMARY
             ================================================== */}
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
 
 
                 {/* DISCOUNTS */}
 
-                <div className="bg-base-100 border border-base-200 rounded-xl p-4 shadow-sm">
+                <div className="rounded-xl border border-base-200 bg-base-100 p-4 shadow-sm">
 
                     <div className="flex items-center gap-2">
 
-                        <div className="w-8 h-8 rounded-lg bg-warning/10 text-warning flex items-center justify-center">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-warning/10 text-warning">
 
                             <FaPercentage />
 
@@ -3011,11 +3860,11 @@ function SalesReportPage() {
 
                 {/* REFUNDS */}
 
-                <div className="bg-base-100 border border-base-200 rounded-xl p-4 shadow-sm">
+                <div className="rounded-xl border border-base-200 bg-base-100 p-4 shadow-sm">
 
                     <div className="flex items-center gap-2">
 
-                        <div className="w-8 h-8 rounded-lg bg-error/10 text-error flex items-center justify-center">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-error/10 text-error">
 
                             <FaUndo />
 
@@ -3046,11 +3895,11 @@ function SalesReportPage() {
 
                 {/* VOIDS */}
 
-                <div className="bg-base-100 border border-base-200 rounded-xl p-4 shadow-sm">
+                <div className="rounded-xl border border-base-200 bg-base-100 p-4 shadow-sm">
 
                     <div className="flex items-center gap-2">
 
-                        <div className="w-8 h-8 rounded-lg bg-base-200 text-base-content/60 flex items-center justify-center">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-base-200 text-base-content/60">
 
                             <FaExchangeAlt />
 
@@ -3081,11 +3930,11 @@ function SalesReportPage() {
 
                 {/* ITEMS PER SALE */}
 
-                <div className="bg-base-100 border border-base-200 rounded-xl p-4 shadow-sm">
+                <div className="rounded-xl border border-base-200 bg-base-100 p-4 shadow-sm">
 
                     <div className="flex items-center gap-2">
 
-                        <div className="w-8 h-8 rounded-lg bg-info/10 text-info flex items-center justify-center">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-info/10 text-info">
 
                             <FaBoxes />
 
@@ -3120,23 +3969,26 @@ function SalesReportPage() {
                 SALES GRAPH
             ================================================== */}
 
-            <div className="bg-base-100 border border-base-200 rounded-xl shadow-sm p-5">
+            <div className="rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
 
 
                 {/* GRAPH HEADER */}
 
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+                <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 
                     <div>
 
-                        <h2 className="font-bold text-base">
+                        <h2 className="text-base font-bold">
                             Sales Revenue
                         </h2>
 
 
-                        <p className="text-xs text-base-content/50 mt-1">
+                        <p className="mt-1 text-xs text-base-content/50">
 
-                            {graphPeriodLabel}{" "}
+                            {
+                                graphPeriodLabel
+                            }{" "}
+
                             breakdown.{" "}
 
                             {
@@ -3151,7 +4003,7 @@ function SalesReportPage() {
                     <div className="flex items-center gap-2 text-xs text-base-content/60">
 
                         <span
-                            className="w-3 h-3 rounded-full"
+                            className="h-3 w-3 rounded-full"
                             style={{
                                 backgroundColor:
                                     chartColor,
@@ -3175,7 +4027,7 @@ function SalesReportPage() {
                 summary.transactions >
                     0 ? (
 
-                    <div className="w-full h-80">
+                    <div className="h-80 w-full">
 
                         <ResponsiveContainer
                             width="100%"
@@ -3187,10 +4039,17 @@ function SalesReportPage() {
                                     currentData
                                 }
                                 margin={{
-                                    top: 10,
-                                    right: 10,
-                                    left: 0,
-                                    bottom: 5,
+                                    top:
+                                        10,
+
+                                    right:
+                                        10,
+
+                                    left:
+                                        0,
+
+                                    bottom:
+                                        5,
                                 }}
                             >
 
@@ -3222,9 +4081,9 @@ function SalesReportPage() {
                                             "hour"
                                             ? 1
                                             : graphGranularity ===
-                                                "day" &&
+                                                  "day" &&
                                               currentData.length >
-                                                20
+                                                  20
                                                 ? 1
                                                 : 0
                                     }
@@ -3255,6 +4114,7 @@ function SalesReportPage() {
                                             ) >=
                                             1000000
                                         ) {
+
                                             return `₱${(
                                                 Number(
                                                     value
@@ -3263,6 +4123,7 @@ function SalesReportPage() {
                                             ).toFixed(
                                                 1
                                             )}M`;
+
                                         }
 
 
@@ -3272,6 +4133,7 @@ function SalesReportPage() {
                                             ) >=
                                             1000
                                         ) {
+
                                             return `₱${(
                                                 Number(
                                                     value
@@ -3280,6 +4142,7 @@ function SalesReportPage() {
                                             ).toFixed(
                                                 0
                                             )}k`;
+
                                         }
 
 
@@ -3320,9 +4183,9 @@ function SalesReportPage() {
 
                 ) : (
 
-                    <div className="h-80 flex flex-col items-center justify-center text-center px-4">
+                    <div className="flex h-80 flex-col items-center justify-center px-4 text-center">
 
-                        <div className="w-14 h-14 rounded-2xl bg-base-200 flex items-center justify-center text-base-content/40 mb-4">
+                        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-base-200 text-base-content/40">
 
                             <FaChartLine className="text-xl" />
 
@@ -3334,12 +4197,16 @@ function SalesReportPage() {
                         </p>
 
 
-                        <p className="text-xs text-base-content/50 mt-2 max-w-md">
+                        <p className="mt-2 max-w-md text-xs text-base-content/50">
 
                             There are no sales
                             records for{" "}
                             {
                                 currentPeriodTitle
+                            }{" "}
+                            in{" "}
+                            {
+                                activeBranchLabel
                             }.
 
                         </p>
@@ -3355,12 +4222,12 @@ function SalesReportPage() {
                 SALES HIGHLIGHTS
             ================================================== */}
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
 
 
                 {/* BEST PERIOD */}
 
-                <div className="bg-base-100 border border-base-200 rounded-xl p-5 shadow-sm">
+                <div className="rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
 
                     <div className="flex items-center justify-between">
 
@@ -3375,18 +4242,20 @@ function SalesReportPage() {
                             </p>
 
 
-                            <p className="text-xl font-bold mt-2">
+                            <p className="mt-2 text-xl font-bold">
 
-                                {summary.bestPeriod
-                                    ?.label ||
-                                    "-"}
+                                {
+                                    summary.bestPeriod
+                                        ?.label ||
+                                    "-"
+                                }
 
                             </p>
 
                         </div>
 
 
-                        <div className="w-10 h-10 rounded-xl bg-warning/10 text-warning flex items-center justify-center">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-warning/10 text-warning">
 
                             <FaTrophy />
 
@@ -3395,7 +4264,7 @@ function SalesReportPage() {
                     </div>
 
 
-                    <p className="text-sm text-success font-semibold mt-3">
+                    <p className="mt-3 text-sm font-semibold text-success">
 
                         {formatCurrency(
                             summary.bestPeriod
@@ -3406,7 +4275,7 @@ function SalesReportPage() {
                     </p>
 
 
-                    <p className="text-xs text-base-content/50 mt-1">
+                    <p className="mt-1 text-xs text-base-content/50">
                         Highest sales during this period
                     </p>
 
@@ -3415,7 +4284,7 @@ function SalesReportPage() {
 
                 {/* BEST PERIOD TRANSACTIONS */}
 
-                <div className="bg-base-100 border border-base-200 rounded-xl p-5 shadow-sm">
+                <div className="rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
 
                     <div className="flex items-center justify-between">
 
@@ -3428,18 +4297,20 @@ function SalesReportPage() {
                             </p>
 
 
-                            <p className="text-xl font-bold mt-2">
+                            <p className="mt-2 text-xl font-bold">
 
-                                {summary.bestPeriod
-                                    ?.transactions ||
-                                    0}
+                                {
+                                    summary.bestPeriod
+                                        ?.transactions ||
+                                    0
+                                }
 
                             </p>
 
                         </div>
 
 
-                        <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
 
                             <FaReceipt />
 
@@ -3448,11 +4319,13 @@ function SalesReportPage() {
                     </div>
 
 
-                    <p className="text-xs text-base-content/50 mt-3">
+                    <p className="mt-3 text-xs text-base-content/50">
 
-                        {summary.bestPeriod
-                            ?.label ||
-                            "-"}
+                        {
+                            summary.bestPeriod
+                                ?.label ||
+                            "-"
+                        }
 
                     </p>
 
@@ -3461,7 +4334,7 @@ function SalesReportPage() {
 
                 {/* AVERAGE ITEMS */}
 
-                <div className="bg-base-100 border border-base-200 rounded-xl p-5 shadow-sm">
+                <div className="rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
 
                     <div className="flex items-center justify-between">
 
@@ -3472,7 +4345,7 @@ function SalesReportPage() {
                             </p>
 
 
-                            <p className="text-xl font-bold mt-2">
+                            <p className="mt-2 text-xl font-bold">
 
                                 {averageItemsPerSale.toFixed(
                                     2
@@ -3483,7 +4356,7 @@ function SalesReportPage() {
                         </div>
 
 
-                        <div className="w-10 h-10 rounded-xl bg-info/10 text-info flex items-center justify-center">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-info/10 text-info">
 
                             <FaBoxes />
 
@@ -3492,8 +4365,8 @@ function SalesReportPage() {
                     </div>
 
 
-                    <p className="text-xs text-base-content/50 mt-3">
-                        Average quantity per transaction
+                    <p className="mt-3 text-xs text-base-content/50">
+                        Average net quantity per counted transaction
                     </p>
 
                 </div>
@@ -3505,24 +4378,26 @@ function SalesReportPage() {
                 SALES BREAKDOWN
             ================================================== */}
 
-            <div className="bg-base-100 border border-base-200 rounded-xl shadow-sm overflow-hidden">
+            <div className="overflow-hidden rounded-xl border border-base-200 bg-base-100 shadow-sm">
 
 
-                <div className="px-5 py-4 border-b border-base-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div className="flex flex-col gap-2 border-b border-base-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
 
                     <div>
 
-                        <h2 className="font-bold text-base">
+                        <h2 className="text-base font-bold">
                             Sales Breakdown
                         </h2>
 
 
-                        <p className="text-xs text-base-content/50 mt-1">
+                        <p className="mt-1 text-xs text-base-content/50">
 
                             {
                                 graphPeriodLabel
                             }{" "}
+
                             sales performance for{" "}
+
                             {
                                 currentPeriodTitle
                             }.
@@ -3537,6 +4412,7 @@ function SalesReportPage() {
                         {
                             filteredSales.length
                         }{" "}
+
                         sales records
 
                     </div>
@@ -3648,11 +4524,13 @@ function SalesReportPage() {
 
                                             <td className="text-right">
 
-                                                <span className="badge badge-sm badge-ghost">
+                                                <span className="badge badge-ghost badge-sm">
 
-                                                    {share.toFixed(
-                                                        1
-                                                    )}
+                                                    {
+                                                        share.toFixed(
+                                                            1
+                                                        )
+                                                    }
                                                     %
 
                                                 </span>
@@ -3729,11 +4607,11 @@ function SalesReportPage() {
                 REPORT INFORMATION
             ================================================== */}
 
-            <div className="bg-base-100 border border-base-200 rounded-xl p-5 shadow-sm">
+            <div className="rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
 
                 <div className="flex items-start gap-3">
 
-                    <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
 
                         <FaChartLine />
 
@@ -3742,15 +4620,16 @@ function SalesReportPage() {
 
                     <div>
 
-                        <h3 className="font-semibold text-sm">
+                        <h3 className="text-sm font-semibold">
                             About this report
                         </h3>
 
 
-                        <p className="text-xs text-base-content/50 mt-1 leading-relaxed">
+                        <p className="mt-1 text-xs leading-relaxed text-base-content/50">
 
                             This report uses actual POS sales
-                            records. Today and Yesterday are
+                            records for the currently active
+                            branch. Today and Yesterday are
                             displayed by hour, This Week is
                             displayed by day, This Month is
                             displayed by date, and This Year
@@ -3758,7 +4637,11 @@ function SalesReportPage() {
                             ranges automatically choose an
                             appropriate graph interval based
                             on the length of the selected
-                            range.
+                            range. Fully refunded and voided
+                            sales are excluded from the
+                            transaction count, while partially
+                            refunded transactions remain
+                            counted.
 
                         </p>
 
@@ -3773,7 +4656,7 @@ function SalesReportPage() {
                 FOOTER
             ================================================== */}
 
-            <div className="flex items-center justify-between text-xs text-base-content/40 pb-4">
+            <div className="flex items-center justify-between pb-4 text-xs text-base-content/40">
 
                 <span>
 
@@ -3783,7 +4666,13 @@ function SalesReportPage() {
                         currentPeriodTitle
                     }{" "}
 
-                    sales
+                    sales for{" "}
+
+                    {
+                        activeBranchCode ||
+                        activeBranchName ||
+                        "active branch"
+                    }
 
                 </span>
 
@@ -3793,7 +4682,7 @@ function SalesReportPage() {
                     onClick={
                         handleBack
                     }
-                    className="hover:text-primary transition"
+                    className="transition hover:text-primary"
                 >
 
                     Back to Reports
@@ -3826,16 +4715,16 @@ function SalesReportPage() {
 
                     {/* MODAL */}
 
-                    <div className="relative z-10 w-full max-w-lg bg-base-100 border border-base-200 rounded-2xl shadow-2xl overflow-hidden">
+                    <div className="relative z-10 w-full max-w-lg overflow-hidden rounded-2xl border border-base-200 bg-base-100 shadow-2xl">
 
 
                         {/* HEADER */}
 
-                        <div className="px-5 py-4 border-b border-base-200 flex items-center justify-between">
+                        <div className="flex items-center justify-between border-b border-base-200 px-5 py-4">
 
                             <div className="flex items-center gap-3">
 
-                                <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
 
                                     <FaCalendarDay />
 
@@ -3879,16 +4768,16 @@ function SalesReportPage() {
 
                         {/* BODY */}
 
-                        <div className="p-5 space-y-5">
+                        <div className="space-y-5 p-5">
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
 
 
                                 {/* FROM */}
 
                                 <div>
 
-                                    <label className="block text-xs font-semibold text-base-content/60 mb-2">
+                                    <label className="mb-2 block text-xs font-semibold text-base-content/60">
 
                                         From
 
@@ -3930,7 +4819,7 @@ function SalesReportPage() {
 
                                 <div>
 
-                                    <label className="block text-xs font-semibold text-base-content/60 mb-2">
+                                    <label className="mb-2 block text-xs font-semibold text-base-content/60">
 
                                         To
 
@@ -3977,11 +4866,11 @@ function SalesReportPage() {
                                 customStartDate <=
                                     customEndDate && (
 
-                                    <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
+                                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
 
                                         <div className="flex items-start gap-3">
 
-                                            <FaCalendarDay className="text-primary shrink-0 mt-0.5" />
+                                            <FaCalendarDay className="mt-0.5 shrink-0 text-primary" />
 
 
                                             <div>
@@ -3993,7 +4882,7 @@ function SalesReportPage() {
                                                 </p>
 
 
-                                                <p className="text-sm font-semibold mt-1">
+                                                <p className="mt-1 text-sm font-semibold">
 
                                                     {customStartDate ===
                                                     customEndDate
@@ -4009,7 +4898,7 @@ function SalesReportPage() {
                                                 </p>
 
 
-                                                <p className="text-xs text-base-content/50 mt-2">
+                                                <p className="mt-2 text-xs text-base-content/50">
 
                                                     {(() => {
 
@@ -4110,7 +4999,7 @@ function SalesReportPage() {
 
                         {/* FOOTER */}
 
-                        <div className="px-5 py-4 border-t border-base-200 flex items-center justify-end gap-2">
+                        <div className="flex items-center justify-end gap-2 border-t border-base-200 px-5 py-4">
 
                             <button
                                 type="button"

@@ -1,13 +1,31 @@
 import mongoose from "mongoose";
 
 import Sale from "../models/sale.model.js";
+
 import Product from "../models/product.model.js";
+
+import BulkOrder from "../models/bulkOrder.model.js";
+
 import InventoryTransaction from "../models/inventoryTransaction.model.js";
+
 import Customer from "../models/customer.model.js";
+
 import LoyaltyTransaction from "../models/loyaltyTransaction.model.js";
 
 import ApiError from "../utils/ApiError.js";
-import { generateReceiptNumber } from "../utils/receipt.js";
+
+import withTransaction from "../utils/withTransaction.js";
+
+import branchInventoryService from "./branch-inventory.service.js";
+
+import bulkOrderService from "./bulkOrder.service.js";
+
+import syncOutboxService
+    from "./syncOutbox.service.js";
+
+import {
+    generateReceiptNumber,
+} from "../utils/receipt.js";
 
 import {
     calculateSubtotal,
@@ -17,22 +35,6 @@ import {
 /*
 ============================================================
 LOYALTY CONFIGURATION
-============================================================
-
-EARNING:
-₱100 spent = 1 point
-
-REDEMPTION:
-1 point = ₱1
-
-Minimum redemption:
-10 points
-
-Redemption increment:
-10 points
-
-Maximum redemption:
-50% of the amount before loyalty discount
 ============================================================
 */
 
@@ -54,7 +56,75 @@ const LOYALTY_MAX_REDEMPTION_RATE =
 
 /*
 ============================================================
-CALCULATE LOYALTY POINTS
+POPULATE FIELDS
+============================================================
+*/
+
+const CUSTOMER_POPULATE_FIELDS = `
+    customerCode
+    name
+    phone
+    rfidUid
+    loyaltyPoints
+    lifetimePoints
+    loyaltyTier
+    isActive
+`;
+
+
+const BRANCH_POPULATE_FIELDS = `
+    code
+    name
+    address
+    phone
+    email
+    isDefault
+    isActive
+`;
+
+
+/*
+============================================================
+MONEY
+============================================================
+*/
+
+const roundMoney = (
+    value
+) => {
+
+    const number =
+        Number(
+            value
+        );
+
+
+    if (
+        !Number.isFinite(
+            number
+        )
+    ) {
+
+        return 0;
+
+    }
+
+
+    return Math.round(
+        (
+            number +
+            Number.EPSILON
+        ) *
+        100
+    ) /
+    100;
+
+};
+
+
+/*
+============================================================
+LOYALTY POINT CALCULATION
 ============================================================
 */
 
@@ -69,7 +139,8 @@ const calculateLoyaltyPoints = (
 
 
     if (
-        numericAmount <= 0
+        numericAmount <=
+        0
     ) {
 
         return 0;
@@ -87,626 +158,352 @@ const calculateLoyaltyPoints = (
 
 /*
 ============================================================
-CUSTOMER POPULATE FIELDS
+BRANCH HELPERS
 ============================================================
 */
 
-const CUSTOMER_POPULATE_FIELDS = `
-    customerCode
-    name
-    phone
-    rfidUid
-    loyaltyPoints
-    lifetimePoints
-    loyaltyTier
-    isActive
-`;
+const normalizeBranchId = (
+    value
+) => {
+
+    const branchId =
+        value?._id ||
+        value;
+
+
+    if (
+        !branchId ||
+        !mongoose.Types.ObjectId
+            .isValid(
+                branchId
+            )
+    ) {
+
+        return null;
+
+    }
+
+
+    return String(
+        branchId
+    );
+
+};
+
+
+const requireBranchId = (
+    value
+) => {
+
+    const branchId =
+        normalizeBranchId(
+            value
+        );
+
+
+    if (
+        !branchId
+    ) {
+
+        throw new ApiError(
+            400,
+            "A valid branch context is required."
+        );
+
+    }
+
+
+    return branchId;
+
+};
+
+
+const buildBranchSnapshot = (
+    branch
+) => {
+
+    if (
+        !branch
+    ) {
+
+        throw new ApiError(
+            400,
+            "Branch information is required to complete the sale."
+        );
+
+    }
+
+
+    const branchId =
+        requireBranchId(
+            branch
+        );
+
+
+    const code =
+        String(
+            branch.code ||
+            ""
+        )
+            .trim()
+            .toUpperCase();
+
+
+    const name =
+        String(
+            branch.name ||
+            ""
+        ).trim();
+
+
+    if (
+        !code ||
+        !name
+    ) {
+
+        throw new ApiError(
+            400,
+            "The selected branch has incomplete branch information."
+        );
+
+    }
+
+
+    if (
+        branch.isActive ===
+        false
+    ) {
+
+        throw new ApiError(
+            400,
+            "The selected branch is inactive."
+        );
+
+    }
+
+
+    return {
+
+        branchId,
+
+        snapshot: {
+
+            code,
+
+            name,
+
+        },
+
+    };
+
+};
 
 
 /*
 ============================================================
-CHECKOUT
-============================================================
-
-Supports:
-
-1. NORMAL INVENTORY PRODUCT
-
-{
-    isOpenPrice: false,
-    productId: "...",
-    quantity: 2
-}
-
-
-2. OPEN PRICE / GROCERY
-
-{
-    isOpenPrice: true,
-    name: "Grocery",
-    note: "Vegetables",
-    quantity: 1,
-    unitPrice: 125
-}
-
-
-3. OPTIONAL REGISTERED CUSTOMER
-
-{
-    customerId: "..."
-}
-
-
-4. OPTIONAL LOYALTY REDEMPTION
-
-{
-    loyaltyPointsToRedeem: 50
-}
-
-
-No customerId:
-→ Walk-in customer
-
-With customerId:
-→ Sale is linked to Customer
-
-Open-price items:
-→ Optional note/description
-→ No Product required
-→ No inventory deduction
-→ No inventory transaction
-
-Loyalty:
-→ Registered customers only
-→ ₱100 final spend = 1 point
-→ 1 point = ₱1 discount
-→ Minimum 10 points
-→ Multiples of 10
-→ Maximum 50% of purchase
+NORMALIZE PREPARED CART CONTEXT
 ============================================================
 */
 
-const checkout = async (
-    data,
-    userId
+const normalizePreparedCartContext = (
+    preparedCartContext
 ) => {
 
-    const {
-        items,
-        discount = 0,
-        payment,
-        paymentMethod = "Cash",
-        customerId = null,
-        loyaltyPointsToRedeem = 0,
-    } = data;
+    if (
+        !preparedCartContext
+    ) {
+
+        return null;
+
+    }
 
 
-    /*
-    ========================================================
-    CUSTOMER VALIDATION
-    ========================================================
-    */
+    const preparedCartId =
+        String(
+            preparedCartContext
+                .preparedCartId ||
+            ""
+        ).trim();
 
-    let customer =
-        null;
+
+    const claimToken =
+        String(
+            preparedCartContext
+                .claimToken ||
+            ""
+        ).trim();
 
 
     if (
-        customerId
+        !preparedCartId &&
+        !claimToken
     ) {
 
-        /*
-        ----------------------------------------------------
-        VALID OBJECT ID
-        ----------------------------------------------------
-        */
+        return null;
 
-        if (
-            !mongoose.Types.ObjectId
-                .isValid(
-                    customerId
-                )
-        ) {
-
-            throw new ApiError(
-                400,
-                "Invalid customer ID."
-            );
-
-        }
+    }
 
 
-        /*
-        ----------------------------------------------------
-        FIND CUSTOMER
-        ----------------------------------------------------
-        */
+    if (
+        !preparedCartId ||
+        !claimToken
+    ) {
 
-        customer =
-            await Customer.findById(
+        throw new ApiError(
+            400,
+            "Prepared cart ID and claim token are both required."
+        );
+
+    }
+
+
+    if (
+        !mongoose.Types.ObjectId
+            .isValid(
+                preparedCartId
+            )
+    ) {
+
+        throw new ApiError(
+            400,
+            "Invalid prepared cart ID."
+        );
+
+    }
+
+
+    return {
+
+        preparedCartId,
+
+        claimToken,
+
+    };
+
+};
+
+
+/*
+============================================================
+POPULATE SALE
+============================================================
+*/
+
+const populateSale = async (
+    saleId
+) => {
+
+    return await Sale
+        .findById(
+            saleId
+        )
+
+        .populate(
+            "branch",
+            BRANCH_POPULATE_FIELDS
+        )
+
+        .populate(
+            "cashier",
+            "name username"
+        )
+
+        .populate(
+            "customer",
+            CUSTOMER_POPULATE_FIELDS
+        );
+
+};
+
+
+/*
+============================================================
+LOAD CUSTOMER FOR TRANSACTION
+============================================================
+*/
+
+const loadCheckoutCustomer = async (
+    customerId,
+    session
+) => {
+
+    if (
+        !customerId
+    ) {
+
+        return null;
+
+    }
+
+
+    if (
+        !mongoose.Types.ObjectId
+            .isValid(
                 customerId
-            );
-
-
-        if (
-            !customer
-        ) {
-
-            throw new ApiError(
-                404,
-                "Customer not found."
-            );
-
-        }
-
-
-        /*
-        ----------------------------------------------------
-        ACTIVE CUSTOMER CHECK
-        ----------------------------------------------------
-        */
-
-        if (
-            customer.isActive ===
-            false
-        ) {
-
-            throw new ApiError(
-                400,
-                "The selected customer is inactive."
-            );
-
-        }
-
-    }
-
-
-    /*
-    ========================================================
-    BASIC CART VALIDATION
-    ========================================================
-    */
-
-    if (
-        !Array.isArray(
-            items
-        ) ||
-        items.length === 0
+            )
     ) {
 
         throw new ApiError(
             400,
-            "Cart is empty."
+            "Invalid customer ID."
         );
 
     }
 
 
-    let subtotal =
-        0;
-
-
-    const saleItems =
-        [];
-
-
-    /*
-    ========================================================
-    PROCESS CART ITEMS
-    ========================================================
-    */
-
-    for (
-        const cartItem
-        of items
-    ) {
-
-        const quantity =
-            Number(
-                cartItem.quantity
+    const customer =
+        await Customer
+            .findById(
+                customerId
+            )
+            .session(
+                session
             );
-
-
-        if (
-            !Number.isInteger(
-                quantity
-            ) ||
-            quantity < 1
-        ) {
-
-            throw new ApiError(
-                400,
-                "Invalid item quantity."
-            );
-
-        }
-
-
-        /*
-        ====================================================
-        OPEN PRICE ITEM
-        ====================================================
-        */
-
-        if (
-            cartItem.isOpenPrice ===
-            true
-        ) {
-
-            /*
-            ------------------------------------------------
-            UNIT PRICE
-            ------------------------------------------------
-            */
-
-            const unitPrice =
-                Number(
-                    cartItem.unitPrice
-                );
-
-
-            if (
-                !Number.isFinite(
-                    unitPrice
-                ) ||
-                unitPrice <= 0
-            ) {
-
-                throw new ApiError(
-                    400,
-                    "Open-price item must have a valid price."
-                );
-
-            }
-
-
-            /*
-            ------------------------------------------------
-            NAME
-            ------------------------------------------------
-            */
-
-            const name =
-                String(
-                    cartItem.name ||
-                    "Grocery"
-                )
-                    .trim()
-                    .slice(
-                        0,
-                        100
-                    );
-
-
-            if (
-                !name
-            ) {
-
-                throw new ApiError(
-                    400,
-                    "Open-price item name is required."
-                );
-
-            }
-
-
-            /*
-            ------------------------------------------------
-            NOTE
-            ------------------------------------------------
-
-            Optional description of what the cashier sold.
-
-            Examples:
-
-            Grocery
-            note: "Vegetables"
-
-            Grocery
-            note: "Rice"
-
-            Grocery
-            note: "Ice"
-
-            We sanitize again here even though Joi already
-            validates the request.
-
-            This gives the service its own defensive boundary.
-            ------------------------------------------------
-            */
-
-            const note =
-                String(
-                    cartItem.note ||
-                    ""
-                )
-                    .trim()
-                    .slice(
-                        0,
-                        80
-                    );
-
-
-            /*
-            ------------------------------------------------
-            LINE SUBTOTAL
-            ------------------------------------------------
-            */
-
-            const lineSubtotal =
-                unitPrice *
-                quantity;
-
-
-            subtotal +=
-                lineSubtotal;
-
-
-            /*
-            ------------------------------------------------
-            ADD OPEN PRICE SALE ITEM
-            ------------------------------------------------
-            */
-
-            saleItems.push({
-
-                product:
-                    null,
-
-                productDocument:
-                    null,
-
-                isOpenPrice:
-                    true,
-
-                barcode:
-                    "",
-
-                name,
-
-                note,
-
-                quantity,
-
-                unitPrice,
-
-                subtotal:
-                    lineSubtotal,
-
-            });
-
-
-            continue;
-
-        }
-
-
-        /*
-        ====================================================
-        NORMAL INVENTORY PRODUCT
-        ====================================================
-        */
-
-        if (
-            !cartItem.productId
-        ) {
-
-            throw new ApiError(
-                400,
-                "Product ID is required."
-            );
-
-        }
-
-
-        /*
-        ----------------------------------------------------
-        VALID PRODUCT ID
-        ----------------------------------------------------
-        */
-
-        if (
-            !mongoose.Types.ObjectId
-                .isValid(
-                    cartItem.productId
-                )
-        ) {
-
-            throw new ApiError(
-                400,
-                "Invalid product ID."
-            );
-
-        }
-
-
-        /*
-        ----------------------------------------------------
-        FIND PRODUCT
-        ----------------------------------------------------
-        */
-
-        const product =
-            await Product.findById(
-                cartItem.productId
-            );
-
-
-        if (
-            !product
-        ) {
-
-            throw new ApiError(
-                404,
-                "Product not found."
-            );
-
-        }
-
-
-        /*
-        ----------------------------------------------------
-        ACTIVE CHECK
-        ----------------------------------------------------
-        */
-
-        if (
-            !product.isActive
-        ) {
-
-            throw new ApiError(
-                400,
-                `${product.name} is inactive.`
-            );
-
-        }
-
-
-        /*
-        ----------------------------------------------------
-        STOCK CHECK
-        ----------------------------------------------------
-        */
-
-        if (
-            Number(
-                product.stock
-            ) <
-            quantity
-        ) {
-
-            throw new ApiError(
-                400,
-                `Insufficient stock for ${product.name}.`
-            );
-
-        }
-
-
-        /*
-        ----------------------------------------------------
-        CALCULATE PRICE
-        ----------------------------------------------------
-        */
-
-        const lineSubtotal =
-            calculateSubtotal(
-                product.pricing,
-                quantity
-            );
-
-
-        const unitPrice =
-            lineSubtotal /
-            quantity;
-
-
-        subtotal +=
-            lineSubtotal;
-
-
-        /*
-        ----------------------------------------------------
-        ADD NORMAL SALE ITEM
-        ----------------------------------------------------
-
-        Normal inventory products do not use the Grocery
-        note field.
-
-        We explicitly store an empty string so every sale
-        item has a consistent structure.
-        ----------------------------------------------------
-        */
-
-        saleItems.push({
-
-            product:
-                product._id,
-
-            productDocument:
-                product,
-
-            isOpenPrice:
-                false,
-
-            barcode:
-                product.barcode ||
-                "",
-
-            name:
-                product.name,
-
-            note:
-                "",
-
-            quantity,
-
-            unitPrice,
-
-            subtotal:
-                lineSubtotal,
-
-        });
-
-    }
-
-
-    /*
-    ========================================================
-    NORMAL DISCOUNT
-    ========================================================
-    */
-
-    const numericDiscount =
-        Number(
-            discount
-        ) || 0;
 
 
     if (
-        numericDiscount < 0
+        !customer
     ) {
 
         throw new ApiError(
-            400,
-            "Discount cannot be negative."
+            404,
+            "Customer not found."
         );
 
     }
 
 
     if (
-        numericDiscount >
-        subtotal
+        customer.isActive ===
+        false
     ) {
 
         throw new ApiError(
             400,
-            "Discount cannot exceed subtotal."
+            "The selected customer is inactive."
         );
 
     }
 
 
-    /*
-    ========================================================
-    TOTAL BEFORE LOYALTY
-    ========================================================
-    */
+    return customer;
 
-    const totalBeforeLoyalty =
-        Math.max(
-            0,
-            subtotal -
-            numericDiscount
-        );
+};
 
 
-    /*
-    ========================================================
-    LOYALTY REDEMPTION
-    ========================================================
-    */
+/*
+============================================================
+CALCULATE LOYALTY
+============================================================
+*/
+
+const calculateCheckoutLoyalty = (
+    {
+        customer,
+        totalBeforeLoyalty,
+        loyaltyPointsToRedeem,
+    }
+) => {
 
     const requestedPoints =
         Number(
@@ -722,14 +519,9 @@ const checkout = async (
         0;
 
 
-    /*
-    --------------------------------------------------------
-    NEGATIVE POINTS ARE INVALID
-    --------------------------------------------------------
-    */
-
     if (
-        requestedPoints < 0
+        requestedPoints <
+        0
     ) {
 
         throw new ApiError(
@@ -740,14 +532,9 @@ const checkout = async (
     }
 
 
-    /*
-    --------------------------------------------------------
-    CUSTOMER REQUIRED
-    --------------------------------------------------------
-    */
-
     if (
-        requestedPoints > 0 &&
+        requestedPoints >
+            0 &&
         !customer
     ) {
 
@@ -759,21 +546,10 @@ const checkout = async (
     }
 
 
-    /*
-    --------------------------------------------------------
-    VALIDATE REDEMPTION
-    --------------------------------------------------------
-    */
-
     if (
-        requestedPoints > 0
+        requestedPoints >
+        0
     ) {
-
-        /*
-        ----------------------------------------------------
-        WHOLE NUMBER ONLY
-        ----------------------------------------------------
-        */
 
         if (
             !Number.isInteger(
@@ -789,12 +565,6 @@ const checkout = async (
         }
 
 
-        /*
-        ----------------------------------------------------
-        MINIMUM REDEMPTION
-        ----------------------------------------------------
-        */
-
         if (
             requestedPoints <
             LOYALTY_MIN_REDEMPTION
@@ -807,12 +577,6 @@ const checkout = async (
 
         }
 
-
-        /*
-        ----------------------------------------------------
-        REDEMPTION STEP
-        ----------------------------------------------------
-        */
 
         if (
             requestedPoints %
@@ -827,12 +591,6 @@ const checkout = async (
 
         }
 
-
-        /*
-        ----------------------------------------------------
-        AVAILABLE CUSTOMER POINTS
-        ----------------------------------------------------
-        */
 
         const availablePoints =
             Number(
@@ -853,27 +611,10 @@ const checkout = async (
         }
 
 
-        /*
-        ----------------------------------------------------
-        POINTS → PESO DISCOUNT
-        ----------------------------------------------------
-        */
-
         const requestedDiscount =
             requestedPoints *
             LOYALTY_POINT_VALUE;
 
-
-        /*
-        ----------------------------------------------------
-        MAXIMUM REDEMPTION
-
-        Maximum = 50% of total before loyalty.
-
-        We floor this to whole pesos because:
-        1 point = ₱1
-        ----------------------------------------------------
-        */
 
         const maximumLoyaltyDiscount =
             Math.floor(
@@ -907,544 +648,1915 @@ const checkout = async (
     }
 
 
-    /*
-    ========================================================
-    FINAL TOTAL
-    ========================================================
-    */
+    return {
+        loyaltyPointsRedeemed,
 
-    const total =
-        Math.max(
-            0,
-            totalBeforeLoyalty -
-            loyaltyDiscount
+        loyaltyDiscount,
+    };
+
+};
+
+
+/*
+============================================================
+APPLY LOYALTY
+============================================================
+*/
+
+const applyCheckoutLoyalty = async (
+    {
+        customer,
+        sale,
+        receiptNumber,
+        loyaltyPointsRedeemed,
+        loyaltyPointsEarned,
+        userId,
+        session,
+    }
+) => {
+
+    if (
+        !customer
+    ) {
+
+        return;
+
+    }
+
+
+    if (
+        loyaltyPointsRedeemed >
+        0
+    ) {
+
+        const balanceBefore =
+            Number(
+                customer.loyaltyPoints
+            ) || 0;
+
+
+        const balanceAfter =
+            balanceBefore -
+            loyaltyPointsRedeemed;
+
+
+        if (
+            balanceAfter <
+            0
+        ) {
+
+            throw new ApiError(
+                400,
+                "Customer does not have enough loyalty points."
+            );
+
+        }
+
+
+        customer.loyaltyPoints =
+            balanceAfter;
+
+
+        await customer.save({
+            session,
+        });
+
+
+        await LoyaltyTransaction
+            .create(
+                [
+                    {
+                        customer:
+                            customer._id,
+
+                        sale:
+                            sale._id,
+
+                        type:
+                            "REDEEM",
+
+                        points:
+                            -loyaltyPointsRedeemed,
+
+                        balanceBefore,
+
+                        balanceAfter,
+
+                        description:
+                            `${loyaltyPointsRedeemed} point(s) redeemed on Receipt ${receiptNumber}`,
+
+                        createdBy:
+                            userId ||
+                            null,
+                    },
+                ],
+                {
+                    session,
+                }
+            );
+
+    }
+
+
+    if (
+        loyaltyPointsEarned >
+        0
+    ) {
+
+        const balanceBefore =
+            Number(
+                customer.loyaltyPoints
+            ) || 0;
+
+
+        const balanceAfter =
+            balanceBefore +
+            loyaltyPointsEarned;
+
+
+        customer.loyaltyPoints =
+            balanceAfter;
+
+
+        customer.lifetimePoints =
+            (
+                Number(
+                    customer.lifetimePoints
+                ) || 0
+            ) +
+            loyaltyPointsEarned;
+
+
+        await customer.save({
+            session,
+        });
+
+
+        await LoyaltyTransaction
+            .create(
+                [
+                    {
+                        customer:
+                            customer._id,
+
+                        sale:
+                            sale._id,
+
+                        type:
+                            "EARN",
+
+                        points:
+                            loyaltyPointsEarned,
+
+                        balanceBefore,
+
+                        balanceAfter,
+
+                        description:
+                            `${loyaltyPointsEarned} point(s) earned from Receipt ${receiptNumber}`,
+
+                        createdBy:
+                            userId ||
+                            null,
+                    },
+                ],
+                {
+                    session,
+                }
+            );
+
+    }
+
+};
+
+
+/*
+============================================================
+CHECKOUT
+============================================================
+*/
+
+const checkout = async (
+    data,
+    userId,
+    activeBranch,
+    preparedCartContext = null
+) => {
+
+    const {
+        branchId,
+        snapshot:
+            branchSnapshot,
+    } =
+        buildBranchSnapshot(
+            activeBranch
         );
 
 
+    const normalizedPreparedCart =
+        normalizePreparedCartContext(
+            preparedCartContext
+        );
+
+
+    const {
+        items,
+        discount = 0,
+        payment,
+        paymentMethod = "Cash",
+        customerId = null,
+        loyaltyPointsToRedeem = 0,
+    } =
+        data;
+
+
     /*
     ========================================================
-    LOYALTY POINTS EARNED
-    ========================================================
-
-    Registered customers only.
-
-    Points are based on the amount AFTER:
-
-    - normal discount
-    - loyalty redemption
+    BASIC CART
     ========================================================
     */
 
-    const loyaltyPointsEarned =
-        customer
-            ? calculateLoyaltyPoints(
-                total
+    if (
+        !Array.isArray(
+            items
+        ) ||
+        items.length ===
+            0
+    ) {
+
+        throw new ApiError(
+            400,
+            "Cart is empty."
+        );
+
+    }
+
+
+    /*
+    ========================================================
+    TRANSACTION
+    ========================================================
+    */
+
+    const saleId =
+        await withTransaction(
+            async (
+                session
+            ) => {
+
+                /*
+                =============================================
+                CUSTOMER
+                =============================================
+                */
+
+                const customer =
+                    await loadCheckoutCustomer(
+                        customerId,
+                        session
+                    );
+
+
+                let subtotal =
+                    0;
+
+
+                const saleItems =
+                    [];
+
+
+                /*
+                =============================================
+                PREPARE ITEMS
+                =============================================
+                */
+
+                for (
+                    const cartItem
+                    of items
+                ) {
+
+                    const quantity =
+                        Number(
+                            cartItem.quantity
+                        );
+
+
+                    if (
+                        !Number.isInteger(
+                            quantity
+                        ) ||
+                        quantity <
+                            1
+                    ) {
+
+                        throw new ApiError(
+                            400,
+                            "Invalid item quantity."
+                        );
+
+                    }
+
+
+                    /*
+                    -----------------------------------------
+                    OPEN PRICE
+                    -----------------------------------------
+                    */
+
+                    if (
+                        cartItem.isOpenPrice ===
+                        true
+                    ) {
+
+                        const unitPrice =
+                            Number(
+                                cartItem.unitPrice
+                            );
+
+
+                        if (
+                            !Number.isFinite(
+                                unitPrice
+                            ) ||
+                            unitPrice <=
+                                0
+                        ) {
+
+                            throw new ApiError(
+                                400,
+                                "Open-price item must have a valid price."
+                            );
+
+                        }
+
+
+                        const name =
+                            String(
+                                cartItem.name ||
+                                "Grocery"
+                            )
+                                .trim()
+                                .slice(
+                                    0,
+                                    100
+                                );
+
+
+                        if (
+                            !name
+                        ) {
+
+                            throw new ApiError(
+                                400,
+                                "Open-price item name is required."
+                            );
+
+                        }
+
+
+                        const note =
+                            String(
+                                cartItem.note ||
+                                ""
+                            )
+                                .trim()
+                                .slice(
+                                    0,
+                                    80
+                                );
+
+
+                        const lineSubtotal =
+                            unitPrice *
+                            quantity;
+
+
+                        subtotal +=
+                            lineSubtotal;
+
+
+                        saleItems.push({
+
+                            product:
+                                null,
+
+                            isOpenPrice:
+                                true,
+
+                            barcode:
+                                "",
+
+                            name,
+
+                            note,
+
+                            quantity,
+
+                            unitPrice,
+
+                            subtotal:
+                                lineSubtotal,
+
+                        });
+
+
+                        continue;
+
+                    }
+
+
+                    /*
+                    -----------------------------------------
+                    NORMAL PRODUCT
+                    -----------------------------------------
+                    */
+
+                    if (
+                        !cartItem.productId ||
+                        !mongoose.Types.ObjectId
+                            .isValid(
+                                cartItem.productId
+                            )
+                    ) {
+
+                        throw new ApiError(
+                            400,
+                            "Invalid product ID."
+                        );
+
+                    }
+
+
+                    const product =
+                        await Product
+                            .findById(
+                                cartItem.productId
+                            )
+                            .session(
+                                session
+                            );
+
+
+                    if (
+                        !product
+                    ) {
+
+                        throw new ApiError(
+                            404,
+                            "Product not found."
+                        );
+
+                    }
+
+
+                    if (
+                        !product.isActive
+                    ) {
+
+                        throw new ApiError(
+                            400,
+                            `${product.name} is inactive.`
+                        );
+
+                    }
+
+
+                    await branchInventoryService
+                        .requireInventory(
+                            branchId,
+                            product._id,
+                            {
+                                session,
+                            }
+                        );
+
+
+                    const lineSubtotal =
+                        calculateSubtotal(
+                            product.pricing,
+                            quantity
+                        );
+
+
+                    const unitPrice =
+                        lineSubtotal /
+                        quantity;
+
+
+                    subtotal +=
+                        lineSubtotal;
+
+
+                    saleItems.push({
+
+                        product:
+                            product._id,
+
+                        isOpenPrice:
+                            false,
+
+                        barcode:
+                            product.barcode ||
+                            "",
+
+                        name:
+                            product.name,
+
+                        note:
+                            "",
+
+                        quantity,
+
+                        unitPrice,
+
+                        subtotal:
+                            lineSubtotal,
+
+                    });
+
+                }
+
+
+                /*
+                =============================================
+                DISCOUNT
+                =============================================
+                */
+
+                const numericDiscount =
+                    Number(
+                        discount
+                    ) || 0;
+
+
+                if (
+                    numericDiscount <
+                    0
+                ) {
+
+                    throw new ApiError(
+                        400,
+                        "Discount cannot be negative."
+                    );
+
+                }
+
+
+                if (
+                    numericDiscount >
+                    subtotal
+                ) {
+
+                    throw new ApiError(
+                        400,
+                        "Discount cannot exceed subtotal."
+                    );
+
+                }
+
+
+                const totalBeforeLoyalty =
+                    Math.max(
+                        0,
+                        subtotal -
+                        numericDiscount
+                    );
+
+
+                /*
+                =============================================
+                LOYALTY
+                =============================================
+                */
+
+                const {
+                    loyaltyPointsRedeemed,
+                    loyaltyDiscount,
+                } =
+                    calculateCheckoutLoyalty({
+                        customer,
+
+                        totalBeforeLoyalty,
+
+                        loyaltyPointsToRedeem,
+                    });
+
+
+                const total =
+                    Math.max(
+                        0,
+                        totalBeforeLoyalty -
+                        loyaltyDiscount
+                    );
+
+
+                const loyaltyPointsEarned =
+                    customer
+                        ? calculateLoyaltyPoints(
+                            total
+                        )
+                        : 0;
+
+
+                /*
+                =============================================
+                PAYMENT
+                =============================================
+                */
+
+                const numericPayment =
+                    Number(
+                        payment
+                    );
+
+
+                if (
+                    !Number.isFinite(
+                        numericPayment
+                    )
+                ) {
+
+                    throw new ApiError(
+                        400,
+                        "Invalid payment amount."
+                    );
+
+                }
+
+
+                if (
+                    numericPayment <
+                    total
+                ) {
+
+                    throw new ApiError(
+                        400,
+                        "Insufficient payment."
+                    );
+
+                }
+
+
+                const change =
+                    numericPayment -
+                    total;
+
+
+                /*
+                =============================================
+                RECEIPT NUMBER
+                =============================================
+                */
+
+                const receiptNumber =
+                    await generateReceiptNumber(
+                        activeBranch,
+                        session
+                    );
+
+
+                /*
+                =============================================
+                DEDUCT BRANCH INVENTORY
+                =============================================
+                */
+
+                for (
+                    const item
+                    of saleItems
+                ) {
+
+                    if (
+                        item.isOpenPrice ||
+                        !item.product
+                    ) {
+
+                        continue;
+
+                    }
+
+
+                    const movement =
+                        await branchInventoryService
+                            .deductStock(
+                                branchId,
+                                item.product,
+                                item.quantity,
+                                {
+                                    session,
+                                }
+                            );
+
+
+                    await InventoryTransaction
+                        .create(
+                            [
+                                {
+                                    branch:
+                                        branchId,
+
+                                    branchSnapshot,
+
+                                    product:
+                                        item.product,
+
+                                    type:
+                                        "SALE",
+
+                                    quantity:
+                                        item.quantity,
+
+                                    previousStock:
+                                        movement
+                                            .previousStock,
+
+                                    newStock:
+                                        movement
+                                            .newStock,
+
+                                    remarks:
+                                        `Receipt ${receiptNumber}`,
+
+                                    createdBy:
+                                        userId,
+                                },
+                            ],
+                            {
+                                session,
+                            }
+                        );
+
+                }
+
+
+                /*
+                =============================================
+                CREATE SALE
+                =============================================
+                */
+
+                const [
+                    sale,
+                ] =
+                    await Sale.create(
+                        [
+                            {
+                                branch:
+                                    branchId,
+
+                                branchSnapshot,
+
+                                receiptNumber,
+
+                                cashier:
+                                    userId ||
+                                    null,
+
+                                customer:
+                                    customer?._id ||
+                                    null,
+
+                                items:
+                                    saleItems,
+
+                                subtotal,
+
+                                discount:
+                                    numericDiscount,
+
+                                loyaltyPointsRedeemed,
+
+                                loyaltyDiscount,
+
+                                loyaltyPointsEarned,
+
+                                loyaltyEarnedPointsReversed:
+                                    0,
+
+                                loyaltyRedeemedPointsRestored:
+                                    0,
+
+                                total,
+
+                                payment:
+                                    numericPayment,
+
+                                paymentMethod,
+
+                                change,
+                            },
+                        ],
+                        {
+                            session,
+                        }
+                    );
+
+
+                /*
+                =============================================
+                LOYALTY TRANSACTIONS
+                =============================================
+                */
+
+                await applyCheckoutLoyalty({
+                    customer,
+
+                    sale,
+
+                    receiptNumber,
+
+                    loyaltyPointsRedeemed,
+
+                    loyaltyPointsEarned,
+
+                    userId,
+
+                    session,
+                });
+
+
+                /*
+                =============================================
+                NORMAL CLOUD SYNC EVENT
+                =============================================
+                */
+
+                await syncOutboxService
+                    .enqueueSyncRequest({
+
+                        source:
+                            "SALE",
+
+                        action:
+                            "CHECKOUT",
+
+                        aggregateId:
+                            sale._id,
+
+                        branchId,
+
+                        session,
+
+                    });
+
+
+                /*
+                =============================================
+                PREPARED CART FINALIZE EVENT
+                =============================================
+                */
+
+                if (
+                    normalizedPreparedCart
+                ) {
+
+                    await syncOutboxService
+                        .enqueuePreparedCartFinalize({
+
+                            preparedCartId:
+                                normalizedPreparedCart
+                                    .preparedCartId,
+
+                            saleId:
+                                sale._id,
+
+                            claimToken:
+                                normalizedPreparedCart
+                                    .claimToken,
+
+                            userId,
+
+                            branchId,
+
+                            session,
+
+                        });
+
+                }
+
+
+                return sale._id;
+
+            }
+        );
+
+
+    return await populateSale(
+        saleId
+    );
+
+};
+
+
+/*
+============================================================
+CHECKOUT BULK ORDER
+============================================================
+
+Direct Bulk Order History payment workflow.
+
+SAVED BULK ORDER
+        ↓
+PAY
+        ↓
+NORMAL SALE
+        ↓
+BRANCH INVENTORY DEDUCTION
+        ↓
+INVENTORY AUDIT
+        ↓
+BULK ORDER COMPLETED
+
+
+SECURITY
+
+The frontend does NOT provide:
+
+- items
+- product IDs
+- quantities
+- item prices
+- subtotal
+- branch ID
+
+Those values are loaded from the SAVED Bulk Order.
+
+The frontend provides only payment/customer/loyalty data.
+
+
+PRICING
+
+The saved Bulk Order line totals are treated as the agreed
+price.
+
+This means a Product price change after the order was saved
+does not silently change the amount when the customer pays.
+
+
+ATOMICITY
+
+Sale creation
++
+inventory deduction
++
+inventory audit
++
+loyalty
++
+Bulk Order completion
++
+sync outbox
+
+all use the SAME MongoDB transaction.
+============================================================
+*/
+
+const checkoutBulkOrder = async (
+    bulkOrderId,
+    data,
+    userId,
+    activeBranch
+) => {
+
+    /*
+    ========================================================
+    VALIDATE BULK ORDER ID
+    ========================================================
+    */
+
+    if (
+        !bulkOrderId ||
+        !mongoose.Types.ObjectId
+            .isValid(
+                bulkOrderId
             )
-            : 0;
-
-
-    /*
-    ========================================================
-    PAYMENT
-    ========================================================
-    */
-
-    const numericPayment =
-        Number(
-            payment
-        );
-
-
-    if (
-        !Number.isFinite(
-            numericPayment
-        )
     ) {
 
         throw new ApiError(
             400,
-            "Invalid payment amount."
+            "Invalid Bulk Order ID."
+        );
+
+    }
+
+
+    const {
+        branchId,
+        snapshot:
+            branchSnapshot,
+    } =
+        buildBranchSnapshot(
+            activeBranch
+        );
+
+
+    const {
+        payment,
+        paymentMethod = "Cash",
+        customerId = null,
+        loyaltyPointsToRedeem = 0,
+    } =
+        data ||
+        {};
+
+
+    /*
+    ========================================================
+    IMPORTANT
+
+    Bulk Order payment does not accept an additional manual
+    POS discount.
+
+    The saved Bulk Order total is the agreed merchandise
+    subtotal.
+
+    Loyalty redemption can still reduce the final payable
+    amount in the same way as ordinary POS checkout.
+    ========================================================
+    */
+
+
+    /*
+    ========================================================
+    FAST IDEMPOTENCY CHECK
+    ========================================================
+
+    If a previous request already committed successfully but
+    the browser retried because the response was lost, return
+    the existing Sale instead of creating another one.
+
+    The transaction performs the same check again.
+    ========================================================
+    */
+
+    const existingOrder =
+        await BulkOrder
+            .findOne({
+                _id:
+                    bulkOrderId,
+
+                branch:
+                    branchId,
+            })
+            .select(
+                "status sale saleNumber"
+            );
+
+
+    if (
+        !existingOrder
+    ) {
+
+        throw new ApiError(
+            404,
+            "Bulk Order not found in the active branch."
         );
 
     }
 
 
     if (
-        numericPayment <
-        total
+        existingOrder.status ===
+            "COMPLETED"
     ) {
 
-        throw new ApiError(
-            400,
-            "Insufficient payment."
-        );
+        if (
+            !existingOrder.sale
+        ) {
+
+            throw new ApiError(
+                409,
+                "Bulk Order is completed but does not contain a linked Sale."
+            );
+
+        }
+
+
+        const existingSale =
+            await populateSale(
+                existingOrder.sale
+            );
+
+
+        if (
+            !existingSale
+        ) {
+
+            throw new ApiError(
+                409,
+                "Bulk Order references a Sale that could not be found."
+            );
+
+        }
+
+
+        return {
+            alreadyCompleted:
+                true,
+
+            bulkOrderId:
+                existingOrder._id,
+
+            orderNumber:
+                existingOrder.orderNumber,
+
+            sale:
+                existingSale,
+        };
 
     }
 
 
-    const change =
-        numericPayment -
-        total;
-
-
     /*
     ========================================================
-    RECEIPT NUMBER
+    TRANSACTION
     ========================================================
     */
 
-    const receiptNumber =
-        await generateReceiptNumber();
+    const result =
+        await withTransaction(
+            async (
+                session
+            ) => {
+
+                /*
+                =============================================
+                LOAD AUTHORITATIVE BULK ORDER
+                =============================================
+                */
+
+                const order =
+                    await BulkOrder
+                        .findOne({
+                            _id:
+                                bulkOrderId,
+
+                            branch:
+                                branchId,
+                        })
+                        .session(
+                            session
+                        );
+
+
+                if (
+                    !order
+                ) {
+
+                    throw new ApiError(
+                        404,
+                        "Bulk Order not found in the active branch."
+                    );
+
+                }
+
+
+                /*
+                =============================================
+                IDEMPOTENCY INSIDE TRANSACTION
+                =============================================
+                */
+
+                if (
+                    order.status ===
+                    "COMPLETED"
+                ) {
+
+                    if (
+                        !order.sale
+                    ) {
+
+                        throw new ApiError(
+                            409,
+                            "Bulk Order is completed but does not contain a linked Sale."
+                        );
+
+                    }
+
+
+                    return {
+                        alreadyCompleted:
+                            true,
+
+                        bulkOrderId:
+                            order._id,
+
+                        saleId:
+                            order.sale,
+                    };
+
+                }
+
+
+                if (
+                    order.status !==
+                    "SAVED"
+                ) {
+
+                    throw new ApiError(
+                        409,
+                        `Only SAVED Bulk Orders can be paid. Current status: ${order.status}.`
+                    );
+
+                }
+
+
+                if (
+                    order.sale
+                ) {
+
+                    throw new ApiError(
+                        409,
+                        "Bulk Order already contains a Sale reference."
+                    );
+
+                }
+
+
+                if (
+                    !Array.isArray(
+                        order.items
+                    ) ||
+                    order.items.length ===
+                        0
+                ) {
+
+                    throw new ApiError(
+                        400,
+                        "Bulk Order does not contain any items."
+                    );
+
+                }
+
+
+                /*
+                =============================================
+                CUSTOMER
+                =============================================
+                */
+
+                const customer =
+                    await loadCheckoutCustomer(
+                        customerId,
+                        session
+                    );
+
+
+                /*
+                =============================================
+                PREPARE SALE ITEMS
+                =============================================
+
+                Product identity and availability are
+                revalidated.
+
+                Prices come from the SAVED Bulk Order.
+                =============================================
+                */
+
+                const saleItems =
+                    [];
+
+
+                let subtotal =
+                    0;
+
+
+                for (
+                    const orderItem
+                    of order.items
+                ) {
+
+                    const quantity =
+                        Number(
+                            orderItem.quantity
+                        );
+
+
+                    if (
+                        !Number.isInteger(
+                            quantity
+                        ) ||
+                        quantity <
+                            1
+                    ) {
+
+                        throw new ApiError(
+                            409,
+                            `Bulk Order contains an invalid quantity for ${orderItem.name || "an item"}.`
+                        );
+
+                    }
+
+
+                    if (
+                        !orderItem.product ||
+                        !mongoose.Types.ObjectId
+                            .isValid(
+                                orderItem.product
+                            )
+                    ) {
+
+                        throw new ApiError(
+                            409,
+                            `Bulk Order item ${orderItem.name || ""} no longer has a valid Product reference.`
+                        );
+
+                    }
+
+
+                    const product =
+                        await Product
+                            .findById(
+                                orderItem.product
+                            )
+                            .session(
+                                session
+                            );
+
+
+                    if (
+                        !product
+                    ) {
+
+                        throw new ApiError(
+                            404,
+                            `Product "${orderItem.name || "Unknown"}" no longer exists.`
+                        );
+
+                    }
+
+
+                    if (
+                        !product.isActive
+                    ) {
+
+                        throw new ApiError(
+                            400,
+                            `${product.name} is inactive.`
+                        );
+
+                    }
+
+
+                    /*
+                    -----------------------------------------
+                    REQUIRE BRANCH INVENTORY RECORD
+                    -----------------------------------------
+                    */
+
+                    await branchInventoryService
+                        .requireInventory(
+                            branchId,
+                            product._id,
+                            {
+                                session,
+                            }
+                        );
+
+
+                    /*
+                    -----------------------------------------
+                    SAVED AGREED PRICE
+                    -----------------------------------------
+                    */
+
+                    const lineSubtotal =
+                        Number(
+                            orderItem.lineTotal
+                        );
+
+
+                    if (
+                        !Number.isFinite(
+                            lineSubtotal
+                        ) ||
+                        lineSubtotal <
+                            0
+                    ) {
+
+                        throw new ApiError(
+                            409,
+                            `Bulk Order contains an invalid saved price for ${orderItem.name || product.name}.`
+                        );
+
+                    }
+
+
+                    const normalizedLineSubtotal =
+                        roundMoney(
+                            lineSubtotal
+                        );
+
+
+                    const unitPrice =
+                        normalizedLineSubtotal /
+                        quantity;
+
+
+                    subtotal +=
+                        normalizedLineSubtotal;
+
+
+                    saleItems.push({
+
+                        product:
+                            product._id,
+
+                        isOpenPrice:
+                            false,
+
+                        /*
+                        Use the historical Bulk Order snapshot
+                        for the receipt identity.
+
+                        This prevents a later Product rename
+                        from changing what the customer agreed
+                        to buy.
+                        */
+
+                        barcode:
+                            String(
+                                orderItem.barcode ||
+                                product.barcode ||
+                                ""
+                            ),
+
+                        name:
+                            String(
+                                orderItem.name ||
+                                product.name ||
+                                ""
+                            ),
+
+                        note:
+                            "",
+
+                        quantity,
+
+                        unitPrice,
+
+                        subtotal:
+                            normalizedLineSubtotal,
+
+                    });
+
+                }
+
+
+                subtotal =
+                    roundMoney(
+                        subtotal
+                    );
+
+
+                /*
+                =============================================
+                VERIFY STORED TOTAL
+                =============================================
+
+                Detect corrupted/inconsistent Bulk Order data
+                before any stock deduction occurs.
+                =============================================
+                */
+
+                const storedOrderTotal =
+                    roundMoney(
+                        order.totalAmount
+                    );
+
+
+                if (
+                    Math.abs(
+                        subtotal -
+                        storedOrderTotal
+                    ) >
+                    0.009
+                ) {
+
+                    throw new ApiError(
+                        409,
+                        "Bulk Order item totals do not match the saved order total. Edit and save the order again before payment."
+                    );
+
+                }
+
+
+                /*
+                =============================================
+                DISCOUNT
+                =============================================
+
+                Bulk Order already contains its agreed item
+                prices.
+
+                No extra POS discount is accepted here.
+                =============================================
+                */
+
+                const numericDiscount =
+                    0;
+
+
+                const totalBeforeLoyalty =
+                    subtotal;
+
+
+                /*
+                =============================================
+                LOYALTY REDEMPTION
+                =============================================
+                */
+
+                const {
+                    loyaltyPointsRedeemed,
+                    loyaltyDiscount,
+                } =
+                    calculateCheckoutLoyalty({
+                        customer,
+
+                        totalBeforeLoyalty,
+
+                        loyaltyPointsToRedeem,
+                    });
+
+
+                const total =
+                    roundMoney(
+                        Math.max(
+                            0,
+                            totalBeforeLoyalty -
+                            loyaltyDiscount
+                        )
+                    );
+
+
+                const loyaltyPointsEarned =
+                    customer
+                        ? calculateLoyaltyPoints(
+                            total
+                        )
+                        : 0;
+
+
+                /*
+                =============================================
+                PAYMENT
+                =============================================
+                */
+
+                const numericPayment =
+                    Number(
+                        payment
+                    );
+
+
+                if (
+                    !Number.isFinite(
+                        numericPayment
+                    )
+                ) {
+
+                    throw new ApiError(
+                        400,
+                        "Invalid payment amount."
+                    );
+
+                }
+
+
+                if (
+                    numericPayment <
+                    total
+                ) {
+
+                    throw new ApiError(
+                        400,
+                        "Insufficient payment."
+                    );
+
+                }
+
+
+                const change =
+                    roundMoney(
+                        numericPayment -
+                        total
+                    );
+
+
+                /*
+                =============================================
+                RECEIPT NUMBER
+                =============================================
+                */
+
+                const receiptNumber =
+                    await generateReceiptNumber(
+                        activeBranch,
+                        session
+                    );
+
+
+                /*
+                =============================================
+                DEDUCT BRANCH INVENTORY
+                =============================================
+
+                deductStock() remains authoritative for the
+                final stock check.
+
+                If ANY item fails, the transaction rolls back.
+                =============================================
+                */
+
+                for (
+                    const item
+                    of saleItems
+                ) {
+
+                    const movement =
+                        await branchInventoryService
+                            .deductStock(
+                                branchId,
+                                item.product,
+                                item.quantity,
+                                {
+                                    session,
+                                }
+                            );
+
+
+                    await InventoryTransaction
+                        .create(
+                            [
+                                {
+                                    branch:
+                                        branchId,
+
+                                    branchSnapshot,
+
+                                    product:
+                                        item.product,
+
+                                    type:
+                                        "SALE",
+
+                                    quantity:
+                                        item.quantity,
+
+                                    previousStock:
+                                        movement
+                                            .previousStock,
+
+                                    newStock:
+                                        movement
+                                            .newStock,
+
+                                    remarks:
+                                        `Receipt ${receiptNumber} - Bulk Order ${order.orderNumber}`,
+
+                                    createdBy:
+                                        userId,
+                                },
+                            ],
+                            {
+                                session,
+                            }
+                        );
+
+                }
+
+
+                /*
+                =============================================
+                CREATE NORMAL SALE
+                =============================================
+                */
+
+                const [
+                    sale,
+                ] =
+                    await Sale.create(
+                        [
+                            {
+                                branch:
+                                    branchId,
+
+                                branchSnapshot,
+
+                                receiptNumber,
+
+                                cashier:
+                                    userId ||
+                                    null,
+
+                                customer:
+                                    customer?._id ||
+                                    null,
+
+                                items:
+                                    saleItems,
+
+                                subtotal,
+
+                                discount:
+                                    numericDiscount,
+
+                                loyaltyPointsRedeemed,
+
+                                loyaltyDiscount,
+
+                                loyaltyPointsEarned,
+
+                                loyaltyEarnedPointsReversed:
+                                    0,
+
+                                loyaltyRedeemedPointsRestored:
+                                    0,
+
+                                total,
+
+                                payment:
+                                    numericPayment,
+
+                                paymentMethod,
+
+                                change,
+                            },
+                        ],
+                        {
+                            session,
+                        }
+                    );
+
+
+                /*
+                =============================================
+                LOYALTY
+                =============================================
+                */
+
+                await applyCheckoutLoyalty({
+                    customer,
+
+                    sale,
+
+                    receiptNumber,
+
+                    loyaltyPointsRedeemed,
+
+                    loyaltyPointsEarned,
+
+                    userId,
+
+                    session,
+                });
+
+
+                /*
+                =============================================
+                COMPLETE BULK ORDER
+                =============================================
+
+                CRITICAL:
+
+                We pass the SAME session.
+
+                completeWithSale() must therefore NOT open a
+                second transaction.
+                =============================================
+                */
+
+                await bulkOrderService
+                    .completeWithSale(
+                        order._id,
+                        sale._id,
+                        receiptNumber,
+                        userId,
+                        activeBranch,
+                        {
+                            session,
+                        }
+                    );
+
+
+                /*
+                =============================================
+                SALE CLOUD SYNC
+                =============================================
+
+                completeWithSale() separately creates the
+                BULK_ORDER / COMPLETE outbox event using the
+                same transaction.
+                =============================================
+                */
+
+                await syncOutboxService
+                    .enqueueSyncRequest({
+
+                        source:
+                            "SALE",
+
+                        action:
+                            "CHECKOUT",
+
+                        aggregateId:
+                            sale._id,
+
+                        branchId,
+
+                        session,
+
+                    });
+
+
+                return {
+                    alreadyCompleted:
+                        false,
+
+                    bulkOrderId:
+                        order._id,
+
+                    saleId:
+                        sale._id,
+                };
+
+            }
+        );
 
 
     /*
     ========================================================
-    CREATE SALE
+    RESPONSE
+    ========================================================
+
+    If a transaction retry observes the order already
+    completed, return the existing linked Sale.
+
+    Otherwise return the Sale just created.
     ========================================================
     */
 
     const sale =
-        await Sale.create({
+        await populateSale(
+            result.saleId
+        );
 
-            receiptNumber,
-
-
-            /*
-            ------------------------------------------------
-            CASHIER
-            ------------------------------------------------
-            */
-
-            cashier:
-                userId ||
-                null,
-
-
-            /*
-            ------------------------------------------------
-            CUSTOMER
-            ------------------------------------------------
-            */
-
-            customer:
-                customer?._id ||
-                null,
-
-
-            /*
-            ------------------------------------------------
-            ITEMS
-            ------------------------------------------------
-            */
-
-            items:
-                saleItems.map(
-                    (
-                        item
-                    ) => ({
-
-                        product:
-                            item.product,
-
-                        isOpenPrice:
-                            item.isOpenPrice,
-
-                        barcode:
-                            item.barcode,
-
-                        name:
-                            item.name,
-
-
-                        /*
-                        ====================================
-                        ITEM NOTE
-                        ====================================
-
-                        For Grocery/open-price items this
-                        contains the cashier's description.
-
-                        Normal products contain "".
-                        ====================================
-                        */
-
-                        note:
-                            item.note ||
-                            "",
-
-                        quantity:
-                            item.quantity,
-
-                        unitPrice:
-                            item.unitPrice,
-
-                        subtotal:
-                            item.subtotal,
-
-                    })
-                ),
-
-
-            /*
-            ------------------------------------------------
-            TOTALS
-            ------------------------------------------------
-            */
-
-            subtotal,
-
-            discount:
-                numericDiscount,
-
-
-            /*
-            ------------------------------------------------
-            LOYALTY
-            ------------------------------------------------
-            */
-
-            loyaltyPointsRedeemed,
-
-            loyaltyDiscount,
-
-            loyaltyPointsEarned,
-
-            loyaltyEarnedPointsReversed:
-                0,
-
-            loyaltyRedeemedPointsRestored:
-                0,
-
-
-            /*
-            ------------------------------------------------
-            FINAL TOTAL
-            ------------------------------------------------
-            */
-
-            total,
-
-
-            /*
-            ------------------------------------------------
-            PAYMENT
-            ------------------------------------------------
-            */
-
-            payment:
-                numericPayment,
-
-            paymentMethod,
-
-            change,
-
-        });
-
-
-    /*
-    ========================================================
-    DEDUCT INVENTORY
-    ========================================================
-
-    Only normal products affect inventory.
-
-    Open-price Grocery items are skipped completely.
-    ========================================================
-    */
-
-    for (
-        const item
-        of saleItems
-    ) {
-
-        if (
-            item.isOpenPrice ||
-            !item.productDocument
-        ) {
-
-            continue;
-
-        }
-
-
-        const product =
-            item.productDocument;
-
-
-        const previousStock =
-            Number(
-                product.stock
-            );
-
-
-        const newStock =
-            previousStock -
-            item.quantity;
-
-
-        product.stock =
-            newStock;
-
-
-        await product.save();
-
-
-        /*
-        ----------------------------------------------------
-        INVENTORY TRANSACTION
-        ----------------------------------------------------
-        */
-
-        await InventoryTransaction.create({
-
-            product:
-                item.product,
-
-            type:
-                "SALE",
-
-            quantity:
-                item.quantity,
-
-            previousStock,
-
-            newStock,
-
-            remarks:
-                `Receipt ${receiptNumber}`,
-
-            createdBy:
-                userId,
-
-        });
-
-    }
-
-
-    /*
-    ========================================================
-    PROCESS CUSTOMER LOYALTY
-    ========================================================
-
-    IMPORTANT ORDER:
-
-    1. Redeem old points
-    2. Award newly earned points
-
-    Example:
-
-    Starting = 128
-
-    Redeem 50
-    → 78
-
-    Earn 4
-    → 82
-    ========================================================
-    */
 
     if (
-        customer
+        !sale
     ) {
 
-        /*
-        ====================================================
-        REDEEM POINTS
-        ====================================================
-        */
-
-        if (
-            loyaltyPointsRedeemed >
-            0
-        ) {
-
-            const balanceBefore =
-                Number(
-                    customer.loyaltyPoints
-                ) || 0;
-
-
-            const balanceAfter =
-                balanceBefore -
-                loyaltyPointsRedeemed;
-
-
-            /*
-            ------------------------------------------------
-            SAFETY CHECK
-            ------------------------------------------------
-            */
-
-            if (
-                balanceAfter < 0
-            ) {
-
-                throw new ApiError(
-                    400,
-                    "Customer does not have enough loyalty points."
-                );
-
-            }
-
-
-            customer.loyaltyPoints =
-                balanceAfter;
-
-
-            await customer.save();
-
-
-            /*
-            ------------------------------------------------
-            LOYALTY AUDIT RECORD
-            ------------------------------------------------
-            */
-
-            await LoyaltyTransaction.create({
-
-                customer:
-                    customer._id,
-
-                sale:
-                    sale._id,
-
-                type:
-                    "REDEEM",
-
-                points:
-                    -loyaltyPointsRedeemed,
-
-                balanceBefore,
-
-                balanceAfter,
-
-                description:
-                    `${loyaltyPointsRedeemed} point(s) redeemed on Receipt ${receiptNumber}`,
-
-                createdBy:
-                    userId ||
-                    null,
-
-            });
-
-        }
-
-
-        /*
-        ====================================================
-        EARN NEW POINTS
-        ====================================================
-        */
-
-        if (
-            loyaltyPointsEarned >
-            0
-        ) {
-
-            const balanceBefore =
-                Number(
-                    customer.loyaltyPoints
-                ) || 0;
-
-
-            const balanceAfter =
-                balanceBefore +
-                loyaltyPointsEarned;
-
-
-            /*
-            ------------------------------------------------
-            AVAILABLE POINT BALANCE
-            ------------------------------------------------
-            */
-
-            customer.loyaltyPoints =
-                balanceAfter;
-
-
-            /*
-            ------------------------------------------------
-            LIFETIME POINTS
-
-            Lifetime points represent all points earned.
-
-            Redemption does NOT decrease lifetimePoints.
-            ------------------------------------------------
-            */
-
-            customer.lifetimePoints =
-                (
-                    Number(
-                        customer.lifetimePoints
-                    ) || 0
-                ) +
-                loyaltyPointsEarned;
-
-
-            await customer.save();
-
-
-            /*
-            ------------------------------------------------
-            LOYALTY AUDIT RECORD
-            ------------------------------------------------
-            */
-
-            await LoyaltyTransaction.create({
-
-                customer:
-                    customer._id,
-
-                sale:
-                    sale._id,
-
-                type:
-                    "EARN",
-
-                points:
-                    loyaltyPointsEarned,
-
-                balanceBefore,
-
-                balanceAfter,
-
-                description:
-                    `${loyaltyPointsEarned} point(s) earned from Receipt ${receiptNumber}`,
-
-                createdBy:
-                    userId ||
-                    null,
-
-            });
-
-        }
+        throw new ApiError(
+            500,
+            "Sale was completed but could not be loaded."
+        );
 
     }
 
 
-    /*
-    ========================================================
-    RETURN POPULATED SALE
-    ========================================================
-    */
+    const completedOrder =
+        await BulkOrder
+            .findOne({
+                _id:
+                    result.bulkOrderId,
 
-    const completedSale =
-        await Sale.findById(
-            sale._id
-        )
-
-            .populate(
-                "cashier",
-                "name username"
-            )
-
-            .populate(
-                "customer",
-                CUSTOMER_POPULATE_FIELDS
+                branch:
+                    branchId,
+            })
+            .select(
+                "orderNumber status pricingMode revision totalAmount sale saleNumber completedAt"
             );
 
 
-    return completedSale;
+    return {
+        alreadyCompleted:
+            result.alreadyCompleted ===
+            true,
+
+        bulkOrderId:
+            completedOrder?._id ||
+            result.bulkOrderId,
+
+        orderNumber:
+            completedOrder?.orderNumber ||
+            "",
+
+        pricingMode:
+            completedOrder?.pricingMode ||
+            "RETAIL",
+
+        status:
+            completedOrder?.status ||
+            "COMPLETED",
+
+        sale,
+
+        bulkOrder:
+            completedOrder,
+    };
 
 };
 
@@ -1455,9 +2567,28 @@ GET SALES
 ============================================================
 */
 
-const getSales = async () => {
+const getSales = async (
+    branchId
+) => {
 
-    return await Sale.find()
+    const resolvedBranchId =
+        requireBranchId(
+            branchId
+        );
+
+
+    return await Sale
+        .find({
+
+            branch:
+                resolvedBranchId,
+
+        })
+
+        .populate(
+            "branch",
+            BRANCH_POPULATE_FIELDS
+        )
 
         .populate(
             "cashier",
@@ -1470,8 +2601,10 @@ const getSales = async () => {
         )
 
         .sort({
+
             createdAt:
                 -1,
+
         });
 
 };
@@ -1484,14 +2617,9 @@ GET SALE BY ID
 */
 
 const getSaleById = async (
-    id
+    id,
+    branchId
 ) => {
-
-    /*
-    --------------------------------------------------------
-    VALIDATE SALE ID
-    --------------------------------------------------------
-    */
 
     if (
         !mongoose.Types.ObjectId
@@ -1508,10 +2636,28 @@ const getSaleById = async (
     }
 
 
+    const resolvedBranchId =
+        requireBranchId(
+            branchId
+        );
+
+
     const sale =
-        await Sale.findById(
-            id
-        )
+        await Sale
+            .findOne({
+
+                _id:
+                    id,
+
+                branch:
+                    resolvedBranchId,
+
+            })
+
+            .populate(
+                "branch",
+                BRANCH_POPULATE_FIELDS
+            )
 
             .populate(
                 "cashier",
@@ -1530,7 +2676,7 @@ const getSaleById = async (
 
         throw new ApiError(
             404,
-            "Sale not found."
+            "Sale not found in the selected branch."
         );
 
     }
@@ -1545,36 +2691,13 @@ const getSaleById = async (
 ============================================================
 VOID SALE
 ============================================================
-
-Normal product:
-→ restore inventory
-
-Open-price item:
-→ no inventory restoration
-
-Grocery note:
-→ remains part of the original sale item
-
-Loyalty:
-
-If sale earned points:
-→ remove earned points
-
-If sale redeemed points:
-→ restore redeemed points
-============================================================
 */
 
 const voidSale = async (
     saleId,
-    userId
+    userId,
+    branchId
 ) => {
-
-    /*
-    --------------------------------------------------------
-    VALIDATE SALE ID
-    --------------------------------------------------------
-    */
 
     if (
         !mongoose.Types.ObjectId
@@ -1591,416 +2714,452 @@ const voidSale = async (
     }
 
 
-    const sale =
-        await Sale.findById(
-            saleId
+    const resolvedBranchId =
+        requireBranchId(
+            branchId
         );
 
 
-    if (
-        !sale
-    ) {
-
-        throw new ApiError(
-            404,
-            "Sale not found."
-        );
-
-    }
-
-
-    /*
-    ========================================================
-    VALIDATE SALE STATUS
-    ========================================================
-    */
-
-    if (
-        sale.status ===
-        "VOIDED"
-    ) {
-
-        throw new ApiError(
-            400,
-            "This sale has already been voided."
-        );
-
-    }
-
-
-    if (
-        sale.status ===
-        "REFUNDED"
-    ) {
-
-        throw new ApiError(
-            400,
-            "A refunded sale cannot be voided."
-        );
-
-    }
-
-
-    if (
-        sale.status ===
-        "PARTIALLY_REFUNDED"
-    ) {
-
-        throw new ApiError(
-            400,
-            "A partially refunded sale cannot be voided."
-        );
-
-    }
-
-
-    /*
-    ========================================================
-    RESTORE INVENTORY
-    ========================================================
-    */
-
-    for (
-        const item
-        of sale.items
-    ) {
-
-        /*
-        ----------------------------------------------------
-        OPEN PRICE
-        ----------------------------------------------------
-        */
-
-        if (
-            item.isOpenPrice ===
-                true ||
-            !item.product
-        ) {
-
-            continue;
-
-        }
-
-
-        /*
-        ----------------------------------------------------
-        NORMAL PRODUCT
-        ----------------------------------------------------
-        */
-
-        const product =
-            await Product.findById(
-                item.product
-            );
-
-
-        if (
-            !product
-        ) {
-
-            throw new ApiError(
-                404,
-                `Product for ${item.name} no longer exists.`
-            );
-
-        }
-
-
-        const previousStock =
-            Number(
-                product.stock
-            );
-
-
-        const newStock =
-            previousStock +
-            Number(
-                item.quantity
-            );
-
-
-        product.stock =
-            newStock;
-
-
-        await product.save();
-
-
-        /*
-        ----------------------------------------------------
-        INVENTORY TRANSACTION
-        ----------------------------------------------------
-        */
-
-        await InventoryTransaction.create({
-
-            product:
-                product._id,
-
-            type:
-                "ADJUSTMENT",
-
-            quantity:
-                item.quantity,
-
-            previousStock,
-
-            newStock,
-
-            remarks:
-                `Void Sale - Receipt ${sale.receiptNumber}`,
-
-            createdBy:
-                userId,
-
-        });
-
-    }
-
-
-    /*
-    ========================================================
-    LOYALTY REVERSAL
-    ========================================================
-    */
-
-    if (
-        sale.customer
-    ) {
-
-        const customer =
-            await Customer.findById(
-                sale.customer
-            );
-
-
-        if (
-            customer
-        ) {
-
-            /*
-            =================================================
-            REMOVE EARNED POINTS
-            =================================================
-            */
-
-            const earnedPoints =
-                Number(
-                    sale.loyaltyPointsEarned
-                ) || 0;
-
-
-            const alreadyReversed =
-                Number(
-                    sale.loyaltyEarnedPointsReversed
-                ) || 0;
-
-
-            const pointsToReverse =
-                Math.max(
-                    0,
-                    earnedPoints -
-                    alreadyReversed
-                );
-
-
-            if (
-                pointsToReverse >
-                0
-            ) {
-
-                const balanceBefore =
-                    Number(
-                        customer.loyaltyPoints
-                    ) || 0;
-
-
-                const actualPointsRemoved =
-                    Math.min(
-                        balanceBefore,
-                        pointsToReverse
+    const completedSaleId =
+        await withTransaction(
+            async (
+                session
+            ) => {
+
+                const sale =
+                    await Sale
+                        .findOne({
+
+                            _id:
+                                saleId,
+
+                            branch:
+                                resolvedBranchId,
+
+                        })
+                        .session(
+                            session
+                        );
+
+
+                if (
+                    !sale
+                ) {
+
+                    throw new ApiError(
+                        404,
+                        "Sale not found in the selected branch."
                     );
 
-
-                const balanceAfter =
-                    balanceBefore -
-                    actualPointsRemoved;
+                }
 
 
-                customer.loyaltyPoints =
-                    balanceAfter;
+                if (
+                    sale.status ===
+                    "VOIDED"
+                ) {
+
+                    throw new ApiError(
+                        400,
+                        "This sale has already been voided."
+                    );
+
+                }
 
 
-                customer.lifetimePoints =
-                    Math.max(
-                        0,
-                        (
+                if (
+                    sale.status ===
+                    "REFUNDED"
+                ) {
+
+                    throw new ApiError(
+                        400,
+                        "A refunded sale cannot be voided."
+                    );
+
+                }
+
+
+                if (
+                    sale.status ===
+                    "PARTIALLY_REFUNDED"
+                ) {
+
+                    throw new ApiError(
+                        400,
+                        "A partially refunded sale cannot be voided."
+                    );
+
+                }
+
+
+                for (
+                    const item
+                    of sale.items
+                ) {
+
+                    if (
+                        item.isOpenPrice ===
+                            true ||
+                        !item.product
+                    ) {
+
+                        continue;
+
+                    }
+
+
+                    const product =
+                        await Product
+                            .findById(
+                                item.product
+                            )
+                            .session(
+                                session
+                            );
+
+
+                    if (
+                        !product
+                    ) {
+
+                        throw new ApiError(
+                            404,
+                            `Product for ${item.name} no longer exists.`
+                        );
+
+                    }
+
+
+                    const movement =
+                        await branchInventoryService
+                            .addStock(
+                                resolvedBranchId,
+                                product._id,
+                                Number(
+                                    item.quantity
+                                ),
+                                {
+                                    session,
+                                }
+                            );
+
+
+                    await InventoryTransaction
+                        .create(
+                            [
+                                {
+                                    branch:
+                                        resolvedBranchId,
+
+                                    branchSnapshot: {
+
+                                        code:
+                                            sale
+                                                .branchSnapshot
+                                                ?.code ||
+                                            "",
+
+                                        name:
+                                            sale
+                                                .branchSnapshot
+                                                ?.name ||
+                                            "",
+
+                                    },
+
+                                    product:
+                                        product._id,
+
+                                    type:
+                                        "ADJUSTMENT",
+
+                                    quantity:
+                                        Number(
+                                            item.quantity
+                                        ),
+
+                                    previousStock:
+                                        movement
+                                            .previousStock,
+
+                                    newStock:
+                                        movement
+                                            .newStock,
+
+                                    remarks:
+                                        `Void Sale - Receipt ${sale.receiptNumber}`,
+
+                                    createdBy:
+                                        userId,
+                                },
+                            ],
+                            {
+                                session,
+                            }
+                        );
+
+                }
+
+
+                if (
+                    sale.customer
+                ) {
+
+                    const customer =
+                        await Customer
+                            .findById(
+                                sale.customer
+                            )
+                            .session(
+                                session
+                            );
+
+
+                    if (
+                        customer
+                    ) {
+
+                        const earnedPoints =
                             Number(
-                                customer.lifetimePoints
-                            ) || 0
-                        ) -
-                        pointsToReverse
-                    );
+                                sale
+                                    .loyaltyPointsEarned
+                            ) || 0;
 
 
-                sale.loyaltyEarnedPointsReversed =
-                    alreadyReversed +
-                    pointsToReverse;
+                        const alreadyReversed =
+                            Number(
+                                sale
+                                    .loyaltyEarnedPointsReversed
+                            ) || 0;
 
 
-                await customer.save();
+                        const pointsToReverse =
+                            Math.max(
+                                0,
+                                earnedPoints -
+                                alreadyReversed
+                            );
 
 
-                await LoyaltyTransaction.create({
+                        if (
+                            pointsToReverse >
+                            0
+                        ) {
 
-                    customer:
-                        customer._id,
+                            const balanceBefore =
+                                Number(
+                                    customer
+                                        .loyaltyPoints
+                                ) || 0;
 
-                    sale:
-                        sale._id,
 
-                    type:
-                        "REVERSAL",
+                            const actualPointsRemoved =
+                                Math.min(
+                                    balanceBefore,
+                                    pointsToReverse
+                                );
 
-                    points:
-                        -actualPointsRemoved,
 
-                    balanceBefore,
+                            const balanceAfter =
+                                balanceBefore -
+                                actualPointsRemoved;
 
-                    balanceAfter,
 
-                    description:
-                        `Earned loyalty points reversed because Receipt ${sale.receiptNumber} was voided.`,
+                            customer.loyaltyPoints =
+                                balanceAfter;
 
-                    createdBy:
-                        userId ||
-                        null,
 
+                            customer.lifetimePoints =
+                                Math.max(
+                                    0,
+                                    (
+                                        Number(
+                                            customer
+                                                .lifetimePoints
+                                        ) || 0
+                                    ) -
+                                    pointsToReverse
+                                );
+
+
+                            sale.loyaltyEarnedPointsReversed =
+                                alreadyReversed +
+                                pointsToReverse;
+
+
+                            await customer.save({
+                                session,
+                            });
+
+
+                            await LoyaltyTransaction
+                                .create(
+                                    [
+                                        {
+                                            customer:
+                                                customer._id,
+
+                                            sale:
+                                                sale._id,
+
+                                            type:
+                                                "REVERSAL",
+
+                                            points:
+                                                -actualPointsRemoved,
+
+                                            balanceBefore,
+
+                                            balanceAfter,
+
+                                            description:
+                                                `Earned loyalty points reversed because Receipt ${sale.receiptNumber} was voided.`,
+
+                                            createdBy:
+                                                userId ||
+                                                null,
+                                        },
+                                    ],
+                                    {
+                                        session,
+                                    }
+                                );
+
+                        }
+
+
+                        const redeemedPoints =
+                            Number(
+                                sale
+                                    .loyaltyPointsRedeemed
+                            ) || 0;
+
+
+                        const alreadyRestored =
+                            Number(
+                                sale
+                                    .loyaltyRedeemedPointsRestored
+                            ) || 0;
+
+
+                        const pointsToRestore =
+                            Math.max(
+                                0,
+                                redeemedPoints -
+                                alreadyRestored
+                            );
+
+
+                        if (
+                            pointsToRestore >
+                            0
+                        ) {
+
+                            const balanceBefore =
+                                Number(
+                                    customer
+                                        .loyaltyPoints
+                                ) || 0;
+
+
+                            const balanceAfter =
+                                balanceBefore +
+                                pointsToRestore;
+
+
+                            customer.loyaltyPoints =
+                                balanceAfter;
+
+
+                            sale.loyaltyRedeemedPointsRestored =
+                                alreadyRestored +
+                                pointsToRestore;
+
+
+                            await customer.save({
+                                session,
+                            });
+
+
+                            await LoyaltyTransaction
+                                .create(
+                                    [
+                                        {
+                                            customer:
+                                                customer._id,
+
+                                        sale:
+                                            sale._id,
+
+                                        type:
+                                            "REVERSAL",
+
+                                        points:
+                                            pointsToRestore,
+
+                                        balanceBefore,
+
+                                        balanceAfter,
+
+                                        description:
+                                            `Redeemed loyalty points restored because Receipt ${sale.receiptNumber} was voided.`,
+
+                                        createdBy:
+                                            userId ||
+                                            null,
+                                    },
+                                ],
+                                {
+                                    session,
+                                }
+                            );
+
+                        }
+
+                    }
+
+                }
+
+
+                sale.status =
+                    "VOIDED";
+
+
+                await sale.save({
+                    session,
                 });
 
-            }
+
+                await syncOutboxService
+                    .enqueueSyncRequest({
+
+                        source:
+                            "SALE",
+
+                        action:
+                            "VOID",
+
+                        aggregateId:
+                            sale._id,
+
+                        branchId:
+                            resolvedBranchId,
+
+                        session,
+
+                    });
 
 
-            /*
-            =================================================
-            RESTORE REDEEMED POINTS
-            =================================================
-            */
-
-            const redeemedPoints =
-                Number(
-                    sale.loyaltyPointsRedeemed
-                ) || 0;
-
-
-            const alreadyRestored =
-                Number(
-                    sale.loyaltyRedeemedPointsRestored
-                ) || 0;
-
-
-            const pointsToRestore =
-                Math.max(
-                    0,
-                    redeemedPoints -
-                    alreadyRestored
-                );
-
-
-            if (
-                pointsToRestore >
-                0
-            ) {
-
-                const balanceBefore =
-                    Number(
-                        customer.loyaltyPoints
-                    ) || 0;
-
-
-                const balanceAfter =
-                    balanceBefore +
-                    pointsToRestore;
-
-
-                customer.loyaltyPoints =
-                    balanceAfter;
-
-
-                sale.loyaltyRedeemedPointsRestored =
-                    alreadyRestored +
-                    pointsToRestore;
-
-
-                await customer.save();
-
-
-                await LoyaltyTransaction.create({
-
-                    customer:
-                        customer._id,
-
-                    sale:
-                        sale._id,
-
-                    type:
-                        "REVERSAL",
-
-                    points:
-                        pointsToRestore,
-
-                    balanceBefore,
-
-                    balanceAfter,
-
-                    description:
-                        `Redeemed loyalty points restored because Receipt ${sale.receiptNumber} was voided.`,
-
-                    createdBy:
-                        userId ||
-                        null,
-
-                });
+                return sale._id;
 
             }
-
-        }
-
-    }
-
-
-    /*
-    ========================================================
-    UPDATE SALE
-    ========================================================
-    */
-
-    sale.status =
-        "VOIDED";
-
-
-    await sale.save();
-
-
-    /*
-    ========================================================
-    RETURN POPULATED SALE
-    ========================================================
-    */
-
-    return await Sale.findById(
-        sale._id
-    )
-
-        .populate(
-            "cashier",
-            "name username"
-        )
-
-        .populate(
-            "customer",
-            CUSTOMER_POPULATE_FIELDS
         );
+
+
+    return await populateSale(
+        completedSaleId
+    );
 
 };
 
@@ -2009,44 +3168,14 @@ const voidSale = async (
 ============================================================
 REFUND SALE
 ============================================================
-
-Supports:
-
-- normal inventory products
-- open-price Grocery items
-
-Normal product:
-→ inventory restored
-
-Open-price:
-→ no inventory restoration
-
-Grocery note:
-→ does not affect refund calculations
-
-FULL REFUND:
-→ earned points reversed
-→ redeemed points restored
-
-PARTIAL REFUND:
-→ inventory/refunded quantities are updated
-
-We deliberately do NOT perform proportional loyalty
-recalculation for partial refunds yet.
-============================================================
 */
 
 const refundSale = async (
     saleId,
     refundItems,
-    userId
+    userId,
+    branchId
 ) => {
-
-    /*
-    --------------------------------------------------------
-    VALIDATE SALE ID
-    --------------------------------------------------------
-    */
 
     if (
         !mongoose.Types.ObjectId
@@ -2063,61 +3192,18 @@ const refundSale = async (
     }
 
 
-    const sale =
-        await Sale.findById(
-            saleId
+    const resolvedBranchId =
+        requireBranchId(
+            branchId
         );
-
-
-    if (
-        !sale
-    ) {
-
-        throw new ApiError(
-            404,
-            "Sale not found."
-        );
-
-    }
-
-
-    /*
-    ========================================================
-    VALIDATE STATUS
-    ========================================================
-    */
-
-    if (
-        sale.status ===
-        "VOIDED"
-    ) {
-
-        throw new ApiError(
-            400,
-            "A voided sale cannot be refunded."
-        );
-
-    }
-
-
-    if (
-        sale.status ===
-        "REFUNDED"
-    ) {
-
-        throw new ApiError(
-            400,
-            "This sale has already been fully refunded."
-        );
-
-    }
 
 
     if (
         !Array.isArray(
             refundItems
         ) ||
-        refundItems.length === 0
+        refundItems.length ===
+            0
     ) {
 
         throw new ApiError(
@@ -2128,512 +3214,552 @@ const refundSale = async (
     }
 
 
-    /*
-    ========================================================
-    PROCESS REFUNDS
-    ========================================================
-    */
-
-    for (
-        const refundItem
-        of refundItems
-    ) {
-
-        const quantity =
-            Number(
-                refundItem.quantity
-            );
-
-
-        if (
-            !Number.isInteger(
-                quantity
-            ) ||
-            quantity < 1
-        ) {
-
-            throw new ApiError(
-                400,
-                "Refund quantity must be at least 1."
-            );
-
-        }
-
-
-        /*
-        ====================================================
-        FIND SALE ITEM
-        ====================================================
-        */
-
-        let saleItem;
-
-
-        /*
-        ----------------------------------------------------
-        SALE ITEM ID
-        ----------------------------------------------------
-        */
-
-        if (
-            refundItem.saleItemId
-        ) {
-
-            saleItem =
-                sale.items.id(
-                    refundItem.saleItemId
-                );
-
-        }
-
-
-        /*
-        ----------------------------------------------------
-        PRODUCT ID FALLBACK
-        ----------------------------------------------------
-        */
-
-        if (
-            !saleItem &&
-            refundItem.productId
-        ) {
-
-            saleItem =
-                sale.items.find(
-                    (
-                        item
-                    ) =>
-
-                        item.product &&
-
-                        item.product
-                            .toString() ===
-                        refundItem
-                            .productId
-                            .toString()
-                );
-
-        }
-
-
-        if (
-            !saleItem
-        ) {
-
-            throw new ApiError(
-                400,
-                "Item was not included in this sale."
-            );
-
-        }
-
-
-        /*
-        ====================================================
-        REFUNDABLE QUANTITY
-        ====================================================
-        */
-
-        const refundedQuantity =
-            Number(
-                saleItem
-                    .refundedQuantity ||
-                0
-            );
-
-
-        const refundableQuantity =
-            Number(
-                saleItem.quantity
-            ) -
-            refundedQuantity;
-
-
-        if (
-            quantity >
-            refundableQuantity
-        ) {
-
-            throw new ApiError(
-                400,
-                `Only ${refundableQuantity} unit(s) of ${saleItem.name} can be refunded.`
-            );
-
-        }
-
-
-        /*
-        ====================================================
-        NORMAL PRODUCT
-
-        Restore inventory.
-        ====================================================
-        */
-
-        if (
-            saleItem.isOpenPrice !==
-                true &&
-            saleItem.product
-        ) {
-
-            const product =
-                await Product.findById(
-                    saleItem.product
-                );
-
-
-            if (
-                !product
-            ) {
-
-                throw new ApiError(
-                    404,
-                    `Product "${saleItem.name}" no longer exists.`
-                );
-
-            }
-
-
-            const previousStock =
-                Number(
-                    product.stock
-                );
-
-
-            const newStock =
-                previousStock +
-                quantity;
-
-
-            product.stock =
-                newStock;
-
-
-            await product.save();
-
-
-            /*
-            ------------------------------------------------
-            INVENTORY TRANSACTION
-            ------------------------------------------------
-            */
-
-            await InventoryTransaction.create({
-
-                product:
-                    product._id,
-
-                type:
-                    "ADJUSTMENT",
-
-                quantity,
-
-                previousStock,
-
-                newStock,
-
-                remarks:
-                    `Refund - Receipt ${sale.receiptNumber}`,
-
-                createdBy:
-                    userId,
-
-            });
-
-        }
-
-
-        /*
-        ====================================================
-        UPDATE REFUNDED QUANTITY
-        ====================================================
-        */
-
-        saleItem.refundedQuantity =
-            refundedQuantity +
-            quantity;
-
-    }
-
-
-    /*
-    ========================================================
-    DETERMINE SALE STATUS
-    ========================================================
-    */
-
-    const fullyRefunded =
-        sale.items.every(
-            (
-                item
-            ) =>
-
-                Number(
-                    item.refundedQuantity ||
-                    0
-                ) >=
-
-                Number(
-                    item.quantity
-                )
-        );
-
-
-    sale.status =
-        fullyRefunded
-            ? "REFUNDED"
-            : "PARTIALLY_REFUNDED";
-
-
-    /*
-    ========================================================
-    FULL REFUND LOYALTY REVERSAL
-    ========================================================
-
-    Full refund:
-
-    1. Remove points earned by this sale
-    2. Restore points redeemed on this sale
-
-    Partial refunds are intentionally handled separately
-    later.
-    ========================================================
-    */
-
-    if (
-        fullyRefunded &&
-        sale.customer
-    ) {
-
-        const customer =
-            await Customer.findById(
-                sale.customer
-            );
-
-
-        if (
-            customer
-        ) {
-
-            /*
-            =================================================
-            REMOVE EARNED POINTS
-            =================================================
-            */
-
-            const earnedPoints =
-                Number(
-                    sale.loyaltyPointsEarned
-                ) || 0;
-
-
-            const alreadyReversed =
-                Number(
-                    sale.loyaltyEarnedPointsReversed
-                ) || 0;
-
-
-            const pointsToReverse =
-                Math.max(
-                    0,
-                    earnedPoints -
-                    alreadyReversed
-                );
-
-
-            if (
-                pointsToReverse >
-                0
-            ) {
-
-                const balanceBefore =
-                    Number(
-                        customer.loyaltyPoints
-                    ) || 0;
-
-
-                const actualPointsRemoved =
-                    Math.min(
-                        balanceBefore,
-                        pointsToReverse
+    const completedSaleId =
+        await withTransaction(
+            async (
+                session
+            ) => {
+
+                const sale =
+                    await Sale
+                        .findOne({
+
+                            _id:
+                                saleId,
+
+                            branch:
+                                resolvedBranchId,
+
+                        })
+                        .session(
+                            session
+                        );
+
+
+                if (
+                    !sale
+                ) {
+
+                    throw new ApiError(
+                        404,
+                        "Sale not found in the selected branch."
                     );
 
-
-                const balanceAfter =
-                    balanceBefore -
-                    actualPointsRemoved;
+                }
 
 
-                customer.loyaltyPoints =
-                    balanceAfter;
+                if (
+                    sale.status ===
+                    "VOIDED"
+                ) {
+
+                    throw new ApiError(
+                        400,
+                        "A voided sale cannot be refunded."
+                    );
+
+                }
 
 
-                customer.lifetimePoints =
-                    Math.max(
-                        0,
-                        (
-                            Number(
-                                customer.lifetimePoints
-                            ) || 0
+                if (
+                    sale.status ===
+                    "REFUNDED"
+                ) {
+
+                    throw new ApiError(
+                        400,
+                        "This sale has already been fully refunded."
+                    );
+
+                }
+
+
+                for (
+                    const refundItem
+                    of refundItems
+                ) {
+
+                    const quantity =
+                        Number(
+                            refundItem.quantity
+                        );
+
+
+                    if (
+                        !Number.isInteger(
+                            quantity
+                        ) ||
+                        quantity <
+                            1
+                    ) {
+
+                        throw new ApiError(
+                            400,
+                            "Refund quantity must be at least 1."
+                        );
+
+                    }
+
+
+                    let saleItem;
+
+
+                    if (
+                        refundItem.saleItemId
+                    ) {
+
+                        saleItem =
+                            sale.items.id(
+                                refundItem
+                                    .saleItemId
+                            );
+
+                    }
+
+
+                    if (
+                        !saleItem &&
+                        refundItem.productId
+                    ) {
+
+                        saleItem =
+                            sale.items.find(
+                                (
+                                    item
+                                ) =>
+
+                                    item.product &&
+
+                                    item.product
+                                        .toString() ===
+                                    refundItem
+                                        .productId
+                                        .toString()
+                            );
+
+                    }
+
+
+                    if (
+                        !saleItem
+                    ) {
+
+                        throw new ApiError(
+                            400,
+                            "Item was not included in this sale."
+                        );
+
+                    }
+
+
+                    const refundedQuantity =
+                        Number(
+                            saleItem
+                                .refundedQuantity ||
+                            0
+                        );
+
+
+                    const refundableQuantity =
+                        Number(
+                            saleItem.quantity
                         ) -
-                        pointsToReverse
+                        refundedQuantity;
+
+
+                    if (
+                        quantity >
+                        refundableQuantity
+                    ) {
+
+                        throw new ApiError(
+                            400,
+                            `Only ${refundableQuantity} unit(s) of ${saleItem.name} can be refunded.`
+                        );
+
+                    }
+
+
+                    if (
+                        saleItem.isOpenPrice !==
+                            true &&
+                        saleItem.product
+                    ) {
+
+                        const product =
+                            await Product
+                                .findById(
+                                    saleItem.product
+                                )
+                                .session(
+                                    session
+                                );
+
+
+                        if (
+                            !product
+                        ) {
+
+                            throw new ApiError(
+                                404,
+                                `Product "${saleItem.name}" no longer exists.`
+                            );
+
+                        }
+
+
+                        const movement =
+                            await branchInventoryService
+                                .addStock(
+                                    resolvedBranchId,
+                                    product._id,
+                                    quantity,
+                                    {
+                                        session,
+                                    }
+                                );
+
+
+                        await InventoryTransaction
+                            .create(
+                                [
+                                    {
+                                        branch:
+                                            resolvedBranchId,
+
+                                        branchSnapshot: {
+
+                                            code:
+                                                sale
+                                                    .branchSnapshot
+                                                    ?.code ||
+                                                "",
+
+                                            name:
+                                                sale
+                                                    .branchSnapshot
+                                                    ?.name ||
+                                                "",
+
+                                        },
+
+                                        product:
+                                            product._id,
+
+                                        type:
+                                            "ADJUSTMENT",
+
+                                        quantity,
+
+                                        previousStock:
+                                            movement
+                                                .previousStock,
+
+                                        newStock:
+                                            movement
+                                                .newStock,
+
+                                        remarks:
+                                            `Refund - Receipt ${sale.receiptNumber}`,
+
+                                        createdBy:
+                                            userId,
+                                    },
+                                ],
+                                {
+                                    session,
+                                }
+                            );
+
+                    }
+
+
+                    saleItem.refundedQuantity =
+                        refundedQuantity +
+                        quantity;
+
+                }
+
+
+                const fullyRefunded =
+                    sale.items.every(
+                        (
+                            item
+                        ) =>
+
+                            Number(
+                                item
+                                    .refundedQuantity ||
+                                0
+                            ) >=
+
+                            Number(
+                                item.quantity
+                            )
                     );
 
 
-                sale.loyaltyEarnedPointsReversed =
-                    alreadyReversed +
-                    pointsToReverse;
+                sale.status =
+                    fullyRefunded
+                        ? "REFUNDED"
+                        : "PARTIALLY_REFUNDED";
 
 
-                await customer.save();
+                if (
+                    fullyRefunded &&
+                    sale.customer
+                ) {
+
+                    const customer =
+                        await Customer
+                            .findById(
+                                sale.customer
+                            )
+                            .session(
+                                session
+                            );
 
 
-                await LoyaltyTransaction.create({
+                    if (
+                        customer
+                    ) {
 
-                    customer:
-                        customer._id,
+                        const earnedPoints =
+                            Number(
+                                sale
+                                    .loyaltyPointsEarned
+                            ) || 0;
 
-                    sale:
-                        sale._id,
 
-                    type:
-                        "REVERSAL",
+                        const alreadyReversed =
+                            Number(
+                                sale
+                                    .loyaltyEarnedPointsReversed
+                            ) || 0;
 
-                    points:
-                        -actualPointsRemoved,
 
-                    balanceBefore,
+                        const pointsToReverse =
+                            Math.max(
+                                0,
+                                earnedPoints -
+                                alreadyReversed
+                            );
 
-                    balanceAfter,
 
-                    description:
-                        `Earned loyalty points reversed because Receipt ${sale.receiptNumber} was fully refunded.`,
+                        if (
+                            pointsToReverse >
+                            0
+                        ) {
 
-                    createdBy:
-                        userId ||
-                        null,
+                            const balanceBefore =
+                                Number(
+                                    customer
+                                        .loyaltyPoints
+                                ) || 0;
 
+
+                            const actualPointsRemoved =
+                                Math.min(
+                                    balanceBefore,
+                                    pointsToReverse
+                                );
+
+
+                            const balanceAfter =
+                                balanceBefore -
+                                actualPointsRemoved;
+
+
+                            customer.loyaltyPoints =
+                                balanceAfter;
+
+
+                            customer.lifetimePoints =
+                                Math.max(
+                                    0,
+                                    (
+                                        Number(
+                                            customer
+                                                .lifetimePoints
+                                        ) || 0
+                                    ) -
+                                    pointsToReverse
+                                );
+
+
+                            sale.loyaltyEarnedPointsReversed =
+                                alreadyReversed +
+                                pointsToReverse;
+
+
+                            await customer.save({
+                                session,
+                            });
+
+
+                            await LoyaltyTransaction
+                                .create(
+                                    [
+                                        {
+                                            customer:
+                                                customer._id,
+
+                                            sale:
+                                                sale._id,
+
+                                            type:
+                                                "REVERSAL",
+
+                                            points:
+                                                -actualPointsRemoved,
+
+                                            balanceBefore,
+
+                                            balanceAfter,
+
+                                            description:
+                                                `Earned loyalty points reversed because Receipt ${sale.receiptNumber} was fully refunded.`,
+
+                                            createdBy:
+                                                userId ||
+                                                null,
+                                        },
+                                    ],
+                                    {
+                                        session,
+                                    }
+                                );
+
+                        }
+
+
+                        const redeemedPoints =
+                            Number(
+                                sale
+                                    .loyaltyPointsRedeemed
+                            ) || 0;
+
+
+                        const alreadyRestored =
+                            Number(
+                                sale
+                                    .loyaltyRedeemedPointsRestored
+                            ) || 0;
+
+
+                        const pointsToRestore =
+                            Math.max(
+                                0,
+                                redeemedPoints -
+                                alreadyRestored
+                            );
+
+
+                        if (
+                            pointsToRestore >
+                            0
+                        ) {
+
+                            const balanceBefore =
+                                Number(
+                                    customer
+                                        .loyaltyPoints
+                                ) || 0;
+
+
+                            const balanceAfter =
+                                balanceBefore +
+                                pointsToRestore;
+
+
+                            customer.loyaltyPoints =
+                                balanceAfter;
+
+
+                            sale.loyaltyRedeemedPointsRestored =
+                                alreadyRestored +
+                                pointsToRestore;
+
+
+                            await customer.save({
+                                session,
+                            });
+
+
+                            await LoyaltyTransaction
+                                .create(
+                                    [
+                                        {
+                                            customer:
+                                                customer._id,
+
+                                            sale:
+                                                sale._id,
+
+                                            type:
+                                                "REVERSAL",
+
+                                            points:
+                                                pointsToRestore,
+
+                                            balanceBefore,
+
+                                            balanceAfter,
+
+                                            description:
+                                                `Redeemed loyalty points restored because Receipt ${sale.receiptNumber} was fully refunded.`,
+
+                                            createdBy:
+                                                userId ||
+                                                null,
+                                    },
+                                ],
+                                {
+                                    session,
+                                }
+                            );
+
+                        }
+
+                    }
+
+                }
+
+
+                await sale.save({
+                    session,
                 });
 
-            }
+
+                await syncOutboxService
+                    .enqueueSyncRequest({
+
+                        source:
+                            "SALE",
+
+                        action:
+                            "REFUND",
+
+                        aggregateId:
+                            sale._id,
+
+                        branchId:
+                            resolvedBranchId,
+
+                        session,
+
+                    });
 
 
-            /*
-            =================================================
-            RESTORE REDEEMED POINTS
-            =================================================
-            */
-
-            const redeemedPoints =
-                Number(
-                    sale.loyaltyPointsRedeemed
-                ) || 0;
-
-
-            const alreadyRestored =
-                Number(
-                    sale.loyaltyRedeemedPointsRestored
-                ) || 0;
-
-
-            const pointsToRestore =
-                Math.max(
-                    0,
-                    redeemedPoints -
-                    alreadyRestored
-                );
-
-
-            if (
-                pointsToRestore >
-                0
-            ) {
-
-                const balanceBefore =
-                    Number(
-                        customer.loyaltyPoints
-                    ) || 0;
-
-
-                const balanceAfter =
-                    balanceBefore +
-                    pointsToRestore;
-
-
-                customer.loyaltyPoints =
-                    balanceAfter;
-
-
-                sale.loyaltyRedeemedPointsRestored =
-                    alreadyRestored +
-                    pointsToRestore;
-
-
-                await customer.save();
-
-
-                await LoyaltyTransaction.create({
-
-                    customer:
-                        customer._id,
-
-                    sale:
-                        sale._id,
-
-                    type:
-                        "REVERSAL",
-
-                    points:
-                        pointsToRestore,
-
-                    balanceBefore,
-
-                    balanceAfter,
-
-                    description:
-                        `Redeemed loyalty points restored because Receipt ${sale.receiptNumber} was fully refunded.`,
-
-                    createdBy:
-                        userId ||
-                        null,
-
-                });
+                return sale._id;
 
             }
-
-        }
-
-    }
-
-
-    /*
-    ========================================================
-    SAVE SALE
-    ========================================================
-    */
-
-    await sale.save();
-
-
-    /*
-    ========================================================
-    RETURN POPULATED SALE
-    ========================================================
-    */
-
-    return await Sale.findById(
-        sale._id
-    )
-
-        .populate(
-            "cashier",
-            "name username"
-        )
-
-        .populate(
-            "customer",
-            CUSTOMER_POPULATE_FIELDS
         );
+
+
+    return await populateSale(
+        completedSaleId
+    );
 
 };
 
@@ -2647,6 +3773,8 @@ EXPORT
 export default {
 
     checkout,
+
+    checkoutBulkOrder,
 
     getSales,
 

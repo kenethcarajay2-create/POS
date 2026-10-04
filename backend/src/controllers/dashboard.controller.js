@@ -1,5 +1,7 @@
 import dashboardService from "../services/dashboard.service.js";
+
 import ApiResponse from "../utils/ApiResponse.js";
+
 
 const getDashboard = async (
     req,
@@ -10,9 +12,15 @@ const getDashboard = async (
     try {
 
         const dashboard =
-            await dashboardService.getDashboard();
+            await dashboardService
+                .getDashboard(
+                    req.branchId
+                );
 
-        res.status(200).json(
+
+        res.status(
+            200
+        ).json(
             new ApiResponse(
                 true,
                 "Dashboard retrieved successfully.",
@@ -20,14 +28,22 @@ const getDashboard = async (
             )
         );
 
-    } catch (error) {
 
-        next(error);
+    } catch (
+        error
+    ) {
+
+        next(
+            error
+        );
 
     }
 
 };
 
+
 export default {
+
     getDashboard,
+
 };

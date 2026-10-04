@@ -45,7 +45,6 @@ const saleItemSchema =
             ====================================================
 
             Required for normal products.
-
             NOT required for Open Price / Grocery.
             ====================================================
             */
@@ -154,7 +153,6 @@ const saleItemSchema =
             Normal products usually leave this empty.
 
             The note does NOT affect:
-
             - inventory
             - pricing
             - quantity
@@ -266,7 +264,6 @@ const saleItemSchema =
             Keep item _id.
 
             Needed for individual-item refunds.
-
             This is especially important for open-price items,
             because they do not have a Product ObjectId.
             */
@@ -287,6 +284,100 @@ SALE SCHEMA
 const saleSchema =
     new mongoose.Schema(
         {
+
+            /*
+            ====================================================
+            BRANCH
+            ====================================================
+
+            IMPORTANT:
+
+            This is intentionally NOT required yet.
+
+            Existing sales were created before multi-branch
+            support existed.
+
+            Migration will:
+
+            1. assign all old sales to MAIN
+            2. verify every sale
+            3. then checkout will begin writing branch data
+
+            Do not make this required until that migration and
+            checkout conversion have been verified.
+            ====================================================
+            */
+
+            branch: {
+
+                type:
+                    mongoose.Schema.Types.ObjectId,
+
+                ref:
+                    "Branch",
+
+                default:
+                    null,
+
+            },
+
+
+            /*
+            ====================================================
+            BRANCH SNAPSHOT
+            ====================================================
+
+            Historical copy of branch identity at the moment
+            of the transaction.
+
+            This prevents old receipts/reports from changing
+            if a branch is renamed later.
+
+            Example:
+
+            {
+                code: "MAIN",
+                name: "Main Branch"
+            }
+            ====================================================
+            */
+
+            branchSnapshot: {
+
+                code: {
+
+                    type:
+                        String,
+
+                    default:
+                        "",
+
+                    trim:
+                        true,
+
+                    maxlength:
+                        20,
+
+                },
+
+                name: {
+
+                    type:
+                        String,
+
+                    default:
+                        "",
+
+                    trim:
+                        true,
+
+                    maxlength:
+                        120,
+
+                },
+
+            },
+
 
             /*
             ====================================================
@@ -447,11 +538,6 @@ const saleSchema =
             ====================================================
             LOYALTY POINTS REDEEMED
             ====================================================
-
-            Example:
-
-            40 points used
-            ====================================================
             */
 
             loyaltyPointsRedeemed: {
@@ -471,12 +557,6 @@ const saleSchema =
             /*
             ====================================================
             LOYALTY DISCOUNT
-            ====================================================
-
-            Example:
-
-            40 points
-            = ₱40 loyalty discount
             ====================================================
             */
 
@@ -498,12 +578,6 @@ const saleSchema =
             ====================================================
             LOYALTY POINTS EARNED
             ====================================================
-
-            Example:
-
-            ₱190 final spend
-            = 1 point
-            ====================================================
             */
 
             loyaltyPointsEarned: {
@@ -523,14 +597,6 @@ const saleSchema =
             /*
             ====================================================
             LOYALTY EARNED POINTS REVERSED
-            ====================================================
-
-            Used for:
-
-            - void
-            - full refund
-
-            Prevents duplicate reversal.
             ====================================================
             */
 
@@ -552,12 +618,6 @@ const saleSchema =
             ====================================================
             REDEEMED POINTS RESTORED
             ====================================================
-
-            Used when a sale is:
-
-            - voided
-            - fully refunded
-            ====================================================
             */
 
             loyaltyRedeemedPointsRestored: {
@@ -577,20 +637,6 @@ const saleSchema =
             /*
             ====================================================
             FINAL TOTAL
-            ====================================================
-
-            This is the FINAL amount after:
-
-            normal discount
-            AND
-            loyalty discount
-
-            Example:
-
-            subtotal             ₱230
-            loyalty discount      ₱40
-            --------------------------
-            total                ₱190
             ====================================================
             */
 
@@ -679,8 +725,6 @@ const saleSchema =
             General notes for the whole sale.
 
             This is different from:
-
-            items[].note
 
             items[].note
             → description of one Grocery/open-price line
@@ -796,24 +840,62 @@ saleSchema.index({
 ------------------------------------------------------------
 CUSTOMER PURCHASE HISTORY
 ------------------------------------------------------------
-
-Used by Customers page for:
-
-- purchases today
-- purchases this week
-- purchases this month
-- purchases this year
-- lifetime spending
-- transaction count
-- average purchase
-- last purchase
-- loyalty history linkage
-------------------------------------------------------------
 */
 
 saleSchema.index({
 
     customer:
+        1,
+
+    createdAt:
+        -1,
+
+});
+
+
+/*
+------------------------------------------------------------
+BRANCH SALES HISTORY
+------------------------------------------------------------
+
+Used later by:
+
+- Sales History
+- Sales Report
+- Transaction Report
+- branch dashboard
+------------------------------------------------------------
+*/
+
+saleSchema.index({
+
+    branch:
+        1,
+
+    createdAt:
+        -1,
+
+});
+
+
+/*
+------------------------------------------------------------
+BRANCH + CASHIER SALES HISTORY
+------------------------------------------------------------
+
+Used later by:
+
+- Cashier Report
+- cashier performance by branch
+------------------------------------------------------------
+*/
+
+saleSchema.index({
+
+    branch:
+        1,
+
+    cashier:
         1,
 
     createdAt:

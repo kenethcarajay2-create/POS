@@ -38,63 +38,131 @@ function POSPage() {
 
     /*
     ============================================================
+    FULLSCREEN
+    ============================================================
+    */
+
+    const [
+        isFullscreen,
+        setIsFullscreen,
+    ] = useState(
+        Boolean(
+            document.fullscreenElement
+        )
+    );
+
+
+    /*
+    ============================================================
+    FULLSCREEN CHANGE LISTENER
+    ============================================================
+
+    Keeps the UI synchronized when:
+
+    - Full Screen button is clicked
+    - ESC exits fullscreen
+    - Browser exits fullscreen for another reason
+    ============================================================
+    */
+
+    useEffect(
+        () => {
+
+            const handleFullscreenChange =
+                () => {
+
+                    setIsFullscreen(
+                        Boolean(
+                            document.fullscreenElement
+                        )
+                    );
+
+                };
+
+
+            document.addEventListener(
+                "fullscreenchange",
+                handleFullscreenChange
+            );
+
+
+            return () => {
+
+                document.removeEventListener(
+                    "fullscreenchange",
+                    handleFullscreenChange
+                );
+
+            };
+
+        },
+        []
+    );
+
+
+    /*
+    ============================================================
+    TOGGLE FULLSCREEN
+    ============================================================
+    */
+
+    const toggleFullscreen =
+        async () => {
+
+            try {
+
+                if (
+                    document.fullscreenElement
+                ) {
+
+                    await document
+                        .exitFullscreen();
+
+
+                    return;
+
+                }
+
+
+                await document
+                    .documentElement
+                    .requestFullscreen();
+
+            } catch (
+                error
+            ) {
+
+                console.error(
+                    "Unable to toggle fullscreen:",
+                    error
+                );
+
+            }
+
+        };
+
+
+    /*
+    ============================================================
     CART STORE
     ============================================================
     */
 
     const {
         items,
-
         clearCart,
-
         holdCart,
-
         resumeLatestCart,
-
-
-        /*
-        --------------------------------------------------------
-        CART ITEM CONTROL
-        --------------------------------------------------------
-        */
-
         addItem,
-
         increaseQuantity,
-
         decreaseQuantity,
-
         removeItem,
-
-
-        /*
-        --------------------------------------------------------
-        WHOLESALE
-        --------------------------------------------------------
-        */
-
         wholesaleMode,
-
         toggleWholesale,
-
-
-        /*
-        --------------------------------------------------------
-        F7 MULTIPLIER
-        --------------------------------------------------------
-        */
-
         pendingMultiplier,
-
-
-        /*
-        --------------------------------------------------------
-        F6 OPEN PRICE
-        --------------------------------------------------------
-        */
-
         addOpenPriceItem,
 
+        preparedCart,
     } = useCartStore();
 
 
@@ -109,6 +177,95 @@ function POSPage() {
             (state) =>
                 state.setSearch
         );
+
+
+    /*
+    ============================================================
+    MOBILE ORDER TOAST
+    ============================================================
+    */
+
+    const [
+        mobileOrderToast,
+        setMobileOrderToast,
+    ] = useState(null);
+
+
+    const mobileOrderToastTimerRef =
+        useRef(null);
+
+
+    const showMobileOrderToast =
+        (
+            message,
+            type = "success"
+        ) => {
+
+            if (
+                mobileOrderToastTimerRef.current
+            ) {
+
+                clearTimeout(
+                    mobileOrderToastTimerRef.current
+                );
+
+            }
+
+
+            setMobileOrderToast({
+
+                message,
+
+                type,
+
+            });
+
+
+            mobileOrderToastTimerRef.current =
+                setTimeout(
+                    () => {
+
+                        setMobileOrderToast(
+                            null
+                        );
+
+
+                        mobileOrderToastTimerRef.current =
+                            null;
+
+                    },
+                    2500
+                );
+
+        };
+
+
+    /*
+    ============================================================
+    CLEANUP TOAST TIMER
+    ============================================================
+    */
+
+    useEffect(
+        () => {
+
+            return () => {
+
+                if (
+                    mobileOrderToastTimerRef.current
+                ) {
+
+                    clearTimeout(
+                        mobileOrderToastTimerRef.current
+                    );
+
+                }
+
+            };
+
+        },
+        []
+    );
 
 
     /*
@@ -772,10 +929,19 @@ function POSPage() {
 
 
                 const sale =
-                    await saleService
-                        .checkout(
-                            checkoutData
-                        );
+                    await saleService.checkout(
+                        checkoutData,
+
+                        preparedCart
+                            ? {
+                                preparedCartId:
+                                    preparedCart.preparedCartId,
+
+                                claimToken:
+                                    preparedCart.claimToken,
+                            }
+                            : null
+                    );
 
 
                 /*
@@ -840,7 +1006,12 @@ function POSPage() {
                 ====================================================
                 */
 
-                clearCart();
+                await clearCart({
+
+                    releasePreparedCart:
+                        false,
+
+                });
 
 
                 setSelectedCartIndex(
@@ -892,12 +1063,6 @@ function POSPage() {
                 (
                     event
                 ) => {
-
-                    /*
-                    =================================================
-                    F6 POPUP HAS CONTROL
-                    =================================================
-                    */
 
                     if (
                         openPriceOpen
@@ -1646,120 +1811,143 @@ function POSPage() {
         <>
 
             {/* =================================================
-                BARCODE SCANNER
-            ================================================= */}
-
-            <BarcodeScanner />
-
-
-            {/* =================================================
-                WHOLESALE MODE INDICATOR
+                MOBILE ORDER TOAST
             ================================================= */}
 
             {
-                wholesaleMode && (
+                mobileOrderToast && (
 
                     <div
                         className="
-                            mb-3
-                            px-4
-                            py-2.5
-                            rounded-lg
-                            border-2
-                            border-warning
-                            bg-warning/10
-                            flex
-                            items-center
-                            justify-between
-                            shadow-sm
+                            fixed
+                            top-5
+                            right-5
+                            z-[1000]
+                            max-w-sm
+                            animate-[fadeIn_0.2s_ease-out]
                         "
                     >
 
                         <div
-                            className="
+                            className={`
                                 flex
-                                items-center
+                                items-start
                                 gap-3
-                            "
+                                rounded-xl
+                                border
+                                px-4
+                                py-3
+                                shadow-xl
+                                backdrop-blur-sm
+
+                                ${
+                                    mobileOrderToast.type ===
+                                    "error"
+
+                                        ? `
+                                            border-error/30
+                                            bg-error
+                                            text-error-content
+                                        `
+
+                                        : mobileOrderToast.type ===
+                                          "warning"
+
+                                            ? `
+                                                border-warning/30
+                                                bg-warning
+                                                text-warning-content
+                                            `
+
+                                            : `
+                                                border-success/30
+                                                bg-success
+                                                text-success-content
+                                            `
+                                }
+                            `}
                         >
 
                             <div
                                 className="
-                                    w-8
-                                    h-8
-                                    rounded-full
-                                    bg-warning
-                                    text-warning-content
+                                    mt-0.5
                                     flex
+                                    h-6
+                                    w-6
+                                    shrink-0
                                     items-center
                                     justify-center
-                                    font-bold
-                                    text-lg
+                                    rounded-full
+                                    bg-black/10
+                                    text-sm
+                                    font-black
                                 "
                             >
 
-                                %
+                                {
+                                    mobileOrderToast.type ===
+                                    "error"
+
+                                        ? "!"
+
+                                        : mobileOrderToast.type ===
+                                          "warning"
+
+                                            ? "!"
+
+                                            : "✓"
+                                }
 
                             </div>
 
 
-                            <div>
-
-                                <div
-                                    className="
-                                        font-bold
-                                        text-sm
-                                        text-warning-content
-                                    "
-                                >
-
-                                    WHOLESALE MODE ACTIVE
-
-                                </div>
-
-
-                                <div
-                                    className="
-                                        text-[11px]
-                                        text-base-content/60
-                                    "
-                                >
-
-                                    Bulk pricing is being applied
-                                    regardless of minimum quantity.
-
-                                </div>
-
-                            </div>
-
-                        </div>
-
-
-                        <div
-                            className="
-                                flex
-                                items-center
-                                gap-2
-                            "
-                        >
-
-                            <kbd className="kbd kbd-sm">
-
-                                F11
-
-                            </kbd>
-
-
-                            <span
+                            <div
                                 className="
-                                    text-xs
-                                    text-base-content/60
+                                    min-w-0
+                                    flex-1
                                 "
                             >
 
-                                Disable
+                                <div
+                                    className="
+                                        text-sm
+                                        font-bold
+                                    "
+                                >
 
-                            </span>
+                                    {
+                                        mobileOrderToast.type ===
+                                        "error"
+
+                                            ? "Mobile Order Error"
+
+                                            : mobileOrderToast.type ===
+                                              "warning"
+
+                                                ? "Mobile Order Loaded"
+
+                                                : "Mobile Order Loaded"
+                                    }
+
+                                </div>
+
+
+                                <div
+                                    className="
+                                        mt-0.5
+                                        whitespace-pre-line
+                                        text-xs
+                                        opacity-90
+                                    "
+                                >
+
+                                    {
+                                        mobileOrderToast.message
+                                    }
+
+                                </div>
+
+                            </div>
 
                         </div>
 
@@ -1770,19 +1958,143 @@ function POSPage() {
 
 
             {/* =================================================
+                BARCODE SCANNER
+            ================================================= */}
+
+            <BarcodeScanner
+
+                onPreparedCartLoaded={(
+                    claimedCart
+                ) => {
+
+                    const hasWarnings =
+                        Array.isArray(
+                            claimedCart?.warnings
+                        ) &&
+                        claimedCart.warnings.length >
+                            0;
+
+
+                    if (
+                        hasWarnings
+                    ) {
+
+                        showMobileOrderToast(
+                            `Order loaded successfully.\n${claimedCart.warnings.join(
+                                "\n"
+                            )}`,
+                            "warning"
+                        );
+
+
+                        return;
+
+                    }
+
+
+                    showMobileOrderToast(
+                        "Order loaded successfully.",
+                        "success"
+                    );
+
+                }}
+
+                onPreparedCartError={(
+                    message
+                ) => {
+
+                    showMobileOrderToast(
+                        message ||
+                        "Unable to load mobile order.",
+                        "error"
+                    );
+
+                }}
+
+            />
+
+
+            {/* =================================================
+    FLOATING FULLSCREEN CONTROL
+================================================= */}
+
+<button
+    type="button"
+
+    onClick={
+        toggleFullscreen
+    }
+
+    className="
+        fixed
+        top-15
+        right-3
+        z-[500]
+        btn
+        btn-circle
+        btn-sm
+        bg-base-100
+        border
+        border-base-300
+        shadow-lg
+        hover:shadow-xl
+    "
+
+    title={
+        isFullscreen
+            ? "Exit Full Screen"
+            : "Enter Full Screen"
+    }
+
+    aria-label={
+        isFullscreen
+            ? "Exit Full Screen"
+            : "Enter Full Screen"
+    }
+>
+
+    <span
+        className="
+            text-lg
+            leading-none
+        "
+    >
+
+        {
+            isFullscreen
+                ? "⤢"
+                : "⛶"
+        }
+
+    </span>
+
+</button>
+
+
+            {/* =================================================
                 POS WORKING AREA
             ================================================= */}
 
             <div
-                className="
+                className={`
                     relative
                     grid
                     grid-cols-12
                     gap-4
-                    h-[calc(100vh-155px)]
                     min-h-0
                     overflow-hidden
-                "
+
+                    ${
+                        isFullscreen
+                            ? `
+                                h-[calc(100vh-56px)]
+                                p-4
+                            `
+                            : `
+                                h-[calc(100vh-155px)]
+                            `
+                    }
+                `}
             >
 
 
@@ -1963,10 +2275,6 @@ function POSPage() {
                                 "
                             >
 
-                                {/* ==============================
-                                    HEADER
-                                ============================== */}
-
                                 <div className="text-center">
 
                                     <div
@@ -2012,10 +2320,6 @@ function POSPage() {
                                 </div>
 
 
-                                {/* ==============================
-                                    F7 MULTIPLIER
-                                ============================== */}
-
                                 {
                                     Number(
                                         pendingMultiplier
@@ -2051,10 +2355,6 @@ function POSPage() {
                                 }
 
 
-                                {/* ==============================
-                                    LIVE PRICE
-                                ============================== */}
-
                                 <div
                                     className="
                                         mt-6
@@ -2074,10 +2374,6 @@ function POSPage() {
 
                                 </div>
 
-
-                                {/* ==============================
-                                    AMOUNT INPUT
-                                ============================== */}
 
                                 <input
                                     ref={
@@ -2231,10 +2527,6 @@ function POSPage() {
                                 />
 
 
-                                {/* ==============================
-                                    GROCERY NOTE
-                                ============================== */}
-
                                 <div className="mt-4">
 
                                     <div
@@ -2368,10 +2660,6 @@ function POSPage() {
                                 </div>
 
 
-                                {/* ==============================
-                                    MULTIPLIER PREVIEW
-                                ============================== */}
-
                                 {
                                     Number(
                                         pendingMultiplier
@@ -2497,10 +2785,6 @@ function POSPage() {
                                 }
 
 
-                                {/* ==============================
-                                    BUTTONS
-                                ============================== */}
-
                                 <div
                                     className="
                                         mt-5
@@ -2540,10 +2824,6 @@ function POSPage() {
 
                                 </div>
 
-
-                                {/* ==============================
-                                    HELP
-                                ============================== */}
 
                                 <div
                                     className="
@@ -2595,10 +2875,9 @@ function POSPage() {
             ================================================= */}
 
             <div
-                className="
+                className={`
                     fixed
                     bottom-0
-                    left-[225px]
                     right-0
                     h-14
                     bg-base-100
@@ -2608,7 +2887,13 @@ function POSPage() {
                     items-center
                     justify-center
                     z-[100]
-                "
+
+                    ${
+                        isFullscreen
+                            ? "left-0"
+                            : "left-[225px]"
+                    }
+                `}
             >
 
                 <ShortcutBar />

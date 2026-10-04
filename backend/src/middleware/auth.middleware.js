@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
 
 import User from "../models/user.model.js";
-
+import branchAccessService from "../services/branch-access.service.js";
 
 /*
 ============================================================
@@ -232,6 +232,32 @@ const protect = async (
         req.user =
             user;
 
+            /*
+============================================================
+BRANCH CONTEXT
+============================================================
+
+This is resolved from the CURRENT MongoDB state.
+
+We do not trust branch access stored in the JWT.
+============================================================
+*/
+
+const branchContext =
+    await branchAccessService
+        .buildBranchContext(
+            user
+        );
+
+
+req.accessibleBranches =
+    branchContext
+        .branches;
+
+
+req.defaultBranch =
+    branchContext
+        .defaultBranch;
 
         /*
         ========================================================

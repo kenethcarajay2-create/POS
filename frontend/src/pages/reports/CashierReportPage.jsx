@@ -707,13 +707,63 @@ const getNetSaleTotal = (
     }
 
 
+    /*
+    Compatibility fallback for older
+    sales without an items array.
+    */
+
+    if (
+        !Array.isArray(
+            sale?.items
+        )
+    ) {
+        return Number(
+            sale?.total || 0
+        );
+    }
+
+
+    const netSubtotal =
+        sale.items.reduce(
+            (
+                sum,
+                item
+            ) => {
+
+                const remainingQuantity =
+                    getRemainingQuantity(
+                        item
+                    );
+
+
+                const unitPrice =
+                    Number(
+                        item?.unitPrice ||
+                        item?.price ||
+                        0
+                    );
+
+
+                return (
+                    sum +
+                    remainingQuantity *
+                        unitPrice
+                );
+
+            },
+            0
+        );
+
+
+    const discount =
+        Number(
+            sale?.discount || 0
+        );
+
+
     return Math.max(
-        getOriginalSaleTotal(
-            sale
-        ) -
-        getRefundAmount(
-            sale
-        ),
+        netSubtotal -
+            discount,
         0
     );
 
@@ -747,7 +797,10 @@ const isCountedTransaction = (
 
     return (
         sale?.status !==
-        "VOIDED"
+            "VOIDED" &&
+
+        sale?.status !==
+            "REFUNDED"
     );
 
 };
@@ -900,7 +953,7 @@ function CashierReportPage() {
                             fetchSales(),
 
                             userService
-                                .getUsers()
+    .getBranchUsers()
                                 .then(
                                     (
                                         data
@@ -3493,7 +3546,7 @@ function CashierReportPage() {
                     value={
                         summary.totalTransactions
                     }
-                    description="Non-voided transactions"
+                    description="Active sales transactions"
                     icon={
                         FaReceipt
                     }

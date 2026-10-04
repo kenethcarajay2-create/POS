@@ -36,6 +36,9 @@ import {
 
 import ledgerService from "../../services/ledger.service";
 
+import WorkerAttendanceCalendarModal
+    from "./WorkerAttendanceCalendarModal";
+
 
 /*
 ============================================================
@@ -1381,6 +1384,20 @@ const WorkersPage = () => {
         payError,
         setPayError,
     ] = useState("");
+
+
+    /*
+    ========================================================
+    ATTENDANCE CALENDAR
+    ========================================================
+    */
+
+    const [
+        attendanceWorker,
+        setAttendanceWorker,
+    ] = useState(
+        null
+    );
 
 
     /*
@@ -4218,6 +4235,26 @@ const WorkersPage = () => {
                                                                 <button
                                                                     type="button"
                                                                     onClick={() =>
+                                                                        setAttendanceWorker(
+                                                                            worker
+                                                                        )
+                                                                    }
+                                                                >
+
+                                                                    <FaCalendarDay />
+
+                                                                    Attendance
+
+                                                                </button>
+
+                                                            </li>
+
+
+                                                            <li>
+
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
                                                                         handleOpenHistory(
                                                                             worker
                                                                         )
@@ -6210,6 +6247,26 @@ const WorkersPage = () => {
                     </div>
 
                 </dialog>
+
+            )}
+
+
+            {/* ==================================================
+                ATTENDANCE CALENDAR
+            ================================================== */}
+
+            {attendanceWorker && (
+
+                <WorkerAttendanceCalendarModal
+                    worker={
+                        attendanceWorker
+                    }
+                    onClose={() =>
+                        setAttendanceWorker(
+                            null
+                        )
+                    }
+                />
 
             )}
 

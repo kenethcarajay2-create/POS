@@ -26,9 +26,11 @@ import {
     FaIdCard,
     FaCamera,
     FaWifi,
+    FaBuilding,
 } from "react-icons/fa";
 
 import userService from "../../services/user.service";
+import branchService from "../../services/branch.service";
 
 
 /*
@@ -69,7 +71,6 @@ const PERMISSIONS = [
             "View the main dashboard.",
     },
 
-
     {
         key:
             "products",
@@ -80,7 +81,6 @@ const PERMISSIONS = [
         description:
             "View the products page.",
     },
-
 
     {
         key:
@@ -93,7 +93,6 @@ const PERMISSIONS = [
             "View inventory and stock.",
     },
 
-
     {
         key:
             "pos",
@@ -105,6 +104,16 @@ const PERMISSIONS = [
             "Access the point of sale.",
     },
 
+    {
+        key:
+            "bulkOrder",
+
+        label:
+            "Bulk Order",
+
+        description:
+            "Access the bulk order page.",
+    },
 
     {
         key:
@@ -117,7 +126,6 @@ const PERMISSIONS = [
             "View sales and receipts.",
     },
 
-
     {
         key:
             "customers",
@@ -128,7 +136,6 @@ const PERMISSIONS = [
         description:
             "Access customer accounts.",
     },
-
 
     {
         key:
@@ -141,7 +148,6 @@ const PERMISSIONS = [
             "Access supplier records.",
     },
 
-
     {
         key:
             "workers",
@@ -152,7 +158,6 @@ const PERMISSIONS = [
         description:
             "Access worker records.",
     },
-
 
     {
         key:
@@ -165,7 +170,6 @@ const PERMISSIONS = [
             "Access account ledgers.",
     },
 
-
     {
         key:
             "reports",
@@ -176,7 +180,6 @@ const PERMISSIONS = [
         description:
             "View reports.",
     },
-
 
     {
         key:
@@ -189,7 +192,6 @@ const PERMISSIONS = [
             "Access user management.",
     },
 
-
     {
         key:
             "settings",
@@ -200,7 +202,6 @@ const PERMISSIONS = [
         description:
             "Access system settings.",
     },
-
 
     {
         key:
@@ -213,7 +214,6 @@ const PERMISSIONS = [
             "Allow refunding completed sales.",
     },
 
-
     {
         key:
             "salesVoid",
@@ -224,7 +224,6 @@ const PERMISSIONS = [
         description:
             "Allow voiding completed sales.",
     },
-
 
     {
         key:
@@ -258,6 +257,9 @@ const EMPTY_PERMISSIONS = {
         false,
 
     pos:
+        false,
+
+    bulkOrder:
         false,
 
     sales:
@@ -318,6 +320,9 @@ const ROLE_PRESETS = {
         pos:
             true,
 
+        bulkOrder:
+            true,
+
         sales:
             true,
 
@@ -366,6 +371,9 @@ const ROLE_PRESETS = {
             true,
 
         pos:
+            true,
+
+        bulkOrder:
             true,
 
         sales:
@@ -418,6 +426,9 @@ const ROLE_PRESETS = {
         pos:
             true,
 
+        bulkOrder:
+            false,
+
         sales:
             true,
 
@@ -468,6 +479,9 @@ const ROLE_PRESETS = {
         pos:
             false,
 
+        bulkOrder:
+            false,
+
         sales:
             false,
 
@@ -516,6 +530,9 @@ const ROLE_PRESETS = {
             false,
 
         pos:
+            false,
+
+        bulkOrder:
             false,
 
         sales:
@@ -680,6 +697,30 @@ function UsersPage() {
 
     /*
     ========================================================
+    BRANCH ACCESS
+    ========================================================
+    */
+
+    const [
+        branches,
+        setBranches,
+    ] = useState([]);
+
+
+    const [
+        branchesLoading,
+        setBranchesLoading,
+    ] = useState(false);
+
+
+    const [
+        branchesError,
+        setBranchesError,
+    ] = useState(null);
+
+
+    /*
+    ========================================================
     RFID SCANNING
     ========================================================
     */
@@ -729,6 +770,19 @@ function UsersPage() {
 
             role:
                 "cashier",
+
+
+            /*
+            ================================================
+            BRANCH ACCESS
+            ================================================
+            */
+
+            branches:
+                [],
+
+            defaultBranch:
+                "",
 
 
             /*
@@ -870,6 +924,159 @@ function UsersPage() {
 
     /*
     ========================================================
+    NORMALIZE BRANCH ID
+    ========================================================
+    */
+
+    const normalizeBranchId =
+        (
+            value
+        ) => {
+
+            if (
+                !value
+            ) {
+
+                return "";
+
+            }
+
+
+            return String(
+                value?._id ||
+                value
+            );
+
+        };
+
+
+    /*
+    ========================================================
+    GET PREFERRED DEFAULT BRANCH
+    ========================================================
+    */
+
+    const getPreferredDefaultBranchId =
+        (
+            availableBranches =
+                branches
+        ) => {
+
+            const activeBranches =
+                availableBranches.filter(
+                    (
+                        branch
+                    ) =>
+                        branch?.isActive !==
+                        false
+                );
+
+
+            const systemDefault =
+                activeBranches.find(
+                    (
+                        branch
+                    ) =>
+                        branch?.isDefault ===
+                        true
+                );
+
+
+            return normalizeBranchId(
+                systemDefault?._id ||
+                activeBranches[0]?._id ||
+                ""
+            );
+
+        };
+
+
+    /*
+    ========================================================
+    LOAD BRANCHES
+    ========================================================
+    */
+
+    const loadBranches =
+        async () => {
+
+            try {
+
+                setBranchesLoading(
+                    true
+                );
+
+
+                setBranchesError(
+                    null
+                );
+
+
+                const data =
+                    await branchService
+                        .getBranches(
+                            false
+                        );
+
+
+                const normalizedBranches =
+                    Array.isArray(
+                        data
+                    )
+                        ? data
+                        : Array.isArray(
+                            data?.branches
+                        )
+                            ? data.branches
+                            : [];
+
+
+                setBranches(
+                    normalizedBranches.filter(
+                        (
+                            branch
+                        ) =>
+                            branch?.isActive !==
+                            false
+                    )
+                );
+
+
+            } catch (
+                error
+            ) {
+
+                console.error(
+                    "Failed to load branches:",
+                    error
+                );
+
+
+                setBranches(
+                    []
+                );
+
+
+                setBranchesError(
+                    error.response
+                        ?.data
+                        ?.message ||
+                    "Failed to load branches."
+                );
+
+            } finally {
+
+                setBranchesLoading(
+                    false
+                );
+
+            }
+
+        };
+
+
+    /*
+    ========================================================
     LOAD USERS
     ========================================================
     */
@@ -947,6 +1154,8 @@ function UsersPage() {
         () => {
 
             loadUsers();
+
+            loadBranches();
 
         },
         []
@@ -1363,9 +1572,25 @@ function UsersPage() {
             );
 
 
-            setForm(
-                createEmptyForm()
-            );
+            const preferredBranchId =
+                getPreferredDefaultBranchId();
+
+
+            setForm({
+
+                ...createEmptyForm(),
+
+                branches:
+                    preferredBranchId
+                        ? [
+                            preferredBranchId,
+                        ]
+                        : [],
+
+                defaultBranch:
+                    preferredBranchId,
+
+            });
 
 
             setScanningRfid(
@@ -1432,6 +1657,107 @@ function UsersPage() {
                     "",
 
                 role,
+
+
+                /*
+                ============================================
+                BRANCH ACCESS
+                ============================================
+                */
+
+                branches:
+
+                    Array.isArray(
+                        user.branches
+                    )
+                        ? user.branches
+                            .map(
+                                normalizeBranchId
+                            )
+                            .filter(
+                                (
+                                    branchId
+                                ) => {
+
+                                    if (
+                                        !branchId
+                                    ) {
+
+                                        return false;
+
+                                    }
+
+
+                                    if (
+                                        branches.length ===
+                                        0
+                                    ) {
+
+                                        return true;
+
+                                    }
+
+
+                                    return branches.some(
+                                        (
+                                            branch
+                                        ) =>
+                                            normalizeBranchId(
+                                                branch._id
+                                            ) ===
+                                            branchId
+                                    );
+
+                                }
+                            )
+                        : [],
+
+                defaultBranch:
+
+                    (
+                        () => {
+
+                            const currentDefault =
+                                normalizeBranchId(
+                                    user.defaultBranch
+                                );
+
+
+                            if (
+                                branches.length ===
+                                0
+                            ) {
+
+                                return currentDefault;
+
+                            }
+
+
+                            const defaultIsActive =
+                                branches.some(
+                                    (
+                                        branch
+                                    ) =>
+                                        normalizeBranchId(
+                                            branch._id
+                                        ) ===
+                                        currentDefault
+                                );
+
+
+                            if (
+                                defaultIsActive
+                            ) {
+
+                                return currentDefault;
+
+                            }
+
+
+                            return getPreferredDefaultBranchId();
+
+                        }
+                    )(),
 
 
                 /*
@@ -1564,26 +1890,211 @@ function UsersPage() {
             setForm(
                 (
                     current
-                ) => ({
+                ) => {
 
-                    ...current,
+                    const preferredBranchId =
+                        getPreferredDefaultBranchId();
 
-                    role:
-                        newRole,
 
-                    permissions: {
+                    if (
+                        newRole ===
+                        "admin"
+                    ) {
 
-                        ...(
-                            ROLE_PRESETS[
-                                newRole
-                            ] ||
+                        return {
 
-                            ROLE_PRESETS.custom
-                        ),
+                            ...current,
 
-                    },
+                            role:
+                                newRole,
 
-                })
+                            branches:
+                                [],
+
+                            defaultBranch:
+                                current.defaultBranch ||
+                                preferredBranchId,
+
+                            permissions: {
+
+                                ...(
+                                    ROLE_PRESETS[
+                                        newRole
+                                    ] ||
+
+                                    ROLE_PRESETS.custom
+                                ),
+
+                            },
+
+                        };
+
+                    }
+
+
+                    let assignedBranches =
+                        Array.isArray(
+                            current.branches
+                        )
+                            ? current.branches
+                            : [];
+
+
+                    if (
+                        assignedBranches.length ===
+                        0 &&
+                        preferredBranchId
+                    ) {
+
+                        assignedBranches = [
+                            preferredBranchId,
+                        ];
+
+                    }
+
+
+                    const currentDefaultIsAssigned =
+                        assignedBranches.includes(
+                            current.defaultBranch
+                        );
+
+
+                    return {
+
+                        ...current,
+
+                        role:
+                            newRole,
+
+                        branches:
+                            assignedBranches,
+
+                        defaultBranch:
+                            currentDefaultIsAssigned
+                                ? current.defaultBranch
+                                : assignedBranches[0] ||
+                                  "",
+
+                        permissions: {
+
+                            ...(
+                                ROLE_PRESETS[
+                                    newRole
+                                ] ||
+
+                                ROLE_PRESETS.custom
+                            ),
+
+                        },
+
+                    };
+
+                }
+            );
+
+        };
+
+
+    /*
+    ========================================================
+    TOGGLE BRANCH ASSIGNMENT
+    ========================================================
+    */
+
+    const toggleBranchAssignment =
+        (
+            branchId
+        ) => {
+
+            if (
+                form.role ===
+                "admin"
+            ) {
+
+                return;
+
+            }
+
+
+            const normalizedBranchId =
+                normalizeBranchId(
+                    branchId
+                );
+
+
+            if (
+                !normalizedBranchId
+            ) {
+
+                return;
+
+            }
+
+
+            setForm(
+                (
+                    current
+                ) => {
+
+                    const currentBranches =
+                        Array.isArray(
+                            current.branches
+                        )
+                            ? current.branches
+                            : [];
+
+
+                    const alreadyAssigned =
+                        currentBranches.includes(
+                            normalizedBranchId
+                        );
+
+
+                    const nextBranches =
+                        alreadyAssigned
+                            ? currentBranches.filter(
+                                (
+                                    id
+                                ) =>
+                                    id !==
+                                    normalizedBranchId
+                            )
+                            : [
+                                ...currentBranches,
+                                normalizedBranchId,
+                            ];
+
+
+                    let nextDefaultBranch =
+                        current.defaultBranch;
+
+
+                    if (
+                        !nextBranches.includes(
+                            nextDefaultBranch
+                        )
+                    ) {
+
+                        nextDefaultBranch =
+                            nextBranches[0] ||
+                            "";
+
+                    }
+
+
+                    return {
+
+                        ...current,
+
+                        branches:
+                            nextBranches,
+
+                        defaultBranch:
+                            nextDefaultBranch,
+
+                    };
+
+                }
             );
 
         };
@@ -2195,6 +2706,54 @@ function UsersPage() {
 
             /*
             ================================================
+            BRANCH VALIDATION
+            ================================================
+            */
+
+            if (
+                form.role !==
+                "admin"
+            ) {
+
+                if (
+                    !Array.isArray(
+                        form.branches
+                    ) ||
+                    form.branches.length ===
+                        0
+                ) {
+
+                    alert(
+                        "Please assign at least one branch to this user."
+                    );
+
+
+                    return;
+
+                }
+
+
+                if (
+                    !form.defaultBranch ||
+                    !form.branches.includes(
+                        form.defaultBranch
+                    )
+                ) {
+
+                    alert(
+                        "Please select a valid default branch."
+                    );
+
+
+                    return;
+
+                }
+
+            }
+
+
+            /*
+            ================================================
             CREATE USER
             ================================================
             */
@@ -2275,6 +2834,25 @@ function UsersPage() {
                             role:
 
                                 form.role,
+
+
+                            /*
+                            BRANCH ACCESS
+                            */
+
+                            branches:
+
+                                form.role ===
+                                "admin"
+
+                                    ? []
+
+                                    : form.branches,
+
+                            defaultBranch:
+
+                                form.defaultBranch ||
+                                null,
 
 
                             /*
@@ -2404,6 +2982,25 @@ function UsersPage() {
                             role:
 
                                 form.role,
+
+
+                            /*
+                            BRANCH ACCESS
+                            */
+
+                            branches:
+
+                                form.role ===
+                                "admin"
+
+                                    ? []
+
+                                    : form.branches,
+
+                            defaultBranch:
+
+                                form.defaultBranch ||
+                                null,
 
 
                             /*
@@ -3696,6 +4293,41 @@ function UsersPage() {
                                                         permissions
                                                     </p>
 
+
+                                                    <p className="text-[10px] text-base-content/50 mt-1">
+
+                                                        {
+                                                            user.role ===
+                                                            "admin"
+
+                                                                ? "All active branches"
+
+                                                                : Array.isArray(
+                                                                    user.branches
+                                                                ) &&
+                                                                  user.branches.length >
+                                                                  0
+
+                                                                    ? user.branches
+                                                                        .map(
+                                                                            (
+                                                                                branch
+                                                                            ) =>
+                                                                                branch?.code ||
+                                                                                branch?.name ||
+                                                                                normalizeBranchId(
+                                                                                    branch
+                                                                                )
+                                                                        )
+                                                                        .join(
+                                                                            ", "
+                                                                        )
+
+                                                                    : "No branch assigned"
+                                                        }
+
+                                                    </p>
+
                                                 </td>
 
 
@@ -4834,12 +5466,430 @@ function UsersPage() {
 
 
                                 {/* =============================================
-                                    RIGHT COLUMN - PERMISSIONS
+                                    RIGHT COLUMN
                                 ============================================= */}
 
-                                <div>
+                                <div className="space-y-5">
 
-                                    <div className="sticky top-0">
+                                    {/* =========================================
+                                        BRANCH ACCESS
+                                    ========================================= */}
+
+                                    <div className="border border-base-200 rounded-xl p-4">
+
+                                        <div className="flex items-start gap-3 mb-4">
+
+                                            <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+
+                                                <FaBuilding />
+
+                                            </div>
+
+
+                                            <div>
+
+                                                <h3 className="font-semibold">
+                                                    Branch Access
+                                                </h3>
+
+                                                <p className="text-xs text-base-content/50 mt-1">
+
+                                                    {
+                                                        form.role ===
+                                                        "admin"
+
+                                                            ? "Administrators automatically have access to every active branch."
+
+                                                            : "Choose which branches this account is allowed to access."
+                                                    }
+
+                                                </p>
+
+                                            </div>
+
+                                        </div>
+
+
+                                        {
+                                            branchesLoading && (
+
+                                                <div className="flex items-center gap-2 text-sm text-base-content/50 py-3">
+
+                                                    <span className="loading loading-spinner loading-sm" />
+
+                                                    Loading branches...
+
+                                                </div>
+
+                                            )
+                                        }
+
+
+                                        {
+                                            !branchesLoading &&
+                                            branchesError && (
+
+                                                <div className="alert alert-error py-2">
+
+                                                    <span className="text-xs">
+                                                        {branchesError}
+                                                    </span>
+
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-xs"
+                                                        onClick={
+                                                            loadBranches
+                                                        }
+                                                    >
+                                                        Retry
+                                                    </button>
+
+                                                </div>
+
+                                            )
+                                        }
+
+
+                                        {
+                                            !branchesLoading &&
+                                            !branchesError &&
+                                            branches.length ===
+                                            0 && (
+
+                                                <div className="alert alert-warning py-2">
+
+                                                    <FaBuilding />
+
+                                                    <span className="text-xs">
+                                                        No active branches are available.
+                                                    </span>
+
+                                                </div>
+
+                                            )
+                                        }
+
+
+                                        {
+                                            !branchesLoading &&
+                                            !branchesError &&
+                                            branches.length >
+                                            0 && (
+
+                                                <>
+
+                                                    {
+                                                        form.role ===
+                                                        "admin" ? (
+
+                                                            <div className="space-y-3">
+
+                                                                <div className="bg-base-200 rounded-lg p-3">
+
+                                                                    <p className="text-sm font-medium">
+                                                                        All active branches
+                                                                    </p>
+
+                                                                    <p className="text-[11px] text-base-content/50 mt-1">
+                                                                        No manual branch assignment is required for administrators.
+                                                                    </p>
+
+                                                                </div>
+
+
+                                                                <div>
+
+                                                                    <label className="label">
+
+                                                                        <span className="label-text">
+                                                                            Starting Branch
+                                                                        </span>
+
+                                                                    </label>
+
+
+                                                                    <select
+                                                                        value={
+                                                                            form.defaultBranch
+                                                                        }
+                                                                        onChange={(e) =>
+                                                                            setForm(
+                                                                                (
+                                                                                    current
+                                                                                ) => ({
+
+                                                                                    ...current,
+
+                                                                                    defaultBranch:
+                                                                                        e.target.value,
+
+                                                                                })
+                                                                            )
+                                                                        }
+                                                                        className="select select-bordered w-full"
+                                                                    >
+
+                                                                        <option value="">
+                                                                            Use system default
+                                                                        </option>
+
+
+                                                                        {
+                                                                            branches.map(
+                                                                                (
+                                                                                    branch
+                                                                                ) => (
+
+                                                                                    <option
+                                                                                        key={
+                                                                                            branch._id
+                                                                                        }
+                                                                                        value={
+                                                                                            normalizeBranchId(
+                                                                                                branch._id
+                                                                                            )
+                                                                                        }
+                                                                                    >
+
+                                                                                        {
+                                                                                            branch.code
+                                                                                        }
+                                                                                        {" — "}
+                                                                                        {
+                                                                                            branch.name
+                                                                                        }
+                                                                                        {
+                                                                                            branch.isDefault
+                                                                                                ? " (System Default)"
+                                                                                                : ""
+                                                                                        }
+
+                                                                                    </option>
+
+                                                                                )
+                                                                            )
+                                                                        }
+
+                                                                    </select>
+
+                                                                    <p className="text-[10px] text-base-content/40 mt-1">
+                                                                        This is the branch selected automatically after login.
+                                                                    </p>
+
+                                                                </div>
+
+                                                            </div>
+
+                                                        ) : (
+
+                                                            <div className="space-y-4">
+
+                                                                <div>
+
+                                                                    <p className="text-xs font-medium mb-2">
+                                                                        Assigned Branches
+                                                                    </p>
+
+
+                                                                    <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+
+                                                                        {
+                                                                            branches.map(
+                                                                                (
+                                                                                    branch
+                                                                                ) => {
+
+                                                                                    const branchId =
+                                                                                        normalizeBranchId(
+                                                                                            branch._id
+                                                                                        );
+
+
+                                                                                    const checked =
+                                                                                        form.branches.includes(
+                                                                                            branchId
+                                                                                        );
+
+
+                                                                                    return (
+
+                                                                                        <label
+                                                                                            key={
+                                                                                                branchId
+                                                                                            }
+                                                                                            className="flex items-center justify-between gap-3 border border-base-200 rounded-lg px-3 py-2 hover:bg-base-200/50 cursor-pointer"
+                                                                                        >
+
+                                                                                            <div className="min-w-0">
+
+                                                                                                <p className="text-sm font-medium truncate">
+
+                                                                                                    {
+                                                                                                        branch.code
+                                                                                                    }
+                                                                                                    {" — "}
+                                                                                                    {
+                                                                                                        branch.name
+                                                                                                    }
+
+                                                                                                </p>
+
+                                                                                                <p className="text-[10px] text-base-content/40">
+
+                                                                                                    {
+                                                                                                        branch.isDefault
+                                                                                                            ? "System default branch"
+                                                                                                            : "Active branch"
+                                                                                                    }
+
+                                                                                                </p>
+
+                                                                                            </div>
+
+
+                                                                                            <input
+                                                                                                type="checkbox"
+                                                                                                className="checkbox checkbox-primary checkbox-sm"
+                                                                                                checked={
+                                                                                                    checked
+                                                                                                }
+                                                                                                onChange={() =>
+                                                                                                    toggleBranchAssignment(
+                                                                                                        branchId
+                                                                                                    )
+                                                                                                }
+                                                                                            />
+
+                                                                                        </label>
+
+                                                                                    );
+
+                                                                                }
+                                                                            )
+                                                                        }
+
+                                                                    </div>
+
+                                                                </div>
+
+
+                                                                <div>
+
+                                                                    <label className="label">
+
+                                                                        <span className="label-text">
+                                                                            Default Branch
+                                                                        </span>
+
+                                                                    </label>
+
+
+                                                                    <select
+                                                                        value={
+                                                                            form.defaultBranch
+                                                                        }
+                                                                        onChange={(e) =>
+                                                                            setForm(
+                                                                                (
+                                                                                    current
+                                                                                ) => ({
+
+                                                                                    ...current,
+
+                                                                                    defaultBranch:
+                                                                                        e.target.value,
+
+                                                                                })
+                                                                            )
+                                                                        }
+                                                                        className="select select-bordered w-full"
+                                                                        disabled={
+                                                                            form.branches.length ===
+                                                                            0
+                                                                        }
+                                                                    >
+
+                                                                        {
+                                                                            form.branches.length ===
+                                                                            0 && (
+
+                                                                                <option value="">
+                                                                                    Assign a branch first
+                                                                                </option>
+
+                                                                            )
+                                                                        }
+
+
+                                                                        {
+                                                                            branches
+                                                                                .filter(
+                                                                                    (
+                                                                                        branch
+                                                                                    ) =>
+                                                                                        form.branches.includes(
+                                                                                            normalizeBranchId(
+                                                                                                branch._id
+                                                                                            )
+                                                                                        )
+                                                                                )
+                                                                                .map(
+                                                                                    (
+                                                                                        branch
+                                                                                    ) => (
+
+                                                                                        <option
+                                                                                            key={
+                                                                                                branch._id
+                                                                                            }
+                                                                                            value={
+                                                                                                normalizeBranchId(
+                                                                                                    branch._id
+                                                                                                )
+                                                                                            }
+                                                                                        >
+
+                                                                                            {
+                                                                                                branch.code
+                                                                                            }
+                                                                                            {" — "}
+                                                                                            {
+                                                                                                branch.name
+                                                                                            }
+
+                                                                                        </option>
+
+                                                                                    )
+                                                                                )
+                                                                        }
+
+                                                                    </select>
+
+                                                                    <p className="text-[10px] text-base-content/40 mt-1">
+                                                                        The user starts in this branch after login.
+                                                                    </p>
+
+                                                                </div>
+
+                                                            </div>
+
+                                                        )
+                                                    }
+
+                                                </>
+
+                                            )
+                                        }
+
+                                    </div>
+
+
+                                    {/* =========================================
+                                        PERMISSIONS
+                                    ========================================= */}
+
+                                    <div>
 
                                         <div className="flex items-start justify-between gap-3 mb-3">
 

@@ -124,9 +124,25 @@ const uploadProfileImage =
 
     };
 
+
+const getBranchUsers =
+    async () => {
+
+        const response =
+            await api.get(
+                "/users/branch"
+            );
+
+
+        return response.data.data;
+
+    };
+
 export default {
 
     getUsers,
+
+    getBranchUsers,
 
     getUserById,
 
@@ -140,6 +156,6 @@ export default {
 
     enableUser,
 
-    uploadProfileImage
+    uploadProfileImage,
 
 };

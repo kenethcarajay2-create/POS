@@ -5,61 +5,11 @@ import mongoose from "mongoose";
 ============================================================
 LEDGER ITEM SCHEMA
 ============================================================
-
-Supports two item types:
-
-1. PRODUCT
-
-{
-    itemType: "PRODUCT",
-    product: ObjectId,
-    barcode: "480000...",
-    name: "Cooking Oil",
-    note: "",
-    quantity: 2,
-    unitPrice: 100,
-    total: 200
-}
-
-
-2. CUSTOM / GROCERY
-
-{
-    itemType: "CUSTOM",
-    product: null,
-    barcode: "",
-    name: "Grocery",
-    note: "Rice, vegetables, canned goods",
-    quantity: 1,
-    unitPrice: 350,
-    total: 350
-}
-
-Custom items do NOT affect inventory.
-============================================================
 */
 
 const ledgerItemSchema =
     new mongoose.Schema(
         {
-
-            /*
-            ====================================================
-            ITEM TYPE
-            ====================================================
-
-            PRODUCT
-            → Existing inventory product
-
-            CUSTOM
-            → Open-price/non-inventory item such as:
-
-              Grocery
-              Medicine
-              Market Items
-              Miscellaneous items
-            ====================================================
-            */
 
             itemType: {
 
@@ -80,21 +30,6 @@ const ledgerItemSchema =
             },
 
 
-            /*
-            ====================================================
-            PRODUCT REFERENCE
-            ====================================================
-
-            PRODUCT
-            → Product ObjectId
-
-            CUSTOM
-            → null
-
-            The service performs the logical validation.
-            ====================================================
-            */
-
             product: {
 
                 type:
@@ -108,19 +43,6 @@ const ledgerItemSchema =
 
             },
 
-
-            /*
-            ====================================================
-            BARCODE
-            ====================================================
-
-            PRODUCT
-            → Product barcode snapshot
-
-            CUSTOM
-            → empty string
-            ====================================================
-            */
 
             barcode: {
 
@@ -138,21 +60,6 @@ const ledgerItemSchema =
 
             },
 
-
-            /*
-            ====================================================
-            ITEM NAME
-            ====================================================
-
-            Examples:
-
-            PRODUCT
-            → "Cooking Oil 1L"
-
-            CUSTOM
-            → "Grocery"
-            ====================================================
-            */
 
             name: {
 
@@ -174,36 +81,6 @@ const ledgerItemSchema =
             },
 
 
-            /*
-            ====================================================
-            CUSTOM / GROCERY NOTE
-            ====================================================
-
-            Optional description of a custom/open-price item.
-
-            Example:
-
-            name:
-                "Grocery"
-
-            note:
-                "Rice, vegetables, canned goods"
-
-            This does NOT affect:
-
-            - inventory
-            - quantity
-            - prices
-            - account balance calculations
-            - worker salary calculations
-
-            It is only descriptive information attached to
-            the individual ledger item.
-
-            Normal PRODUCT items will normally contain "".
-            ====================================================
-            */
-
             note: {
 
                 type:
@@ -221,12 +98,6 @@ const ledgerItemSchema =
             },
 
 
-            /*
-            ====================================================
-            QUANTITY
-            ====================================================
-            */
-
             quantity: {
 
                 type:
@@ -241,12 +112,6 @@ const ledgerItemSchema =
             },
 
 
-            /*
-            ====================================================
-            UNIT PRICE
-            ====================================================
-            */
-
             unitPrice: {
 
                 type:
@@ -260,15 +125,6 @@ const ledgerItemSchema =
 
             },
 
-
-            /*
-            ====================================================
-            LINE TOTAL
-            ====================================================
-
-            quantity × unitPrice
-            ====================================================
-            */
 
             total: {
 
@@ -285,11 +141,6 @@ const ledgerItemSchema =
 
         },
         {
-
-            /*
-            Ledger items do not currently require their own
-            embedded ObjectIds.
-            */
 
             _id:
                 false,
@@ -310,14 +161,71 @@ const ledgerTransactionSchema =
 
             /*
             ====================================================
-            WORKER LEDGER
+            BRANCH
             ====================================================
+            */
 
-            WORKER transactions:
-            → references the active WorkerLedger
+            branch: {
 
-            CUSTOMER transactions:
-            → normally null
+                type:
+                    mongoose.Schema.Types.ObjectId,
+
+                ref:
+                    "Branch",
+
+                default:
+                    null,
+
+            },
+
+
+            /*
+            ====================================================
+            BRANCH SNAPSHOT
+            ====================================================
+            */
+
+            branchSnapshot: {
+
+                code: {
+
+                    type:
+                        String,
+
+                    default:
+                        "",
+
+                    trim:
+                        true,
+
+                    maxlength:
+                        20,
+
+                },
+
+
+                name: {
+
+                    type:
+                        String,
+
+                    default:
+                        "",
+
+                    trim:
+                        true,
+
+                    maxlength:
+                        120,
+
+                },
+
+            },
+
+
+            /*
+            ====================================================
+            WORKER LEDGER
             ====================================================
             */
 
@@ -434,16 +342,6 @@ const ledgerTransactionSchema =
             ====================================================
             CREDIT ITEMS
             ====================================================
-
-            Contains BOTH:
-
-            - inventory products
-            - custom/open-price Grocery items
-
-            Each custom item may now contain:
-
-            note: "Rice, vegetables..."
-            ====================================================
             */
 
             items: {
@@ -460,7 +358,7 @@ const ledgerTransactionSchema =
 
             /*
             ====================================================
-            CREDIT STATUS
+            STATUS
             ====================================================
             */
 
@@ -484,23 +382,6 @@ const ledgerTransactionSchema =
             /*
             ====================================================
             REMARKS
-            ====================================================
-
-            General remark for the whole transaction.
-
-            IMPORTANT:
-
-            This is different from:
-
-                items[].note
-
-            Example:
-
-            remarks:
-                "Worker grocery credit"
-
-            items[0].note:
-                "Rice and vegetables"
             ====================================================
             */
 
@@ -593,13 +474,6 @@ const ledgerTransactionSchema =
             ====================================================
             EDIT HISTORY
             ====================================================
-
-            Stores the previous transaction state before an
-            administrative correction.
-
-            Because previousData is Mixed, old Grocery notes
-            are automatically preserved in edit history.
-            ====================================================
             */
 
             editHistory: [
@@ -676,26 +550,11 @@ const ledgerTransactionSchema =
 ============================================================
 VALIDATE LEDGER TRANSACTION
 ============================================================
-
-No callback-style next() middleware is used.
-
-This keeps the model compatible with the rest of your
-current Mongoose setup.
-============================================================
 */
 
 ledgerTransactionSchema.pre(
     "validate",
     function () {
-
-        /*
-        ========================================================
-        NON-CREDIT TRANSACTION
-        ========================================================
-
-        PAYMENT and CASH_ADVANCE do not need product items.
-        ========================================================
-        */
 
         if (
             this.type !==
@@ -706,12 +565,6 @@ ledgerTransactionSchema.pre(
 
         }
 
-
-        /*
-        ========================================================
-        CREDIT MUST HAVE ITEMS
-        ========================================================
-        */
 
         if (
             !Array.isArray(
@@ -728,22 +581,10 @@ ledgerTransactionSchema.pre(
         }
 
 
-        /*
-        ========================================================
-        ITEM VALIDATION
-        ========================================================
-        */
-
         for (
             const item
             of this.items
         ) {
-
-            /*
-            ----------------------------------------------------
-            PRODUCT ITEM
-            ----------------------------------------------------
-            */
 
             if (
                 item.itemType ===
@@ -761,30 +602,16 @@ ledgerTransactionSchema.pre(
                 }
 
 
-                /*
-                Product items do not use custom Grocery notes.
-                */
-
                 item.note =
                     "";
 
             }
 
 
-            /*
-            ----------------------------------------------------
-            CUSTOM ITEM
-            ----------------------------------------------------
-            */
-
             if (
                 item.itemType ===
                 "CUSTOM"
             ) {
-
-                /*
-                Custom items never point to inventory.
-                */
 
                 item.product =
                     null;
@@ -793,10 +620,6 @@ ledgerTransactionSchema.pre(
                 item.barcode =
                     "";
 
-
-                /*
-                Clean custom note defensively.
-                */
 
                 item.note =
                     String(
@@ -812,12 +635,6 @@ ledgerTransactionSchema.pre(
             }
 
 
-            /*
-            ----------------------------------------------------
-            QUANTITY
-            ----------------------------------------------------
-            */
-
             const quantity =
                 Number(
                     item.quantity
@@ -828,7 +645,8 @@ ledgerTransactionSchema.pre(
                 !Number.isFinite(
                     quantity
                 ) ||
-                quantity < 1
+                quantity <
+                    1
             ) {
 
                 throw new Error(
@@ -837,12 +655,6 @@ ledgerTransactionSchema.pre(
 
             }
 
-
-            /*
-            ----------------------------------------------------
-            UNIT PRICE
-            ----------------------------------------------------
-            */
 
             const unitPrice =
                 Number(
@@ -854,7 +666,8 @@ ledgerTransactionSchema.pre(
                 !Number.isFinite(
                     unitPrice
                 ) ||
-                unitPrice < 0
+                unitPrice <
+                    0
             ) {
 
                 throw new Error(
@@ -863,16 +676,6 @@ ledgerTransactionSchema.pre(
 
             }
 
-
-            /*
-            ----------------------------------------------------
-            TOTAL
-            ----------------------------------------------------
-
-            Recalculate instead of trusting an arbitrary
-            client-provided total.
-            ----------------------------------------------------
-            */
 
             item.total =
                 quantity *
@@ -890,66 +693,38 @@ INDEXES
 ============================================================
 */
 
-
-/*
-------------------------------------------------------------
-ACCOUNT HISTORY
-------------------------------------------------------------
-*/
-
 ledgerTransactionSchema.index(
     {
-
         account:
             1,
 
         createdAt:
             -1,
-
     },
     {
-
         name:
             "ledger_transaction_account_history",
-
     }
 );
 
 
-/*
-------------------------------------------------------------
-WORKER LEDGER HISTORY
-------------------------------------------------------------
-*/
-
 ledgerTransactionSchema.index(
     {
-
         workerLedger:
             1,
 
         createdAt:
             -1,
-
     },
     {
-
         name:
             "ledger_transaction_worker_history",
-
     }
 );
 
 
-/*
-------------------------------------------------------------
-TRANSACTION TYPE HISTORY
-------------------------------------------------------------
-*/
-
 ledgerTransactionSchema.index(
     {
-
         account:
             1,
 
@@ -958,13 +733,67 @@ ledgerTransactionSchema.index(
 
         createdAt:
             -1,
-
     },
     {
-
         name:
             "ledger_transaction_account_type_history",
+    }
+);
 
+
+/*
+============================================================
+BRANCH INDEXES
+============================================================
+*/
+
+ledgerTransactionSchema.index(
+    {
+        branch:
+            1,
+
+        createdAt:
+            -1,
+    },
+    {
+        name:
+            "ledger_transaction_branch_history",
+    }
+);
+
+
+ledgerTransactionSchema.index(
+    {
+        branch:
+            1,
+
+        account:
+            1,
+
+        createdAt:
+            -1,
+    },
+    {
+        name:
+            "ledger_transaction_branch_account_history",
+    }
+);
+
+
+ledgerTransactionSchema.index(
+    {
+        branch:
+            1,
+
+        workerLedger:
+            1,
+
+        createdAt:
+            -1,
+    },
+    {
+        name:
+            "ledger_transaction_branch_worker_history",
     }
 );
 

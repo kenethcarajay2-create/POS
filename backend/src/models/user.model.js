@@ -15,57 +15,25 @@ for each user from the Users page.
 
 const defaultPermissions = {
 
-    dashboard:
-        true,
+    dashboard: true,
+    products: false,
+    inventory: false,
+    pos: false,
 
-    products:
-        false,
+    bulkOrder: false,
 
-    inventory:
-        false,
+    sales: false,
+    customers: false,
+    suppliers: false,
+    workers: false,
+    ledger: false,
+    reports: false,
+    users: false,
+    settings: false,
 
-    pos:
-        false,
-
-    sales:
-        false,
-
-    customers:
-        false,
-
-    suppliers:
-        false,
-
-    workers:
-        false,
-
-    ledger:
-        false,
-
-    reports:
-        false,
-
-    users:
-        false,
-
-    settings:
-        false,
-
-
-    /*
-    ========================================================
-    SALES ACTION PERMISSIONS
-    ========================================================
-    */
-
-    salesRefund:
-        false,
-
-    salesVoid:
-        false,
-
-    salesReprint:
-        false,
+    salesRefund: false,
+    salesVoid: false,
+    salesReprint: false,
 
 };
 
@@ -622,7 +590,74 @@ const userSchema =
 
                 },
 
+                /*
+------------------------------------------------
+BULK ORDER
+------------------------------------------------
+*/
+
+bulkOrder: {
+
+    type:
+        Boolean,
+
+    default:
+        defaultPermissions.bulkOrder,
+
+},
+
             },
+
+            /*
+============================================================
+BRANCH ACCESS
+============================================================
+
+Non-admin users are explicitly assigned to one or more
+branches.
+
+Admins are treated as having access to every active branch,
+even if this array does not contain every branch.
+============================================================
+*/
+
+branches: [
+    {
+        type:
+            mongoose.Schema.Types.ObjectId,
+
+        ref:
+            "Branch",
+    },
+],
+
+
+/*
+============================================================
+DEFAULT BRANCH
+============================================================
+
+This is the branch automatically selected when the user
+logs in.
+
+It is NOT a security boundary.
+
+Actual branch access is always checked separately.
+============================================================
+*/
+
+defaultBranch: {
+
+    type:
+        mongoose.Schema.Types.ObjectId,
+
+    ref:
+        "Branch",
+
+    default:
+        null,
+
+},
 
 
             /*
@@ -681,52 +716,55 @@ userSchema.pre(
 
         this.permissions = {
 
-            dashboard:
-                true,
+    dashboard:
+        true,
 
-            products:
-                true,
+    products:
+        true,
 
-            inventory:
-                true,
+    inventory:
+        true,
 
-            pos:
-                true,
+    pos:
+        true,
 
-            sales:
-                true,
+    bulkOrder:
+        true,
 
-            customers:
-                true,
+    sales:
+        true,
 
-            suppliers:
-                true,
+    customers:
+        true,
 
-            workers:
-                true,
+    suppliers:
+        true,
 
-            ledger:
-                true,
+    workers:
+        true,
 
-            reports:
-                true,
+    ledger:
+        true,
 
-            users:
-                true,
+    reports:
+        true,
 
-            settings:
-                true,
+    users:
+        true,
 
-            salesRefund:
-                true,
+    settings:
+        true,
 
-            salesVoid:
-                true,
+    salesRefund:
+        true,
 
-            salesReprint:
-                true,
+    salesVoid:
+        true,
 
-        };
+    salesReprint:
+        true,
+
+};
 
     }
 );
@@ -766,6 +804,26 @@ INDEXES
 ROLE + ACTIVE
 ------------------------------------------------------------
 */
+
+/*
+------------------------------------------------------------
+BRANCH ACCESS
+------------------------------------------------------------
+*/
+
+userSchema.index({
+    branches:
+        1,
+
+    isActive:
+        1,
+});
+
+
+userSchema.index({
+    defaultBranch:
+        1,
+});
 
 userSchema.index({
 

@@ -13,6 +13,10 @@ import BarcodeNotFoundModal from "../../components/products/BarcodeNotFoundModal
 
 import useProductStore from "../../store/product.store";
 
+import productService from "../../services/product.service";
+
+import inventoryService from "../../services/inventory.service";
+
 
 function ProductsPage() {
 
@@ -39,9 +43,9 @@ function ProductsPage() {
         closeModal,
 
         createProduct,
-        updateProduct,
         updateStatus,
-    } = useProductStore();
+    } =
+        useProductStore();
 
 
     /*
@@ -53,19 +57,37 @@ function ProductsPage() {
     const [
         barcodeNotFound,
         setBarcodeNotFound,
-    ] = useState(false);
+    ] =
+        useState(
+            false
+        );
 
 
     const [
         scannedBarcode,
         setScannedBarcode,
-    ] = useState("");
+    ] =
+        useState(
+            ""
+        );
 
 
     const [
         newProductBarcode,
         setNewProductBarcode,
-    ] = useState("");
+    ] =
+        useState(
+            ""
+        );
+
+
+    const [
+        submitting,
+        setSubmitting,
+    ] =
+        useState(
+            false
+        );
 
 
     /*
@@ -75,7 +97,9 @@ function ProductsPage() {
     */
 
     const searchContainerRef =
-        useRef(null);
+        useRef(
+            null
+        );
 
 
     /*
@@ -98,8 +122,7 @@ function ProductsPage() {
                             );
 
 
-                    input
-                        ?.focus();
+                    input?.focus();
 
                 }
             );
@@ -110,14 +133,6 @@ function ProductsPage() {
     /*
     ============================================================
     OPEN ADD PRODUCT FROM UNKNOWN VALUE
-    ============================================================
-
-    Used by:
-
-    - unknown scanned barcode
-    - unknown search value
-
-    The unknown value is placed into the barcode field.
     ============================================================
     */
 
@@ -168,14 +183,6 @@ function ProductsPage() {
     /*
     ============================================================
     F4 - CLEAR SEARCH
-    ============================================================
-
-    F4:
-
-    1. Clears search
-    2. Returns focus to product search
-
-    Disabled while product modal is open.
     ============================================================
     */
 
@@ -260,15 +267,6 @@ function ProductsPage() {
     ============================================================
     ENTER WHILE PRODUCT NOT FOUND MODAL IS OPEN
     ============================================================
-
-    Enter:
-
-    Product Not Found
-        ↓
-    Add Product Modal
-
-    The unknown barcode/search value is prefilled.
-    ============================================================
     */
 
     useEffect(
@@ -338,15 +336,6 @@ function ProductsPage() {
     ============================================================
     BARCODE SCANNER
     ============================================================
-
-    Scanner behavior:
-
-    - scanner types characters quickly
-    - scanner finishes with Enter
-    - exact barcode lookup is performed
-    - if missing:
-        Product Not Found modal opens
-    ============================================================
     */
 
     useEffect(
@@ -365,12 +354,6 @@ function ProductsPage() {
                     event
                 ) => {
 
-                    /*
-                    --------------------------------------------
-                    F4 IS HANDLED ELSEWHERE
-                    --------------------------------------------
-                    */
-
                     if (
                         event.key ===
                         "F4"
@@ -381,12 +364,6 @@ function ProductsPage() {
                     }
 
 
-                    /*
-                    --------------------------------------------
-                    PRODUCT MODAL OPEN
-                    --------------------------------------------
-                    */
-
                     if (
                         modalOpen
                     ) {
@@ -396,15 +373,6 @@ function ProductsPage() {
                     }
 
 
-                    /*
-                    --------------------------------------------
-                    PRODUCT NOT FOUND MODAL OPEN
-                    --------------------------------------------
-
-                    Its Enter handler owns keyboard control.
-                    --------------------------------------------
-                    */
-
                     if (
                         barcodeNotFound
                     ) {
@@ -413,12 +381,6 @@ function ProductsPage() {
 
                     }
 
-
-                    /*
-                    --------------------------------------------
-                    DON'T INTERFERE WITH NORMAL TYPING
-                    --------------------------------------------
-                    */
 
                     const tagName =
                         event.target
@@ -438,12 +400,6 @@ function ProductsPage() {
 
                     }
 
-
-                    /*
-                    --------------------------------------------
-                    SCANNER FINISHES WITH ENTER
-                    --------------------------------------------
-                    */
 
                     if (
                         event.key ===
@@ -476,22 +432,10 @@ function ProductsPage() {
                         );
 
 
-                        /*
-                        ----------------------------------------
-                        PUT SCANNED BARCODE IN SEARCH
-                        ----------------------------------------
-                        */
-
                         setSearch(
                             barcode
                         );
 
-
-                        /*
-                        ----------------------------------------
-                        EXACT BARCODE LOOKUP
-                        ----------------------------------------
-                        */
 
                         const product =
                             useProductStore
@@ -509,35 +453,16 @@ function ProductsPage() {
                                 );
 
 
-                        /*
-                        ----------------------------------------
-                        PRODUCT FOUND
-                        ----------------------------------------
-                        */
-
                         if (
                             product
                         ) {
 
-                            console.log(
-                                "Product found:",
-                                product.name
-                            );
-
-
                             focusSearchInput();
-
 
                             return;
 
                         }
 
-
-                        /*
-                        ----------------------------------------
-                        PRODUCT NOT FOUND
-                        ----------------------------------------
-                        */
 
                         setScannedBarcode(
                             barcode
@@ -553,12 +478,6 @@ function ProductsPage() {
 
                     }
 
-
-                    /*
-                    --------------------------------------------
-                    CAPTURE BARCODE CHARACTERS
-                    --------------------------------------------
-                    */
 
                     if (
                         event.key.length ===
@@ -678,6 +597,23 @@ function ProductsPage() {
     ============================================================
     CREATE / UPDATE
     ============================================================
+
+    CREATE:
+
+        Product endpoint creates:
+        - global Product
+        - active branch BranchInventory
+
+    UPDATE:
+
+        Product information:
+            PUT /products/:id
+
+        Branch stock:
+            POST /inventory/adjust
+
+    Product.stock is therefore never written directly.
+    ============================================================
     */
 
     const handleSubmit =
@@ -686,18 +622,220 @@ function ProductsPage() {
         ) => {
 
             if (
-                selectedProduct
+                submitting
             ) {
 
-                await updateProduct(
-                    selectedProduct._id,
-                    productData
+                return;
+
+            }
+
+
+            try {
+
+                setSubmitting(
+                    true
                 );
 
-            } else {
 
-                await createProduct(
-                    productData
+                /*
+                =================================================
+                CREATE PRODUCT
+                =================================================
+                */
+
+                if (
+                    !selectedProduct
+                ) {
+
+                    await createProduct(
+                        productData
+                    );
+
+
+                    setNewProductBarcode(
+                        ""
+                    );
+
+
+                    return;
+
+                }
+
+
+                /*
+                =================================================
+                EDIT PRODUCT
+                =================================================
+                */
+
+                const currentStock =
+                    Number(
+                        selectedProduct.stock ||
+                        0
+                    );
+
+
+                const requestedStock =
+                    Number(
+                        productData.stock ??
+                        currentStock
+                    );
+
+
+                if (
+                    !Number.isInteger(
+                        requestedStock
+                    ) ||
+                    requestedStock <
+                        0
+                ) {
+
+                    throw new Error(
+                        "Stock must be a non-negative whole number."
+                    );
+
+                }
+
+
+                const stockChanged =
+                    requestedStock !==
+                    currentStock;
+
+
+                /*
+                =================================================
+                GLOBAL / PRODUCT DATA
+                =================================================
+
+                Do NOT send stock to PUT /products/:id.
+
+                minimumStock can remain because the backend
+                intentionally treats it as branch inventory data.
+                =================================================
+                */
+
+                const productPayload = {
+
+                    ...productData,
+
+                };
+
+
+                delete productPayload.stock;
+
+                delete productPayload.branchInventoryId;
+
+                delete productPayload.branchId;
+
+                delete productPayload.branchInventoryConfigured;
+
+                delete productPayload.branchInventoryActive;
+
+                delete productPayload.legacyStock;
+
+                delete productPayload.legacyMinimumStock;
+
+
+                /*
+                =================================================
+                UPDATE PRODUCT DETAILS
+                =================================================
+                */
+
+                await productService
+                    .updateProduct(
+                        selectedProduct._id,
+                        productPayload
+                    );
+
+
+                /*
+                =================================================
+                ADJUST ACTIVE BRANCH STOCK
+                =================================================
+
+                Only execute when stock actually changed.
+
+                api.js automatically sends X-Branch-Id, so the
+                backend applies this adjustment only to the
+                currently selected branch.
+                =================================================
+                */
+
+                if (
+                    stockChanged
+                ) {
+
+                    await inventoryService
+                        .adjustStock({
+
+                            productId:
+                                selectedProduct._id,
+
+                            newStock:
+                                requestedStock,
+
+                            remarks:
+                                "Stock adjusted from Product edit",
+
+                        });
+
+                }
+
+
+                /*
+                =================================================
+                REFRESH CURRENT BRANCH
+                =================================================
+                */
+
+                await fetchProducts();
+
+
+                closeModal();
+
+
+                setTimeout(
+                    () => {
+
+                        focusSearchInput();
+
+                    },
+                    50
+                );
+
+
+            } catch (
+                error
+            ) {
+
+                console.error(
+                    "PRODUCT SAVE ERROR:",
+                    error.response?.data ||
+                    error
+                );
+
+
+                const message =
+                    error.response
+                        ?.data
+                        ?.message ||
+                    error.message ||
+                    "Unable to save product.";
+
+
+                window.alert(
+                    message
+                );
+
+
+                throw error;
+
+
+            } finally {
+
+                setSubmitting(
+                    false
                 );
 
             }
@@ -751,12 +889,6 @@ function ProductsPage() {
 
     const columns = [
 
-        /*
-        --------------------------------------------------------
-        BARCODE
-        --------------------------------------------------------
-        */
-
         {
             header:
                 "Barcode",
@@ -765,12 +897,6 @@ function ProductsPage() {
                 "barcode",
         },
 
-
-        /*
-        --------------------------------------------------------
-        PRODUCT
-        --------------------------------------------------------
-        */
 
         {
             header:
@@ -781,12 +907,6 @@ function ProductsPage() {
         },
 
 
-        /*
-        --------------------------------------------------------
-        CATEGORY
-        --------------------------------------------------------
-        */
-
         {
             header:
                 "Category",
@@ -796,16 +916,9 @@ function ProductsPage() {
         },
 
 
-        /*
-        --------------------------------------------------------
-        PRICING
-        --------------------------------------------------------
-        */
-
         {
             header:
                 "Pricing",
-
 
             render:
                 (
@@ -868,16 +981,9 @@ function ProductsPage() {
         },
 
 
-        /*
-        --------------------------------------------------------
-        STOCK
-        --------------------------------------------------------
-        */
-
         {
             header:
                 "Stock",
-
 
             render:
                 (
@@ -919,7 +1025,8 @@ function ProductsPage() {
 
                             {
                                 stock ===
-                                0 && (
+                                0 &&
+                                (
 
                                     <span
                                         className="
@@ -941,7 +1048,8 @@ function ProductsPage() {
                                 stock >
                                     0 &&
                                 stock <=
-                                    5 && (
+                                    5 &&
+                                (
 
                                     <span
                                         className="
@@ -961,7 +1069,8 @@ function ProductsPage() {
 
                             {
                                 stock >
-                                5 && (
+                                5 &&
+                                (
 
                                     <span
                                         className="
@@ -986,16 +1095,9 @@ function ProductsPage() {
         },
 
 
-        /*
-        --------------------------------------------------------
-        STATUS
-        --------------------------------------------------------
-        */
-
         {
             header:
                 "Status",
-
 
             render:
                 (
@@ -1012,16 +1114,9 @@ function ProductsPage() {
         },
 
 
-        /*
-        --------------------------------------------------------
-        ACTIONS
-        --------------------------------------------------------
-        */
-
         {
             header:
                 "Actions",
-
 
             render:
                 (
@@ -1133,10 +1228,6 @@ function ProductsPage() {
             <div className="grid grid-cols-4 gap-3">
 
 
-                {/* ===========================================
-                    TOTAL PRODUCTS
-                =========================================== */}
-
                 <div
                     className="
                         bg-base-100
@@ -1210,10 +1301,6 @@ function ProductsPage() {
 
                 </div>
 
-
-                {/* ===========================================
-                    ACTIVE PRODUCTS
-                =========================================== */}
 
                 <div
                     className="
@@ -1289,10 +1376,6 @@ function ProductsPage() {
                 </div>
 
 
-                {/* ===========================================
-                    LOW STOCK
-                =========================================== */}
-
                 <div
                     className="
                         bg-base-100
@@ -1366,10 +1449,6 @@ function ProductsPage() {
 
                 </div>
 
-
-                {/* ===========================================
-                    OUT OF STOCK
-                =========================================== */}
 
                 <div
                     className="
@@ -1456,18 +1535,6 @@ function ProductsPage() {
                     searchContainerRef
                 }
 
-                /*
-                =================================================
-                ENTER ON SEARCH INPUT
-                =================================================
-
-                If search returns no matching product:
-
-                Enter
-                → Product Not Found modal
-                =================================================
-                */
-
                 onKeyDownCapture={(
                     event
                 ) => {
@@ -1481,12 +1548,6 @@ function ProductsPage() {
 
                     }
 
-
-                    /*
-                    --------------------------------------------
-                    ONLY HANDLE SEARCH INPUT
-                    --------------------------------------------
-                    */
 
                     const input =
                         searchContainerRef
@@ -1522,19 +1583,9 @@ function ProductsPage() {
                     }
 
 
-                    /*
-                    --------------------------------------------
-                    CHECK SEARCH RESULTS
-                    --------------------------------------------
-                    */
-
                     const matchingProducts =
                         filteredProducts();
 
-
-                    /*
-                    Product exists.
-                    */
 
                     if (
                         matchingProducts.length >
@@ -1545,10 +1596,6 @@ function ProductsPage() {
 
                     }
 
-
-                    /*
-                    Product not found.
-                    */
 
                     event.preventDefault();
 
@@ -1602,10 +1649,6 @@ function ProductsPage() {
 
                     </div>
 
-
-                    {/* =======================================
-                        F4 SHORTCUT
-                    ======================================= */}
 
                     <div
                         className="
@@ -1661,7 +1704,8 @@ function ProductsPage() {
                         filteredProducts()
                     }
                     loading={
-                        loading
+                        loading ||
+                        submitting
                     }
                 />
 
@@ -1730,6 +1774,15 @@ function ProductsPage() {
 
                 onClose={() => {
 
+                    if (
+                        submitting
+                    ) {
+
+                        return;
+
+                    }
+
+
                     closeModal();
 
 
@@ -1749,7 +1802,8 @@ function ProductsPage() {
                 }
 
                 loading={
-                    loading
+                    loading ||
+                    submitting
                 }
             />
 

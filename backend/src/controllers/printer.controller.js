@@ -1,47 +1,204 @@
 import printerService from "../services/printer.service.js";
 
-const testPrint = async (req, res, next) => {
 
-    try {
+/*
+============================================================
+PRINTER ERROR RESPONSE
+============================================================
 
-        const result =
-            printerService.testPrint();
+Printer/cash-drawer failures are hardware failures.
 
-        res.status(200).json({
-            success: true,
-            message: "Printer test sent successfully.",
-            result,
-        });
+They must NEVER affect:
+- completed sales
+- stock deductions
+- receipt creation
+- customer loyalty
+- checkout transaction
 
-    } catch (error) {
+A sale may already be committed before printing starts.
+============================================================
+*/
 
-        next(error);
+const sendPrinterError =
+    (
+        res,
+        error,
+        fallbackMessage
+    ) => {
 
-    }
+        const message =
+            error?.message ||
+            fallbackMessage;
 
-};
 
-const openCashDrawer = async (req, res, next) => {
+        console.error(
+            "PRINTER HARDWARE ERROR:",
+            message
+        );
 
-    try {
 
-        const result =
-            printerService.openCashDrawer();
+        /*
+        503 is more accurate than 500.
 
-        res.status(200).json({
-            success: true,
-            message:
-                "Cash drawer command sent.",
-            result,
-        });
+        The POS/server itself is functioning.
+        The external printer hardware is unavailable.
+        */
 
-    } catch (error) {
+        return res
+            .status(
+                503
+            )
+            .json({
 
-        next(error);
+                success:
+                    false,
 
-    }
-};
+                message,
+
+                hardwareFailure:
+                    true,
+
+                data:
+                    null,
+
+            });
+
+    };
+
+
+/*
+============================================================
+TEST PRINT
+============================================================
+*/
+
+const testPrint =
+    async (
+        req,
+        res,
+        next
+    ) => {
+
+        try {
+
+            /*
+            IMPORTANT:
+
+            printerService.testPrint() returns a Promise because
+            it uses the printer queue.
+
+            It MUST be awaited.
+            */
+
+            const result =
+                await printerService
+                    .testPrint();
+
+
+            return res
+                .status(
+                    200
+                )
+                .json({
+
+                    success:
+                        true,
+
+                    message:
+                        "Printer test completed successfully.",
+
+                    data:
+                        result,
+
+                });
+
+
+        } catch (
+            error
+        ) {
+
+            return sendPrinterError(
+                res,
+                error,
+                "Unable to print the test receipt."
+            );
+
+        }
+
+    };
+
+
+/*
+============================================================
+OPEN CASH DRAWER
+============================================================
+*/
+
+const openCashDrawer =
+    async (
+        req,
+        res,
+        next
+    ) => {
+
+        try {
+
+            /*
+            Await also works if the implementation currently
+            returns a synchronous value.
+
+            This keeps the controller correct if the service is
+            made asynchronous later.
+            */
+
+            const result =
+                await printerService
+                    .openCashDrawer();
+
+
+            return res
+                .status(
+                    200
+                )
+                .json({
+
+                    success:
+                        true,
+
+                    message:
+                        "Cash drawer command sent successfully.",
+
+                    data:
+                        result,
+
+                });
+
+
+        } catch (
+            error
+        ) {
+
+            return sendPrinterError(
+                res,
+                error,
+                "Unable to open the cash drawer."
+            );
+
+        }
+
+    };
+
+
+/*
+============================================================
+EXPORT
+============================================================
+*/
 
 export default {
-    testPrint, openCashDrawer
+
+    testPrint,
+
+    openCashDrawer,
+
 };

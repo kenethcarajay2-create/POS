@@ -8,6 +8,8 @@ import generateToken from "../utils/generateToken.js";
 
 import ApiError from "../utils/ApiError.js";
 
+import branchAccessService from "./branch-access.service.js";
+
 
 /*
 ============================================================
@@ -51,6 +53,9 @@ const buildPermissions = (
                 true,
 
             pos:
+                true,
+
+            bulkOrder:
                 true,
 
             sales:
@@ -121,6 +126,12 @@ const buildPermissions = (
             Boolean(
                 user.permissions
                     ?.pos
+            ),
+
+        bulkOrder:
+            Boolean(
+                user.permissions
+                    ?.bulkOrder
             ),
 
         sales:
@@ -203,112 +214,173 @@ Both login methods use this function.
 
 That means the frontend does NOT need separate user structures
 for password login and RFID login.
+
+Branch access is resolved from the CURRENT MongoDB state.
+It is NOT stored inside the JWT.
 ============================================================
 */
 
-const buildAuthResponse = (
-    user
-) => {
+const buildAuthResponse =
+    async (
+        user
+    ) => {
 
-    /*
-    ========================================================
-    GENERATE TOKEN
-    ========================================================
-    */
+        /*
+        ====================================================
+        ENSURE / RESOLVE BRANCH CONTEXT
+        ====================================================
 
-    const token =
-        generateToken(
-            user
-        );
+        Existing users created before branch management are
+        automatically migrated to MAIN when needed.
 
+        Admin:
+        - accessible to all active branches
 
-    /*
-    ========================================================
-    PERMISSIONS
-    ========================================================
-    */
+        Non-admin:
+        - accessible only to explicitly assigned branches
+        ====================================================
+        */
 
-    const permissions =
-        buildPermissions(
-            user
-        );
-
-
-    /*
-    ========================================================
-    RETURN
-    ========================================================
-    */
-
-    return {
-
-        token,
-
-        user: {
-
-            id:
-                user._id,
-
-            _id:
-                user._id,
-
-            name:
-                user.name,
-
-            username:
-                user.username,
-
-            role:
-                user.role,
+        const branchContext =
+            await branchAccessService
+                .buildBranchContext(
+                    user
+                );
 
 
-            /*
-            =================================================
-            PROFILE
-            =================================================
+        /*
+        ====================================================
+        GENERATE TOKEN
+        ====================================================
 
-            This is important for the login animation later.
-            =================================================
-            */
+        The token identifies the user.
 
-            profile: {
+        Branch access is intentionally NOT trusted from the
+        token. The backend resolves branch access from the
+        database on protected requests.
+        ====================================================
+        */
 
-                image:
-                    user.profile
-                        ?.image ||
-                    "",
+        const token =
+            generateToken(
+                user
+            );
 
-                nickname:
-                    user.profile
-                        ?.nickname ||
-                    "",
+
+        /*
+        ====================================================
+        PERMISSIONS
+        ====================================================
+        */
+
+        const permissions =
+            buildPermissions(
+                user
+            );
+
+
+        /*
+        ====================================================
+        RETURN
+        ====================================================
+        */
+
+        return {
+
+            token,
+
+            user: {
+
+                id:
+                    user._id,
+
+                _id:
+                    user._id,
+
+                name:
+                    user.name,
+
+                username:
+                    user.username,
+
+                role:
+                    user.role,
+
+
+                /*
+                =============================================
+                PROFILE
+                =============================================
+
+                This is important for the login animation.
+                =============================================
+                */
+
+                profile: {
+
+                    image:
+                        user.profile
+                            ?.image ||
+                        "",
+
+                    nickname:
+                        user.profile
+                            ?.nickname ||
+                        "",
+
+                },
+
+
+                /*
+                =============================================
+                PERMISSIONS
+                =============================================
+                */
+
+                permissions,
+
+
+                /*
+                =============================================
+                BRANCH ACCESS
+                =============================================
+
+                branches:
+                All branches the current user may access.
+
+                defaultBranch:
+                Branch selected when the user initially logs in.
+
+                This does NOT become the security boundary.
+
+                Every branch-sensitive request will still be
+                validated by the backend.
+                =============================================
+                */
+
+                branches:
+                    branchContext
+                        .branches,
+
+                defaultBranch:
+                    branchContext
+                        .defaultBranch,
+
+
+                /*
+                =============================================
+                STATUS
+                =============================================
+                */
+
+                isActive:
+                    user.isActive,
 
             },
 
-
-            /*
-            =================================================
-            PERMISSIONS
-            =================================================
-            */
-
-            permissions,
-
-
-            /*
-            =================================================
-            STATUS
-            =================================================
-            */
-
-            isActive:
-                user.isActive,
-
-        },
+        };
 
     };
-
-};
 
 
 /*
@@ -320,113 +392,133 @@ Username + password login.
 ============================================================
 */
 
-const login = async ({
-    username,
-    password,
-}) => {
+const login =
+    async ({
+        username,
+        password,
+    }) => {
 
-    /*
-    ========================================================
-    NORMALIZE USERNAME
-    ========================================================
-    */
+        /*
+        ====================================================
+        NORMALIZE USERNAME
+        ====================================================
+        */
 
-    const normalizedUsername =
-        String(
-            username ||
-            ""
-        )
-            .trim()
-            .toLowerCase();
-
-
-    /*
-    ========================================================
-    FIND USER
-    ========================================================
-    */
-
-    const user =
-        await User.findOne({
-
-            username:
-                normalizedUsername,
-
-        });
+        const normalizedUsername =
+            String(
+                username ||
+                ""
+            )
+                .trim()
+                .toLowerCase();
 
 
-    /*
-    ========================================================
-    USER NOT FOUND
-    ========================================================
-    */
+        /*
+        ====================================================
+        VALIDATE INPUT
+        ====================================================
+        */
 
-    if (
-        !user
-    ) {
+        if (
+            !normalizedUsername ||
+            !password
+        ) {
 
-        throw new ApiError(
-            401,
-            "Invalid username or password"
+            throw new ApiError(
+                400,
+                "Username and password are required"
+            );
+
+        }
+
+
+        /*
+        ====================================================
+        FIND USER
+        ====================================================
+        */
+
+        const user =
+            await User.findOne({
+
+                username:
+                    normalizedUsername,
+
+            });
+
+
+        /*
+        ====================================================
+        USER NOT FOUND
+        ====================================================
+        */
+
+        if (
+            !user
+        ) {
+
+            throw new ApiError(
+                401,
+                "Invalid username or password"
+            );
+
+        }
+
+
+        /*
+        ====================================================
+        ACCOUNT STATUS
+        ====================================================
+        */
+
+        if (
+            !user.isActive
+        ) {
+
+            throw new ApiError(
+                403,
+                "This account has been disabled"
+            );
+
+        }
+
+
+        /*
+        ====================================================
+        PASSWORD
+        ====================================================
+        */
+
+        const passwordMatch =
+            await bcrypt.compare(
+                password,
+                user.password
+            );
+
+
+        if (
+            !passwordMatch
+        ) {
+
+            throw new ApiError(
+                401,
+                "Invalid username or password"
+            );
+
+        }
+
+
+        /*
+        ====================================================
+        AUTH RESPONSE
+        ====================================================
+        */
+
+        return await buildAuthResponse(
+            user
         );
 
-    }
-
-
-    /*
-    ========================================================
-    ACCOUNT STATUS
-    ========================================================
-    */
-
-    if (
-        !user.isActive
-    ) {
-
-        throw new ApiError(
-            403,
-            "This account has been disabled"
-        );
-
-    }
-
-
-    /*
-    ========================================================
-    PASSWORD
-    ========================================================
-    */
-
-    const passwordMatch =
-        await bcrypt.compare(
-            password,
-            user.password
-        );
-
-
-    if (
-        !passwordMatch
-    ) {
-
-        throw new ApiError(
-            401,
-            "Invalid username or password"
-        );
-
-    }
-
-
-    /*
-    ========================================================
-    AUTH RESPONSE
-    ========================================================
-    */
-
-    return buildAuthResponse(
-        user
-    );
-
-};
+    };
 
 
 /*
@@ -446,107 +538,114 @@ Normalized:
 ============================================================
 */
 
-const rfidLogin = async ({
-    rfidUid,
-}) => {
+const rfidLogin =
+    async ({
+        rfidUid,
+    }) => {
 
-    /*
-    ========================================================
-    NORMALIZE CARD UID
-    ========================================================
-    */
+        /*
+        ====================================================
+        NORMALIZE CARD UID
+        ====================================================
+        */
 
-    const normalizedUid =
-        normalizeRfidUid(
-            rfidUid
+        const normalizedUid =
+            normalizeRfidUid(
+                rfidUid
+            );
+
+
+        /*
+        ====================================================
+        EMPTY UID
+        ====================================================
+        */
+
+        if (
+            !normalizedUid
+        ) {
+
+            throw new ApiError(
+                400,
+                "RFID/NFC card UID is required"
+            );
+
+        }
+
+
+        /*
+        ====================================================
+        FIND USER BY CARD
+        ====================================================
+        */
+
+        const user =
+            await User.findOne({
+
+                rfidUid:
+                    normalizedUid,
+
+            });
+
+
+        /*
+        ====================================================
+        CARD NOT REGISTERED
+        ====================================================
+        */
+
+        if (
+            !user
+        ) {
+
+            throw new ApiError(
+                401,
+                "RFID/NFC card is not registered"
+            );
+
+        }
+
+
+        /*
+        ====================================================
+        ACCOUNT STATUS
+        ====================================================
+        */
+
+        if (
+            !user.isActive
+        ) {
+
+            throw new ApiError(
+                403,
+                "This account has been disabled"
+            );
+
+        }
+
+
+        /*
+        ====================================================
+        AUTHENTICATE USER
+        ====================================================
+
+        No password is needed here because possession of the
+        registered card is the login credential.
+        ====================================================
+        */
+
+        return await buildAuthResponse(
+            user
         );
 
-
-    /*
-    ========================================================
-    EMPTY UID
-    ========================================================
-    */
-
-    if (
-        !normalizedUid
-    ) {
-
-        throw new ApiError(
-            400,
-            "RFID/NFC card UID is required"
-        );
-
-    }
+    };
 
 
-    /*
-    ========================================================
-    FIND USER BY CARD
-    ========================================================
-    */
-
-    const user =
-        await User.findOne({
-
-            rfidUid:
-                normalizedUid,
-
-        });
-
-
-    /*
-    ========================================================
-    CARD NOT REGISTERED
-    ========================================================
-    */
-
-    if (
-        !user
-    ) {
-
-        throw new ApiError(
-            401,
-            "RFID/NFC card is not registered"
-        );
-
-    }
-
-
-    /*
-    ========================================================
-    ACCOUNT STATUS
-    ========================================================
-    */
-
-    if (
-        !user.isActive
-    ) {
-
-        throw new ApiError(
-            403,
-            "This account has been disabled"
-        );
-
-    }
-
-
-    /*
-    ========================================================
-    AUTHENTICATE USER
-    ========================================================
-
-    No password is needed here because possession of the
-    registered card is the login credential.
-    ========================================================
-    */
-
-    return buildAuthResponse(
-        user
-    );
-
-};
-
+/*
+============================================================
+EXPORT
+============================================================
+*/
 
 export default {
 

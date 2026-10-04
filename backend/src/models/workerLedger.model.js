@@ -4,6 +4,71 @@ import mongoose from "mongoose";
 const workerLedgerSchema =
     new mongoose.Schema(
         {
+
+            /*
+            ====================================================
+            BRANCH
+            ====================================================
+            */
+
+            branch: {
+
+                type:
+                    mongoose.Schema.Types.ObjectId,
+
+                ref:
+                    "Branch",
+
+                default:
+                    null,
+
+            },
+
+
+            /*
+            ====================================================
+            BRANCH SNAPSHOT
+            ====================================================
+            */
+
+            branchSnapshot: {
+
+                code: {
+
+                    type:
+                        String,
+
+                    default:
+                        "",
+
+                    trim:
+                        true,
+
+                    maxlength:
+                        20,
+
+                },
+
+
+                name: {
+
+                    type:
+                        String,
+
+                    default:
+                        "",
+
+                    trim:
+                        true,
+
+                    maxlength:
+                        120,
+
+                },
+
+            },
+
+
             /*
             ====================================================
             WORKER
@@ -11,10 +76,19 @@ const workerLedgerSchema =
             */
 
             worker: {
-                type: mongoose.Schema.Types.ObjectId,
-                ref: "LedgerAccount",
-                required: true,
-                index: true,
+
+                type:
+                    mongoose.Schema.Types.ObjectId,
+
+                ref:
+                    "LedgerAccount",
+
+                required:
+                    true,
+
+                index:
+                    true,
+
             },
 
 
@@ -25,12 +99,18 @@ const workerLedgerSchema =
             */
 
             payFrequency: {
-                type: String,
+
+                type:
+                    String,
+
                 enum: [
                     "WEEKLY",
                     "MONTHLY",
                 ],
-                required: true,
+
+                required:
+                    true,
+
             },
 
 
@@ -41,13 +121,24 @@ const workerLedgerSchema =
             */
 
             periodStart: {
-                type: Date,
-                required: true,
+
+                type:
+                    Date,
+
+                required:
+                    true,
+
             },
 
+
             periodEnd: {
-                type: Date,
-                required: true,
+
+                type:
+                    Date,
+
+                required:
+                    true,
+
             },
 
 
@@ -58,8 +149,13 @@ const workerLedgerSchema =
             */
 
             scheduledPayDate: {
-                type: Date,
-                required: true,
+
+                type:
+                    Date,
+
+                required:
+                    true,
+
             },
 
 
@@ -70,30 +166,50 @@ const workerLedgerSchema =
             */
 
             periodNumber: {
-                type: Number,
-                required: true,
-                min: 1,
+
+                type:
+                    Number,
+
+                required:
+                    true,
+
+                min:
+                    1,
+
             },
 
 
             /*
             ====================================================
             YEAR / MONTH
-
-            Kept for compatibility with your current routes.
             ====================================================
             */
 
             year: {
-                type: Number,
-                required: true,
+
+                type:
+                    Number,
+
+                required:
+                    true,
+
             },
 
+
             month: {
-                type: Number,
-                required: true,
-                min: 1,
-                max: 12,
+
+                type:
+                    Number,
+
+                required:
+                    true,
+
+                min:
+                    1,
+
+                max:
+                    12,
+
             },
 
 
@@ -104,70 +220,78 @@ const workerLedgerSchema =
             */
 
             salary: {
-                type: Number,
-                required: true,
-                min: 0,
+
+                type:
+                    Number,
+
+                required:
+                    true,
+
+                min:
+                    0,
+
             },
 
 
             /*
             ====================================================
-            CREDITS
+            TOTALS
             ====================================================
             */
 
             totalCredits: {
-                type: Number,
-                default: 0,
-                min: 0,
+
+                type:
+                    Number,
+
+                default:
+                    0,
+
+                min:
+                    0,
+
             },
 
-
-            /*
-            ====================================================
-            CASH ADVANCES
-            ====================================================
-            */
 
             totalCashAdvances: {
-                type: Number,
-                default: 0,
-                min: 0,
+
+                type:
+                    Number,
+
+                default:
+                    0,
+
+                min:
+                    0,
+
             },
 
-
-            /*
-            ====================================================
-            CREDIT PAYMENTS
-            ====================================================
-
-            These are credit repayments.
-
-            They DO NOT restore remaining salary.
-            ====================================================
-            */
 
             totalPayments: {
-                type: Number,
-                default: 0,
-                min: 0,
+
+                type:
+                    Number,
+
+                default:
+                    0,
+
+                min:
+                    0,
+
             },
 
 
-            /*
-            ====================================================
-            REMAINING SALARY
-
-            salary
-            - credits
-            - cash advances
-            ====================================================
-            */
-
             remainingSalary: {
-                type: Number,
-                default: 0,
-                min: 0,
+
+                type:
+                    Number,
+
+                default:
+                    0,
+
+                min:
+                    0,
+
             },
 
 
@@ -178,14 +302,22 @@ const workerLedgerSchema =
             */
 
             status: {
-                type: String,
+
+                type:
+                    String,
+
                 enum: [
                     "OPEN",
                     "CLOSED",
                     "PAID",
                 ],
-                default: "OPEN",
-                required: true,
+
+                default:
+                    "OPEN",
+
+                required:
+                    true,
+
             },
 
 
@@ -196,13 +328,24 @@ const workerLedgerSchema =
             */
 
             closedAt: {
-                type: Date,
-                default: null,
+
+                type:
+                    Date,
+
+                default:
+                    null,
+
             },
 
+
             paidAt: {
-                type: Date,
-                default: null,
+
+                type:
+                    Date,
+
+                default:
+                    null,
+
             },
 
 
@@ -213,9 +356,16 @@ const workerLedgerSchema =
             */
 
             salaryReleased: {
-                type: Number,
-                default: null,
-                min: 0,
+
+                type:
+                    Number,
+
+                default:
+                    null,
+
+                min:
+                    0,
+
             },
 
 
@@ -226,21 +376,40 @@ const workerLedgerSchema =
             */
 
             remarks: {
-                type: String,
-                default: "",
-                trim: true,
+
+                type:
+                    String,
+
+                default:
+                    "",
+
+                trim:
+                    true,
+
             },
+
         },
         {
-            timestamps: true,
+
+            timestamps:
+                true,
+
 
             toJSON: {
-                virtuals: true,
+
+                virtuals:
+                    true,
+
             },
 
+
             toObject: {
-                virtuals: true,
+
+                virtuals:
+                    true,
+
             },
+
         }
     );
 
@@ -249,22 +418,10 @@ const workerLedgerSchema =
 ============================================================
 CALCULATE REMAINING SALARY
 ============================================================
-
-IMPORTANT:
-
-Payments are NOT included.
-
-Example:
-
-Salary          10,000
-Credit           1,000
-Cash Advance     2,000
-----------------------
-Remaining        7,000
-============================================================
 */
 
-workerLedgerSchema.methods.calculateRemainingSalary =
+workerLedgerSchema.methods
+    .calculateRemainingSalary =
     function () {
 
         const salary =
@@ -303,36 +460,11 @@ workerLedgerSchema.methods.calculateRemainingSalary =
 ============================================================
 VALIDATE WORKER LEDGER
 ============================================================
-
-IMPORTANT FIX:
-
-DO NOT USE:
-
-function(next)
-
-DO NOT CALL:
-
-next()
-
-Your current error:
-
-"next is not a function"
-
-comes from using callback-style middleware here.
-
-This middleware is synchronous.
-============================================================
 */
 
 workerLedgerSchema.pre(
     "validate",
     function () {
-
-        /*
-        --------------------------------------------------------
-        PERIOD VALIDATION
-        --------------------------------------------------------
-        */
 
         if (
             this.periodStart &&
@@ -391,12 +523,6 @@ workerLedgerSchema.pre(
         }
 
 
-        /*
-        --------------------------------------------------------
-        SCHEDULED PAY DATE
-        --------------------------------------------------------
-        */
-
         if (
             this.scheduledPayDate
         ) {
@@ -422,21 +548,6 @@ workerLedgerSchema.pre(
         }
 
 
-        /*
-        --------------------------------------------------------
-        INITIAL REMAINING SALARY
-        --------------------------------------------------------
-
-        For a fresh OPEN ledger:
-
-        salary = 10,000
-        credits = 0
-        advances = 0
-
-        remainingSalary = 10,000
-        --------------------------------------------------------
-        */
-
         if (
             this.status ===
             "OPEN"
@@ -446,12 +557,6 @@ workerLedgerSchema.pre(
 
         }
 
-
-        /*
-        --------------------------------------------------------
-        PAID LEDGER
-        --------------------------------------------------------
-        */
 
         if (
             this.status ===
@@ -474,7 +579,9 @@ workerLedgerSchema.pre(
             }
 
 
-            if (!this.paidAt) {
+            if (
+                !this.paidAt
+            ) {
 
                 this.paidAt =
                     new Date();
@@ -482,7 +589,9 @@ workerLedgerSchema.pre(
             }
 
 
-            if (!this.closedAt) {
+            if (
+                !this.closedAt
+            ) {
 
                 this.closedAt =
                     this.paidAt;
@@ -499,18 +608,13 @@ workerLedgerSchema.pre(
 ============================================================
 MARK AS PAID
 ============================================================
-
-Internal backend helper only.
-
-There is NO Mark as Paid button on LedgerPage.
-
-WorkersPage uses Pay Worker.
-============================================================
 */
 
-workerLedgerSchema.methods.markAsPaid =
+workerLedgerSchema.methods
+    .markAsPaid =
     function (
-        paymentDate = new Date()
+        paymentDate =
+            new Date()
     ) {
 
         if (
@@ -570,10 +674,7 @@ workerLedgerSchema.methods.markAsPaid =
 
 /*
 ============================================================
-VIRTUAL: OUTSTANDING CREDIT
-============================================================
-
-Credits minus credit payments.
+VIRTUALS
 ============================================================
 */
 
@@ -604,12 +705,6 @@ workerLedgerSchema.virtual(
 );
 
 
-/*
-============================================================
-VIRTUAL: IS OPEN
-============================================================
-*/
-
 workerLedgerSchema.virtual(
     "isOpen"
 ).get(
@@ -623,12 +718,6 @@ workerLedgerSchema.virtual(
     }
 );
 
-
-/*
-============================================================
-VIRTUAL: IS PAID
-============================================================
-*/
 
 workerLedgerSchema.virtual(
     "isPaid"
@@ -646,94 +735,127 @@ workerLedgerSchema.virtual(
 
 /*
 ============================================================
-ONLY ONE OPEN LEDGER PER WORKER
-============================================================
-
-This is extremely important.
-
-Allowed:
-
-Period #1 PAID
-Period #2 PAID
-Period #3 OPEN
-
-Not allowed:
-
-Period #3 OPEN
-Period #4 OPEN
+EXISTING UNIQUE INDEXES
 ============================================================
 */
 
 workerLedgerSchema.index(
     {
-        worker: 1,
+        worker:
+            1,
     },
     {
-        unique: true,
+        unique:
+            true,
 
         partialFilterExpression: {
-            status: "OPEN",
+
+            status:
+                "OPEN",
+
         },
 
         name:
             "one_open_worker_ledger",
+
     }
 );
 
 
-/*
-============================================================
-UNIQUE PERIOD NUMBER
-============================================================
-*/
-
 workerLedgerSchema.index(
     {
-        worker: 1,
-        periodNumber: 1,
+        worker:
+            1,
+
+        periodNumber:
+            1,
     },
     {
-        unique: true,
+        unique:
+            true,
 
         name:
             "worker_period_number_unique",
+
     }
 );
 
 
-/*
-============================================================
-WORKER HISTORY INDEX
-============================================================
-*/
-
 workerLedgerSchema.index(
     {
-        worker: 1,
-        periodStart: -1,
-        periodEnd: -1,
+        worker:
+            1,
+
+        periodStart:
+            -1,
+
+        periodEnd:
+            -1,
     },
     {
         name:
             "worker_period_history",
+
+    }
+);
+
+
+workerLedgerSchema.index(
+    {
+        status:
+            1,
+
+        scheduledPayDate:
+            1,
+    },
+    {
+        name:
+            "worker_status_payday",
+
     }
 );
 
 
 /*
 ============================================================
-PAYDAY LOOKUP INDEX
+BRANCH INDEXES
 ============================================================
 */
 
 workerLedgerSchema.index(
     {
-        status: 1,
-        scheduledPayDate: 1,
+        branch:
+            1,
+
+        worker:
+            1,
+
+        periodStart:
+            -1,
     },
     {
         name:
-            "worker_status_payday",
+            "worker_ledger_branch_history",
+
+    }
+);
+
+
+workerLedgerSchema.index(
+    {
+        branch:
+            1,
+
+        status:
+            1,
+
+        scheduledPayDate:
+            1,
+    },
+    {
+        name:
+            "worker_ledger_branch_payday",
+
     }
 );
 

@@ -17,6 +17,50 @@ const TOKEN_KEY =
 const USER_KEY =
     "user";
 
+const ACTIVE_BRANCH_KEY =
+    "activeBranchId";
+
+
+/*
+============================================================
+NORMALIZE ID
+============================================================
+*/
+
+const normalizeId =
+    (
+        value
+    ) => {
+
+        if (
+            !value
+        ) {
+
+            return "";
+
+        }
+
+
+        if (
+            typeof value ===
+            "object"
+        ) {
+
+            return String(
+                value._id ||
+                value.id ||
+                ""
+            );
+
+        }
+
+
+        return String(
+            value
+        );
+
+    };
+
 
 /*
 ============================================================
@@ -73,15 +117,174 @@ const getSavedUser =
 
 /*
 ============================================================
+GET USER BRANCH IDS
+============================================================
+*/
+
+const getUserBranchIds =
+    (
+        user
+    ) => {
+
+        if (
+            !Array.isArray(
+                user?.branches
+            )
+        ) {
+
+            return [];
+
+        }
+
+
+        return user.branches
+            .map(
+                (
+                    branch
+                ) =>
+                    normalizeId(
+                        branch
+                    )
+            )
+            .filter(
+                Boolean
+            );
+
+    };
+
+
+/*
+============================================================
+GET DEFAULT BRANCH ID
+============================================================
+*/
+
+const getDefaultBranchId =
+    (
+        user
+    ) => {
+
+        return normalizeId(
+            user?.defaultBranch
+        );
+
+    };
+
+
+/*
+============================================================
+RESOLVE ACTIVE BRANCH
+============================================================
+
+Login establishes a valid branch context.
+
+Priority:
+
+1. Existing saved branch if still accessible
+2. User default branch
+3. First accessible branch
+
+For administrators, the backend may expose all active branches
+through user.branches.
+
+============================================================
+*/
+
+const resolveActiveBranchId =
+    (
+        user
+    ) => {
+
+        const savedBranchId =
+            String(
+                localStorage.getItem(
+                    ACTIVE_BRANCH_KEY
+                ) ||
+                ""
+            );
+
+
+        const defaultBranchId =
+            getDefaultBranchId(
+                user
+            );
+
+
+        const branchIds =
+            getUserBranchIds(
+                user
+            );
+
+
+        /*
+        ========================================================
+        SAVED BRANCH
+        ========================================================
+
+        Keep the user's previously selected branch only when it
+        is still part of their accessible branches.
+        ========================================================
+        */
+
+        if (
+            savedBranchId &&
+            branchIds.includes(
+                savedBranchId
+            )
+        ) {
+
+            return savedBranchId;
+
+        }
+
+
+        /*
+        ========================================================
+        DEFAULT BRANCH
+        ========================================================
+        */
+
+        if (
+            defaultBranchId
+        ) {
+
+            return defaultBranchId;
+
+        }
+
+
+        /*
+        ========================================================
+        FIRST ACCESSIBLE BRANCH
+        ========================================================
+        */
+
+        if (
+            branchIds.length >
+            0
+        ) {
+
+            return branchIds[0];
+
+        }
+
+
+        return "";
+
+    };
+
+
+/*
+============================================================
 SAVE AUTH SESSION
 ============================================================
 
 Used by:
 
-- normal login
-- RFID login
+- normal password login
+- RFID/NFC login
 
-Both login methods should produce the same frontend state.
+Also establishes the active branch.
 ============================================================
 */
 
@@ -90,11 +293,35 @@ const saveAuthSession =
         data
     ) => {
 
+        if (
+            !data?.token ||
+            !data?.user
+        ) {
+
+            throw new Error(
+                "Invalid authentication response."
+            );
+
+        }
+
+
+        /*
+        ========================================================
+        TOKEN
+        ========================================================
+        */
+
         localStorage.setItem(
             TOKEN_KEY,
             data.token
         );
 
+
+        /*
+        ========================================================
+        USER
+        ========================================================
+        */
 
         localStorage.setItem(
             USER_KEY,
@@ -102,6 +329,39 @@ const saveAuthSession =
                 data.user
             )
         );
+
+
+        /*
+        ========================================================
+        ACTIVE BRANCH
+        ========================================================
+        */
+
+        const activeBranchId =
+            resolveActiveBranchId(
+                data.user
+            );
+
+
+        if (
+            activeBranchId
+        ) {
+
+            localStorage.setItem(
+                ACTIVE_BRANCH_KEY,
+                activeBranchId
+            );
+
+        } else {
+
+            localStorage.removeItem(
+                ACTIVE_BRANCH_KEY
+            );
+
+        }
+
+
+        return activeBranchId;
 
     };
 
@@ -124,7 +384,54 @@ const clearAuthSession =
             USER_KEY
         );
 
+
+        /*
+        Do not leave a previous user's branch behind.
+
+        Otherwise another user could temporarily send requests
+        using the previous user's branch context.
+        */
+
+        localStorage.removeItem(
+            ACTIVE_BRANCH_KEY
+        );
+
     };
+
+
+/*
+============================================================
+INITIAL STATE
+============================================================
+*/
+
+const initialUser =
+    getSavedUser();
+
+
+const initialActiveBranchId =
+    (() => {
+
+        if (
+            !initialUser
+        ) {
+
+            return "";
+
+        }
+
+
+        return (
+            localStorage.getItem(
+                ACTIVE_BRANCH_KEY
+            ) ||
+            resolveActiveBranchId(
+                initialUser
+            ) ||
+            ""
+        );
+
+    })();
 
 
 /*
@@ -136,7 +443,8 @@ AUTH STORE
 const useAuthStore =
     create(
         (
-            set
+            set,
+            get
         ) => ({
 
             /*
@@ -146,20 +454,18 @@ const useAuthStore =
             */
 
             user:
-                getSavedUser(),
+                initialUser,
 
             token:
                 localStorage.getItem(
                     TOKEN_KEY
                 ),
 
+            activeBranchId:
+                initialActiveBranchId,
+
             loading:
                 false,
-
-            /*
-            Separate state is useful so the Login page can
-            show "Reading card..." later if desired.
-            */
 
             rfidLoading:
                 false,
@@ -186,11 +492,20 @@ const useAuthStore =
                             loading:
                                 true,
 
+                            rfidLoading:
+                                false,
+
                             error:
                                 null,
 
                         });
 
+
+                        /*
+                        =================================================
+                        CALL BACKEND
+                        =================================================
+                        */
 
                         const data =
                             await authService
@@ -200,20 +515,21 @@ const useAuthStore =
 
 
                         /*
-                        ----------------------------------------
-                        SAVE SESSION
-                        ----------------------------------------
+                        =================================================
+                        SAVE SESSION + BRANCH
+                        =================================================
                         */
 
-                        saveAuthSession(
-                            data
-                        );
+                        const activeBranchId =
+                            saveAuthSession(
+                                data
+                            );
 
 
                         /*
-                        ----------------------------------------
+                        =================================================
                         UPDATE STORE
-                        ----------------------------------------
+                        =================================================
                         */
 
                         set({
@@ -223,6 +539,8 @@ const useAuthStore =
 
                             token:
                                 data.token,
+
+                            activeBranchId,
 
                             loading:
                                 false,
@@ -243,10 +561,18 @@ const useAuthStore =
                         error
                     ) {
 
+                        console.error(
+                            "LOGIN ERROR:",
+                            error.response
+                                ?.data ||
+                            error
+                        );
+
+
                         /*
-                        ----------------------------------------
-                        REMOVE STALE AUTH
-                        ----------------------------------------
+                        =================================================
+                        REMOVE FAILED / STALE SESSION
+                        =================================================
                         */
 
                         clearAuthSession();
@@ -260,6 +586,9 @@ const useAuthStore =
                             token:
                                 null,
 
+                            activeBranchId:
+                                "",
+
                             loading:
                                 false,
 
@@ -270,6 +599,7 @@ const useAuthStore =
                                 error.response
                                     ?.data
                                     ?.message ||
+                                error.message ||
                                 "Login failed.",
 
                         });
@@ -286,15 +616,6 @@ const useAuthStore =
             ====================================================
             RFID / NFC LOGIN
             ====================================================
-
-            Receives the UID from the card reader.
-
-            Example:
-
-            04A3D8917C2B80
-
-            Backend verifies which user owns the card.
-            ====================================================
             */
 
             rfidLogin:
@@ -309,6 +630,9 @@ const useAuthStore =
                             rfidLoading:
                                 true,
 
+                            loading:
+                                false,
+
                             error:
                                 null,
 
@@ -316,13 +640,9 @@ const useAuthStore =
 
 
                         /*
-                        ----------------------------------------
-                        NORMALIZE FRONTEND VALUE
-                        ----------------------------------------
-
-                        Backend still normalizes and validates
-                        again. This is only a convenience.
-                        ----------------------------------------
+                        =================================================
+                        NORMALIZE UID
+                        =================================================
                         */
 
                         const normalizedUid =
@@ -359,9 +679,9 @@ const useAuthStore =
 
 
                         /*
-                        ----------------------------------------
-                        CALL RFID LOGIN
-                        ----------------------------------------
+                        =================================================
+                        CALL BACKEND
+                        =================================================
                         */
 
                         const data =
@@ -372,20 +692,21 @@ const useAuthStore =
 
 
                         /*
-                        ----------------------------------------
-                        SAVE SESSION
-                        ----------------------------------------
+                        =================================================
+                        SAVE SESSION + BRANCH
+                        =================================================
                         */
 
-                        saveAuthSession(
-                            data
-                        );
+                        const activeBranchId =
+                            saveAuthSession(
+                                data
+                            );
 
 
                         /*
-                        ----------------------------------------
+                        =================================================
                         UPDATE STORE
-                        ----------------------------------------
+                        =================================================
                         */
 
                         set({
@@ -395,6 +716,8 @@ const useAuthStore =
 
                             token:
                                 data.token,
+
+                            activeBranchId,
 
                             loading:
                                 false,
@@ -415,13 +738,17 @@ const useAuthStore =
                         error
                     ) {
 
-                        /*
-                        ----------------------------------------
-                        IMPORTANT
+                        console.error(
+                            "RFID LOGIN ERROR:",
+                            error.response
+                                ?.data ||
+                            error
+                        );
 
-                        Failed card login should not leave an
-                        old authenticated user/session behind.
-                        ----------------------------------------
+
+                        /*
+                        Failed RFID authentication must not leave an
+                        old user's authentication or branch context.
                         */
 
                         clearAuthSession();
@@ -435,6 +762,9 @@ const useAuthStore =
                             token:
                                 null,
 
+                            activeBranchId:
+                                "",
+
                             loading:
                                 false,
 
@@ -445,6 +775,7 @@ const useAuthStore =
                                 error.response
                                     ?.data
                                     ?.message ||
+                                error.message ||
                                 "RFID/NFC login failed.",
 
                         });
@@ -459,10 +790,165 @@ const useAuthStore =
 
             /*
             ====================================================
-            CLEAR ERROR
+            SET ACTIVE BRANCH
             ====================================================
 
-            Useful when another card is tapped after an error.
+            This is used by the branch selector.
+
+            The Axios interceptor reads the same localStorage
+            key before every request.
+            ====================================================
+            */
+
+            setActiveBranch:
+                (
+                    branch
+                ) => {
+
+                    const branchId =
+                        normalizeId(
+                            branch
+                        );
+
+
+                    if (
+                        !branchId
+                    ) {
+
+                        return false;
+
+                    }
+
+
+                    const user =
+                        get()
+                            .user;
+
+
+                    if (
+                        !user
+                    ) {
+
+                        return false;
+
+                    }
+
+
+                    const branchIds =
+                        getUserBranchIds(
+                            user
+                        );
+
+
+                    /*
+                    Do not allow the frontend store to select a
+                    branch outside the authenticated user's list.
+
+                    Backend authorization remains the final
+                    security boundary.
+                    */
+
+                    if (
+                        branchIds.length >
+                            0 &&
+                        !branchIds.includes(
+                            branchId
+                        )
+                    ) {
+
+                        console.warn(
+                            "Attempted to select an inaccessible branch:",
+                            branchId
+                        );
+
+
+                        return false;
+
+                    }
+
+
+                    localStorage.setItem(
+                        ACTIVE_BRANCH_KEY,
+                        branchId
+                    );
+
+
+                    set({
+
+                        activeBranchId:
+                            branchId,
+
+                    });
+
+
+                    return true;
+
+                },
+
+
+            /*
+            ====================================================
+            GET ACTIVE BRANCH
+            ====================================================
+            */
+
+            getActiveBranch:
+                () => {
+
+                    const {
+                        user,
+                        activeBranchId,
+                    } =
+                        get();
+
+
+                    if (
+                        !user ||
+                        !activeBranchId
+                    ) {
+
+                        return null;
+
+                    }
+
+
+                    if (
+                        !Array.isArray(
+                            user.branches
+                        )
+                    ) {
+
+                        return null;
+
+                    }
+
+
+                    return (
+                        user.branches.find(
+                            (
+                                branch
+                            ) => {
+
+                                return (
+                                    normalizeId(
+                                        branch
+                                    ) ===
+                                    String(
+                                        activeBranchId
+                                    )
+                                );
+
+                            }
+                        ) ||
+                        null
+                    );
+
+                },
+
+
+            /*
+            ====================================================
+            CLEAR ERROR
             ====================================================
             */
 
@@ -501,18 +987,145 @@ const useAuthStore =
                             )
                         );
 
+
+                        /*
+                        Revalidate active branch after user data
+                        changes, such as branch permissions.
+                        */
+
+                        const activeBranchId =
+                            resolveActiveBranchId(
+                                user
+                            );
+
+
+                        if (
+                            activeBranchId
+                        ) {
+
+                            localStorage.setItem(
+                                ACTIVE_BRANCH_KEY,
+                                activeBranchId
+                            );
+
+                        } else {
+
+                            localStorage.removeItem(
+                                ACTIVE_BRANCH_KEY
+                            );
+
+                        }
+
+
+                        set({
+
+                            user,
+
+                            activeBranchId,
+
+                        });
+
+
+                        return;
+
+                    }
+
+
+                    localStorage.removeItem(
+                        USER_KEY
+                    );
+
+
+                    localStorage.removeItem(
+                        ACTIVE_BRANCH_KEY
+                    );
+
+
+                    set({
+
+                        user:
+                            null,
+
+                        activeBranchId:
+                            "",
+
+                    });
+
+                },
+
+
+            /*
+            ====================================================
+            REFRESH BRANCH CONTEXT
+            ====================================================
+
+            Useful after branch-management changes without
+            requiring another login.
+            ====================================================
+            */
+
+            refreshBranchContext:
+                () => {
+
+                    const user =
+                        get()
+                            .user;
+
+
+                    if (
+                        !user
+                    ) {
+
+                        localStorage.removeItem(
+                            ACTIVE_BRANCH_KEY
+                        );
+
+
+                        set({
+
+                            activeBranchId:
+                                "",
+
+                        });
+
+
+                        return "";
+
+                    }
+
+
+                    const activeBranchId =
+                        resolveActiveBranchId(
+                            user
+                        );
+
+
+                    if (
+                        activeBranchId
+                    ) {
+
+                        localStorage.setItem(
+                            ACTIVE_BRANCH_KEY,
+                            activeBranchId
+                        );
+
                     } else {
 
                         localStorage.removeItem(
-                            USER_KEY
+                            ACTIVE_BRANCH_KEY
                         );
 
                     }
 
 
                     set({
-                        user,
+
+                        activeBranchId,
+
                     });
+
+
+                    return activeBranchId;
 
                 },
 
@@ -536,6 +1149,9 @@ const useAuthStore =
 
                         token:
                             null,
+
+                        activeBranchId:
+                            "",
 
                         loading:
                             false,

@@ -4,6 +4,71 @@ import mongoose from "mongoose";
 const ledgerAccountSchema =
     new mongoose.Schema(
         {
+
+            /*
+            ====================================================
+            BRANCH
+            ====================================================
+            */
+
+            branch: {
+
+                type:
+                    mongoose.Schema.Types.ObjectId,
+
+                ref:
+                    "Branch",
+
+                default:
+                    null,
+
+            },
+
+
+            /*
+            ====================================================
+            BRANCH SNAPSHOT
+            ====================================================
+            */
+
+            branchSnapshot: {
+
+                code: {
+
+                    type:
+                        String,
+
+                    default:
+                        "",
+
+                    trim:
+                        true,
+
+                    maxlength:
+                        20,
+
+                },
+
+
+                name: {
+
+                    type:
+                        String,
+
+                    default:
+                        "",
+
+                    trim:
+                        true,
+
+                    maxlength:
+                        120,
+
+                },
+
+            },
+
+
             /*
             ====================================================
             BASIC INFORMATION
@@ -11,18 +76,39 @@ const ledgerAccountSchema =
             */
 
             name: {
-                type: String,
-                required: true,
-                trim: true,
-                minlength: 2,
-                maxlength: 100,
+
+                type:
+                    String,
+
+                required:
+                    true,
+
+                trim:
+                    true,
+
+                minlength:
+                    2,
+
+                maxlength:
+                    100,
+
             },
 
+
             phone: {
-                type: String,
-                default: "",
-                trim: true,
-                maxlength: 30,
+
+                type:
+                    String,
+
+                default:
+                    "",
+
+                trim:
+                    true,
+
+                maxlength:
+                    30,
+
             },
 
 
@@ -33,13 +119,21 @@ const ledgerAccountSchema =
             */
 
             type: {
-                type: String,
+
+                type:
+                    String,
+
                 enum: [
                     "WORKER",
                     "CUSTOMER",
                 ],
-                required: true,
-                index: true,
+
+                required:
+                    true,
+
+                index:
+                    true,
+
             },
 
 
@@ -47,21 +141,19 @@ const ledgerAccountSchema =
             ====================================================
             WORKER SALARY
             ====================================================
-
-            WEEKLY:
-                salary = weekly salary
-
-            MONTHLY:
-                salary = monthly salary
-
-            Customers do not use this field.
-            ====================================================
             */
 
             salary: {
-                type: Number,
-                default: null,
-                min: 0,
+
+                type:
+                    Number,
+
+                default:
+                    null,
+
+                min:
+                    0,
+
             },
 
 
@@ -69,18 +161,21 @@ const ledgerAccountSchema =
             ====================================================
             PAY FREQUENCY
             ====================================================
-
-            Only used by WORKER accounts.
-            ====================================================
             */
 
             payFrequency: {
-                type: String,
+
+                type:
+                    String,
+
                 enum: [
                     "WEEKLY",
                     "MONTHLY",
                 ],
-                default: null,
+
+                default:
+                    null,
+
             },
 
 
@@ -88,24 +183,22 @@ const ledgerAccountSchema =
             ====================================================
             MONTHLY PAYDAY
             ====================================================
-
-            Example:
-
-            11 = every 11th
-            15 = every 15th
-            30 = every 30th
-
-            Only used when:
-
-            payFrequency === "MONTHLY"
-            ====================================================
             */
 
             payDay: {
-                type: Number,
-                default: null,
-                min: 1,
-                max: 31,
+
+                type:
+                    Number,
+
+                default:
+                    null,
+
+                min:
+                    1,
+
+                max:
+                    31,
+
             },
 
 
@@ -113,28 +206,22 @@ const ledgerAccountSchema =
             ====================================================
             WEEKLY PAYDAY
             ====================================================
-
-            JavaScript weekday numbers:
-
-            0 = Sunday
-            1 = Monday
-            2 = Tuesday
-            3 = Wednesday
-            4 = Thursday
-            5 = Friday
-            6 = Saturday
-
-            Only used when:
-
-            payFrequency === "WEEKLY"
-            ====================================================
             */
 
             payDayOfWeek: {
-                type: Number,
-                default: null,
-                min: 0,
-                max: 6,
+
+                type:
+                    Number,
+
+                default:
+                    null,
+
+                min:
+                    0,
+
+                max:
+                    6,
+
             },
 
 
@@ -142,21 +229,22 @@ const ledgerAccountSchema =
             ====================================================
             OPTIONAL SALARY PERIOD LABEL
             ====================================================
-
-            This is just an optional display field.
-
-            Examples:
-
-            "Regular Monthly Salary"
-            "Weekly Salary"
-            ====================================================
             */
 
             salaryPeriod: {
-                type: String,
-                default: "",
-                trim: true,
-                maxlength: 100,
+
+                type:
+                    String,
+
+                default:
+                    "",
+
+                trim:
+                    true,
+
+                maxlength:
+                    100,
+
             },
 
 
@@ -167,13 +255,24 @@ const ledgerAccountSchema =
             */
 
             isActive: {
-                type: Boolean,
-                default: true,
-                index: true,
+
+                type:
+                    Boolean,
+
+                default:
+                    true,
+
+                index:
+                    true,
+
             },
+
         },
         {
-            timestamps: true,
+
+            timestamps:
+                true,
+
         }
     );
 
@@ -181,25 +280,6 @@ const ledgerAccountSchema =
 /*
 ============================================================
 VALIDATE WORKER SETTINGS
-============================================================
-
-IMPORTANT:
-
-We DO NOT use:
-
-function(next)
-
-or:
-
-next()
-
-This avoids your:
-
-"next is not a function"
-
-error.
-
-If something is invalid, simply throw an Error.
 ============================================================
 */
 
@@ -210,9 +290,6 @@ ledgerAccountSchema.pre(
         /*
         ========================================================
         CUSTOMER
-        ========================================================
-
-        Customers should not have worker salary settings.
         ========================================================
         */
 
@@ -257,12 +334,6 @@ ledgerAccountSchema.pre(
         }
 
 
-        /*
-        --------------------------------------------------------
-        SALARY
-        --------------------------------------------------------
-        */
-
         const salary =
             Number(
                 this.salary
@@ -270,12 +341,15 @@ ledgerAccountSchema.pre(
 
 
         if (
-            this.salary === null ||
-            this.salary === undefined ||
+            this.salary ===
+                null ||
+            this.salary ===
+                undefined ||
             !Number.isFinite(
                 salary
             ) ||
-            salary < 0
+            salary <
+                0
         ) {
 
             throw new Error(
@@ -288,12 +362,6 @@ ledgerAccountSchema.pre(
         this.salary =
             salary;
 
-
-        /*
-        --------------------------------------------------------
-        PAY FREQUENCY
-        --------------------------------------------------------
-        */
 
         if (
             ![
@@ -310,12 +378,6 @@ ledgerAccountSchema.pre(
 
         }
 
-
-        /*
-        ========================================================
-        WEEKLY
-        ========================================================
-        */
 
         if (
             this.payFrequency ===
@@ -336,8 +398,10 @@ ledgerAccountSchema.pre(
                 !Number.isInteger(
                     payDayOfWeek
                 ) ||
-                payDayOfWeek < 0 ||
-                payDayOfWeek > 6
+                payDayOfWeek <
+                    0 ||
+                payDayOfWeek >
+                    6
             ) {
 
                 throw new Error(
@@ -351,21 +415,11 @@ ledgerAccountSchema.pre(
                 payDayOfWeek;
 
 
-            /*
-            Weekly worker does not use monthly payday.
-            */
-
             this.payDay =
                 null;
 
         }
 
-
-        /*
-        ========================================================
-        MONTHLY
-        ========================================================
-        */
 
         if (
             this.payFrequency ===
@@ -386,8 +440,10 @@ ledgerAccountSchema.pre(
                 !Number.isInteger(
                     payDay
                 ) ||
-                payDay < 1 ||
-                payDay > 31
+                payDay <
+                    1 ||
+                payDay >
+                    31
             ) {
 
                 throw new Error(
@@ -400,10 +456,6 @@ ledgerAccountSchema.pre(
             this.payDay =
                 payDay;
 
-
-            /*
-            Monthly worker does not use weekly payday.
-            */
 
             this.payDayOfWeek =
                 null;
@@ -422,8 +474,11 @@ INDEXES
 
 ledgerAccountSchema.index(
     {
-        type: 1,
-        isActive: 1,
+        type:
+            1,
+
+        isActive:
+            1,
     },
     {
         name:
@@ -434,7 +489,8 @@ ledgerAccountSchema.index(
 
 ledgerAccountSchema.index(
     {
-        name: 1,
+        name:
+            1,
     },
     {
         name:
@@ -445,7 +501,46 @@ ledgerAccountSchema.index(
 
 /*
 ============================================================
-VIRTUAL: IS WORKER
+BRANCH INDEXES
+============================================================
+*/
+
+ledgerAccountSchema.index(
+    {
+        branch:
+            1,
+
+        type:
+            1,
+
+        isActive:
+            1,
+    },
+    {
+        name:
+            "ledger_account_branch_type_active",
+    }
+);
+
+
+ledgerAccountSchema.index(
+    {
+        branch:
+            1,
+
+        name:
+            1,
+    },
+    {
+        name:
+            "ledger_account_branch_name",
+    }
+);
+
+
+/*
+============================================================
+VIRTUALS
 ============================================================
 */
 
@@ -462,12 +557,6 @@ ledgerAccountSchema.virtual(
     }
 );
 
-
-/*
-============================================================
-VIRTUAL: IS CUSTOMER
-============================================================
-*/
 
 ledgerAccountSchema.virtual(
     "isCustomer"

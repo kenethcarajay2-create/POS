@@ -1,12 +1,25 @@
 import express from "express";
 
-import ledgerController from "../controllers/ledger.controller.js";
+import ledgerController
+    from "../controllers/ledger.controller.js";
 
-import protect from "../middleware/auth.middleware.js";
-import authorize from "../middleware/role.middleware.js";
+import workerAttendanceController
+    from "../controllers/workerAttendance.controller.js";
 
-import validate from "../middleware/validate.middleware.js";
-import ledgerValidator from "../validators/ledger.validator.js";
+import protect
+    from "../middleware/auth.middleware.js";
+
+import authorize
+    from "../middleware/role.middleware.js";
+
+import resolveActiveBranch
+    from "../middleware/branch.middleware.js";
+
+import validate
+    from "../middleware/validate.middleware.js";
+
+import ledgerValidator
+    from "../validators/ledger.validator.js";
 
 
 const router =
@@ -19,41 +32,107 @@ LEDGER ACCOUNTS
 ============================================================
 */
 
-
-/*
-GET ALL LEDGER ACCOUNTS
-
-GET /api/ledger
-*/
 router.get(
     "/",
+
     protect,
+
+    resolveActiveBranch,
+
     authorize(
         "admin",
         "cashier"
     ),
+
     ledgerController.getAccounts
 );
 
 
-/*
-CREATE LEDGER ACCOUNT
-
-POST /api/ledger
-
-Admin only.
-*/
 router.post(
     "/",
+
     protect,
+
+    resolveActiveBranch,
+
     authorize(
         "admin"
     ),
+
     validate(
         ledgerValidator
             .createAccountSchema
     ),
+
     ledgerController.createAccount
+);
+
+
+/*
+============================================================
+WORKER ATTENDANCE
+============================================================
+
+GET
+/api/ledger/:id/attendance?year=2026&month=9
+
+PUT
+/api/ledger/:id/attendance/2026-09-13
+    → mark absent
+
+DELETE
+/api/ledger/:id/attendance/2026-09-13
+    → mark present
+
+Attendance is admin-only for now.
+============================================================
+*/
+
+router.get(
+    "/:id/attendance",
+
+    protect,
+
+    resolveActiveBranch,
+
+    authorize(
+        "admin"
+    ),
+
+    workerAttendanceController
+        .getMonth
+);
+
+
+router.put(
+    "/:id/attendance/:dateKey",
+
+    protect,
+
+    resolveActiveBranch,
+
+    authorize(
+        "admin"
+    ),
+
+    workerAttendanceController
+        .markAbsent
+);
+
+
+router.delete(
+    "/:id/attendance/:dateKey",
+
+    protect,
+
+    resolveActiveBranch,
+
+    authorize(
+        "admin"
+    ),
+
+    workerAttendanceController
+        .markPresent
 );
 
 
@@ -63,120 +142,100 @@ TRANSACTIONS
 ============================================================
 */
 
-
-/*
-ADD CREDIT
-
-POST /api/ledger/:id/credit
-
-Admin and cashier.
-*/
 router.post(
     "/:id/credit",
+
     protect,
+
+    resolveActiveBranch,
+
     authorize(
         "admin",
         "cashier"
     ),
+
     validate(
         ledgerValidator
             .addCreditSchema
     ),
+
     ledgerController.addCredit
 );
 
 
-/*
-ADD CREDIT PAYMENT
-
-POST /api/ledger/:id/payment
-*/
 router.post(
     "/:id/payment",
+
     protect,
+
+    resolveActiveBranch,
+
     authorize(
         "admin",
         "cashier"
     ),
+
     validate(
         ledgerValidator
             .addPaymentSchema
     ),
+
     ledgerController.addPayment
 );
 
 
-/*
-ADD CASH ADVANCE
-
-POST /api/ledger/:id/cash-advance
-
-Admin only.
-*/
 router.post(
     "/:id/cash-advance",
+
     protect,
+
+    resolveActiveBranch,
+
     authorize(
         "admin"
     ),
+
     validate(
         ledgerValidator
             .cashAdvanceSchema
     ),
+
     ledgerController.addCashAdvance
 );
 
 
-/*
-GET ACCOUNT TRANSACTIONS
-
-GET /api/ledger/:id/transactions
-*/
 router.get(
     "/:id/transactions",
+
     protect,
+
+    resolveActiveBranch,
+
     authorize(
         "admin",
         "cashier"
     ),
+
     ledgerController.getTransactions
 );
 
 
-/*
-EDIT TRANSACTION
-
-PATCH /api/ledger/:id/transactions/:transactionId
-
-Admin only.
-
-Supports:
-- CREDIT
-- PAYMENT
-- CASH_ADVANCE
-
-For CREDIT custom items,
-ledgerValidator.updateTransactionSchema
-must allow:
-
-{
-    itemType: "CUSTOM",
-    name: "...",
-    note: "...",
-    quantity: 1,
-    unitPrice: 100
-}
-*/
 router.patch(
     "/:id/transactions/:transactionId",
+
     protect,
+
+    resolveActiveBranch,
+
     authorize(
         "admin"
     ),
+
     validate(
         ledgerValidator
             .updateTransactionSchema
     ),
+
     ledgerController.updateTransaction
 );
 
@@ -187,145 +246,139 @@ WORKER SALARY / LEDGER
 ============================================================
 */
 
-
-/*
-PAY WORKER
-
-PATCH /api/ledger/:id/pay-worker
-*/
 router.patch(
     "/:id/pay-worker",
+
     protect,
+
+    resolveActiveBranch,
+
     authorize(
         "admin"
     ),
+
     ledgerController.payWorker
 );
 
 
-/*
-GET WORKER LEDGER HISTORY
-
-GET /api/ledger/:id/months
-*/
 router.get(
     "/:id/months",
+
     protect,
+
+    resolveActiveBranch,
+
     authorize(
         "admin"
     ),
+
     ledgerController.getWorkerMonths
 );
 
 
-/*
-GET SPECIFIC WORKER LEDGER
-
-GET
-/api/ledger/:id/months/:year/:month/:ledgerId
-*/
 router.get(
     "/:id/months/:year/:month/:ledgerId",
+
     protect,
+
+    resolveActiveBranch,
+
     authorize(
         "admin"
     ),
+
     ledgerController.getWorkerMonth
 );
 
 
-/*
-PRINT WORKER LEDGER
-
-POST
-/api/ledger/:id/months/:year/:month/:ledgerId/print
-*/
 router.post(
     "/:id/months/:year/:month/:ledgerId/print",
+
     protect,
+
+    resolveActiveBranch,
+
     authorize(
         "admin"
     ),
+
     ledgerController.printLedger
 );
 
 
-/*
-CLOSE WORKER LEDGER
-
-PATCH
-/api/ledger/:id/months/:year/:month/:ledgerId/close
-*/
 router.patch(
     "/:id/months/:year/:month/:ledgerId/close",
+
     protect,
+
+    resolveActiveBranch,
+
     authorize(
         "admin"
     ),
+
     ledgerController.closeWorkerMonth
 );
 
 
-/*
-LEGACY MARK WORKER LEDGER PAID
-
-PATCH
-/api/ledger/:id/months/:year/:month/:ledgerId/paid
-*/
 router.patch(
     "/:id/months/:year/:month/:ledgerId/paid",
+
     protect,
+
+    resolveActiveBranch,
+
     authorize(
         "admin"
     ),
+
     ledgerController.markWorkerMonthPaid
 );
 
 
-/*
-CREATE NEW WORKER LEDGER
-
-POST /api/ledger/:id/worker-ledger
-*/
 router.post(
     "/:id/worker-ledger",
+
     protect,
+
+    resolveActiveBranch,
+
     authorize(
         "admin"
     ),
+
     ledgerController.createWorkerLedger
 );
 
 
-/*
-LEGACY CREATE WORKER LEDGER
-
-POST
-/api/ledger/:id/months/:year/:month/list
-*/
 router.post(
     "/:id/months/:year/:month/list",
+
     protect,
+
+    resolveActiveBranch,
+
     authorize(
         "admin"
     ),
+
     ledgerController.createAnotherWorkerLedger
 );
 
 
-/*
-REPRINT WORKER SALARY RECEIPT
-
-POST
-/api/ledger/:id/worker-ledger/:ledgerId/reprint
-*/
 router.post(
     "/:id/worker-ledger/:ledgerId/reprint",
+
     protect,
+
+    resolveActiveBranch,
+
     authorize(
         "admin"
     ),
-    ledgerController.reprintWorkerSalaryReceipt
+
+    ledgerController
+        .reprintWorkerSalaryReceipt
 );
 
 
@@ -335,58 +388,53 @@ ACCOUNT MANAGEMENT
 ============================================================
 */
 
-
-/*
-DEACTIVATE ACCOUNT
-
-PATCH /api/ledger/:id/deactivate
-*/
 router.patch(
     "/:id/deactivate",
+
     protect,
+
+    resolveActiveBranch,
+
     authorize(
         "admin"
     ),
+
     ledgerController.deactivateAccount
 );
 
 
-/*
-UPDATE LEDGER ACCOUNT
-
-PUT /api/ledger/:id
-
-Admin only.
-*/
 router.put(
     "/:id",
+
     protect,
+
+    resolveActiveBranch,
+
     authorize(
         "admin"
     ),
+
     validate(
         ledgerValidator
             .updateAccountSchema
     ),
+
     ledgerController.updateAccount
 );
 
 
-/*
-GET SINGLE LEDGER ACCOUNT
-
-GET /api/ledger/:id
-
-Keep this generic /:id route near the bottom so
-more specific routes above are easier to reason about.
-*/
 router.get(
     "/:id",
+
     protect,
+
+    resolveActiveBranch,
+
     authorize(
         "admin",
         "cashier"
     ),
+
     ledgerController.getAccountById
 );
 

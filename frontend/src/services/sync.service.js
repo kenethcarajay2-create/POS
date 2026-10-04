@@ -3,52 +3,91 @@ import api from "../api/api";
 
 /*
 ============================================================
-GET CLOUD SYNC STATUS
+RUN CLOUD BACKUP
 ============================================================
 */
 
-const getStatus = async () => {
+const syncNow =
+    async () => {
 
-    const response =
-        await api.get(
-            "/sync/status"
-        );
+        const response =
+            await api.post(
+                "/sync"
+            );
 
 
-    return response.data.data;
+        return response.data
+            ?.data;
 
-};
+    };
 
 
 /*
 ============================================================
-SYNC NOW
+GET CLOUD BACKUP STATUS
 ============================================================
 */
 
-const syncNow = async () => {
+const getStatus =
+    async () => {
 
-    const response =
-        await api.post(
-            "/sync"
-        );
+        const response =
+            await api.get(
+                "/sync/status"
+            );
 
 
-    return response.data.data;
+        return response.data
+            ?.data;
 
-};
+    };
 
 
 /*
 ============================================================
-EXPORT
+SYNC PRICED PRODUCTS
 ============================================================
 */
+
+const syncPricedProducts =
+    async () => {
+
+        const response =
+            await api.post(
+                "/sync/priced-products"
+            );
+
+
+        return response.data
+            ?.data;
+
+    };
+
+
+/*
+============================================================
+GET PRICED PRODUCT SYNC STATUS
+============================================================
+*/
+
+const getPricedProductsStatus =
+    async () => {
+
+        const response =
+            await api.get(
+                "/sync/priced-products/status"
+            );
+
+
+        return response.data
+            ?.data;
+
+    };
+
 
 export default {
-
-    getStatus,
-
     syncNow,
-
+    getStatus,
+    syncPricedProducts,
+    getPricedProductsStatus,
 };

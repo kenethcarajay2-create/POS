@@ -8,6 +8,312 @@ import useProductStore from "../../store/product.store";
 import useCartStore from "../../store/cart.store";
 
 
+/*
+============================================================
+RETAIL DISPLAY PRICE
+============================================================
+
+The product grid shows the normal quantity-1 retail price.
+
+Quantity-based tier discounts are still handled by the cart
+after products are added.
+
+Example:
+
+1 = P200
+6 = P1000
+12 = P1900
+
+Grid in Retail mode:
+
+P200.00
+============================================================
+*/
+
+const getRetailDisplayPrice =
+    (
+        pricing
+    ) => {
+
+        if (
+            !Array.isArray(
+                pricing
+            ) ||
+            pricing.length ===
+                0
+        ) {
+
+            return 0;
+
+        }
+
+
+        const validTiers =
+            pricing
+                .map(
+                    (
+                        tier
+                    ) => ({
+
+                        quantity:
+                            Number(
+                                tier?.quantity
+                            ),
+
+                        price:
+                            Number(
+                                tier?.price
+                            ),
+
+                    })
+                )
+                .filter(
+                    (
+                        tier
+                    ) => (
+
+                        Number.isFinite(
+                            tier.quantity
+                        ) &&
+
+                        Number.isFinite(
+                            tier.price
+                        ) &&
+
+                        tier.quantity >
+                            0 &&
+
+                        tier.price >=
+                            0
+
+                    )
+                );
+
+
+        if (
+            validTiers.length ===
+                0
+        ) {
+
+            return 0;
+
+        }
+
+
+        /*
+        Prefer the explicit quantity-1 tier.
+        */
+
+        const singleTier =
+            validTiers.find(
+                (
+                    tier
+                ) =>
+                    tier.quantity ===
+                    1
+            );
+
+
+        if (
+            singleTier
+        ) {
+
+            return singleTier.price;
+
+        }
+
+
+        /*
+        Fallback for malformed/older products that do not have
+        a quantity-1 tier.
+
+        Use the smallest configured quantity's effective price.
+        */
+
+        const smallestTier =
+            [...validTiers]
+                .sort(
+                    (
+                        a,
+                        b
+                    ) =>
+                        a.quantity -
+                        b.quantity
+                )[0];
+
+
+        return (
+            smallestTier.price /
+            smallestTier.quantity
+        );
+
+    };
+
+
+/*
+============================================================
+WHOLESALE DISPLAY PRICE
+============================================================
+
+Wholesale displays the LOWEST configured effective unit
+price regardless of tier minimum quantity.
+
+Example:
+
+1  = P200      -> P200.00 each
+6  = P1000     -> P166.67 each
+12 = P1900     -> P158.33 each
+
+Grid in Wholesale mode:
+
+P158.33
+============================================================
+*/
+
+const getWholesaleDisplayPrice =
+    (
+        pricing
+    ) => {
+
+        if (
+            !Array.isArray(
+                pricing
+            ) ||
+            pricing.length ===
+                0
+        ) {
+
+            return 0;
+
+        }
+
+
+        const validTiers =
+            pricing
+                .map(
+                    (
+                        tier
+                    ) => ({
+
+                        quantity:
+                            Number(
+                                tier?.quantity
+                            ),
+
+                        price:
+                            Number(
+                                tier?.price
+                            ),
+
+                    })
+                )
+                .filter(
+                    (
+                        tier
+                    ) => (
+
+                        Number.isFinite(
+                            tier.quantity
+                        ) &&
+
+                        Number.isFinite(
+                            tier.price
+                        ) &&
+
+                        tier.quantity >
+                            0 &&
+
+                        tier.price >=
+                            0
+
+                    )
+                );
+
+
+        if (
+            validTiers.length ===
+                0
+        ) {
+
+            return 0;
+
+        }
+
+
+        const bestTier =
+            validTiers.reduce(
+                (
+                    best,
+                    tier
+                ) => {
+
+                    if (
+                        !best
+                    ) {
+
+                        return tier;
+
+                    }
+
+
+                    const currentUnitPrice =
+                        tier.price /
+                        tier.quantity;
+
+
+                    const bestUnitPrice =
+                        best.price /
+                        best.quantity;
+
+
+                    if (
+                        currentUnitPrice <
+                        bestUnitPrice
+                    ) {
+
+                        return tier;
+
+                    }
+
+
+                    if (
+                        currentUnitPrice ===
+                            bestUnitPrice &&
+
+                        tier.quantity >
+                            best.quantity
+                    ) {
+
+                        return tier;
+
+                    }
+
+
+                    return best;
+
+                },
+                null
+            );
+
+
+        return bestTier
+
+            ? (
+                bestTier.price /
+                bestTier.quantity
+            )
+
+            : 0;
+
+    };
+
+
+/*
+============================================================
+PRODUCT GRID
+============================================================
+*/
+
 function ProductGrid({
     keyboardActive = false,
     selectedIndex = 0,
@@ -59,6 +365,13 @@ function ProductGrid({
         useCartStore(
             (state) =>
                 state.addItem
+        );
+
+
+    const wholesaleMode =
+        useCartStore(
+            (state) =>
+                state.wholesaleMode
         );
 
 
@@ -218,16 +531,7 @@ function ProductGrid({
 
     /*
     ============================================================
-    RESET SELECTION WHEN SEARCH / CATEGORY CHANGES
-    ============================================================
-
-    IMPORTANT:
-
-    DO NOT clear productRefs.current here.
-
-    React's ref callbacks populate the array during render.
-    Clearing the array afterward destroys the references that
-    scrolling needs.
+    KEEP SELECTION VALID
     ============================================================
     */
 
@@ -259,11 +563,6 @@ function ProductGrid({
 
             }
 
-
-            /*
-            If current selection became invalid,
-            move it to the last available item.
-            */
 
             if (
                 selectedIndex >=
@@ -314,6 +613,7 @@ function ProductGrid({
         [
             search,
             selectedCategory,
+            onSelectedIndexChange,
         ]
     );
 
@@ -321,18 +621,6 @@ function ProductGrid({
     /*
     ============================================================
     AUTO SCROLL SELECTED PRODUCT
-    ============================================================
-
-    This is the important part.
-
-    We directly manipulate the scrollTop of the product list.
-
-    No smooth scrolling.
-    No scrollIntoView().
-    No offsetTop dependency.
-
-    We compare the real visible rectangle of the selected
-    product against the real visible rectangle of the list.
     ============================================================
     */
 
@@ -368,10 +656,6 @@ function ProductGrid({
             }
 
 
-            /*
-            Wait until browser has painted the new highlight.
-            */
-
             const animationFrame =
                 requestAnimationFrame(
                     () => {
@@ -386,19 +670,9 @@ function ProductGrid({
                                 .getBoundingClientRect();
 
 
-                        /*
-                        Give selected row a little breathing room.
-                        */
-
                         const padding =
                             4;
 
-
-                        /*
-                        ============================================
-                        SELECTED ROW IS BELOW VIEW
-                        ============================================
-                        */
 
                         if (
                             rowRect.bottom >
@@ -421,12 +695,6 @@ function ProductGrid({
 
                         }
 
-
-                        /*
-                        ============================================
-                        SELECTED ROW IS ABOVE VIEW
-                        ============================================
-                        */
 
                         if (
                             rowRect.top <
@@ -506,10 +774,7 @@ function ProductGrid({
             `}
         >
 
-
-            {/* =================================================
-                HEADER
-            ================================================= */}
+            {/* HEADER */}
 
             <div
                 className="
@@ -557,6 +822,33 @@ function ProductGrid({
                         )
                     }
 
+
+                    <span
+                        className={`
+                            badge
+                            badge-sm
+                            font-bold
+
+                            ${
+                                wholesaleMode
+
+                                    ? "badge-warning"
+
+                                    : "badge-ghost"
+                            }
+                        `}
+                    >
+
+                        {
+                            wholesaleMode
+
+                                ? "WHOLESALE"
+
+                                : "RETAIL"
+                        }
+
+                    </span>
+
                 </div>
 
 
@@ -580,9 +872,7 @@ function ProductGrid({
             </div>
 
 
-            {/* =================================================
-                TABLE HEADER
-            ================================================= */}
+            {/* TABLE HEADER */}
 
             <div
                 className="
@@ -620,7 +910,13 @@ function ProductGrid({
 
                     <div className="col-span-2 text-right">
 
-                        Price
+                        {
+                            wholesaleMode
+
+                                ? "Wholesale"
+
+                                : "Price"
+                        }
 
                     </div>
 
@@ -636,14 +932,13 @@ function ProductGrid({
             </div>
 
 
-            {/* =================================================
-                SCROLLABLE PRODUCT LIST
-            ================================================= */}
+            {/* PRODUCT LIST */}
 
             <div
                 ref={
                     listContainerRef
                 }
+
                 className="
                     flex-1
                     min-h-0
@@ -682,6 +977,18 @@ function ProductGrid({
 
                                     selectedIndex ===
                                         index;
+
+
+                                const displayPrice =
+                                    wholesaleMode
+
+                                        ? getWholesaleDisplayPrice(
+                                            product.pricing
+                                        )
+
+                                        : getRetailDisplayPrice(
+                                            product.pricing
+                                        );
 
 
                                 return (
@@ -745,11 +1052,6 @@ function ProductGrid({
                                         `}
                                     >
 
-
-                                        {/* =================================
-                                            BARCODE
-                                        ================================= */}
-
                                         <div
                                             className="
                                                 col-span-3
@@ -766,10 +1068,6 @@ function ProductGrid({
 
                                         </div>
 
-
-                                        {/* =================================
-                                            PRODUCT
-                                        ================================= */}
 
                                         <div
                                             className="
@@ -788,10 +1086,6 @@ function ProductGrid({
                                         </div>
 
 
-                                        {/* =================================
-                                            PRICE
-                                        ================================= */}
-
                                         <div
                                             className="
                                                 col-span-2
@@ -804,12 +1098,9 @@ function ProductGrid({
                                         >
 
                                             ₱
-
                                             {
                                                 Number(
-                                                    product
-                                                        .pricing?.[0]
-                                                        ?.price ??
+                                                    displayPrice ||
                                                     0
                                                 ).toFixed(
                                                     2
@@ -818,10 +1109,6 @@ function ProductGrid({
 
                                         </div>
 
-
-                                        {/* =================================
-                                            STOCK
-                                        ================================= */}
 
                                         <div
                                             className="
@@ -872,10 +1159,6 @@ function ProductGrid({
 
             </div>
 
-
-            {/* =================================================
-                KEYBOARD HELP
-            ================================================= */}
 
             {
                 keyboardActive && (

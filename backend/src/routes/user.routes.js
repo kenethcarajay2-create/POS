@@ -12,6 +12,8 @@ import userValidator from "../validators/user.validator.js";
 
 import upload from "../middleware/upload.middleware.js";
 
+import resolveActiveBranch from "../middleware/branch.middleware.js";
+
 
 const router =
     express.Router();
@@ -54,6 +56,33 @@ router.patch(
 
     userController.uploadProfileImage
 );
+
+
+/*
+==========================================================
+GET USERS FOR ACTIVE BRANCH
+==========================================================
+
+GET /api/users/branch
+
+Used by branch-sensitive reports.
+
+IMPORTANT:
+This static route must stay above /:id.
+==========================================================
+*/
+
+router.get(
+    "/branch",
+
+    protect,
+
+    resolveActiveBranch,
+
+    userController.getUsersForBranch
+);
+
+
 /*
 ==========================================================
 GET USER BY ID

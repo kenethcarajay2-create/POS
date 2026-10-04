@@ -26,6 +26,20 @@ const allowedRoles = [
 
 /*
 ============================================================
+MONGODB OBJECT ID
+============================================================
+*/
+
+const objectIdSchema =
+    Joi.string()
+        .trim()
+        .pattern(
+            /^[0-9a-fA-F]{24}$/
+        );
+
+
+/*
+============================================================
 PROFILE
 ============================================================
 */
@@ -62,6 +76,21 @@ const profileSchema =
 ============================================================
 PERMISSIONS
 ============================================================
+
+IMPORTANT:
+
+Every permission supported by:
+
+- User model
+- User service
+- Users page
+- Permission middleware
+
+must also be declared here.
+
+Otherwise validation may remove or reject the permission
+before it reaches userService.
+============================================================
 */
 
 const permissionsSchema =
@@ -77,6 +106,9 @@ const permissionsSchema =
             Joi.boolean(),
 
         pos:
+            Joi.boolean(),
+
+        bulkOrder:
             Joi.boolean(),
 
         sales:
@@ -113,6 +145,44 @@ const permissionsSchema =
             Joi.boolean(),
 
     });
+
+
+/*
+============================================================
+BRANCHES
+============================================================
+
+Branch IDs are MongoDB ObjectIds.
+
+For non-admin users:
+- branches contains the branches they may access.
+- defaultBranch must be one of those branches.
+
+For administrators:
+- branches may be empty because administrators receive
+  access to all active branches in the service layer.
+- defaultBranch may still be used as their starting branch.
+
+The service layer remains responsible for validating:
+- whether the branches actually exist
+- whether the branches are active/allowed
+- whether defaultBranch belongs to the assignment
+============================================================
+*/
+
+const branchesSchema =
+    Joi.array()
+        .items(
+            objectIdSchema
+        )
+        .unique();
+
+
+const defaultBranchSchema =
+    objectIdSchema
+        .allow(
+            null
+        );
 
 
 /*
@@ -174,6 +244,21 @@ const createUserSchema =
 
         profile:
             profileSchema
+                .optional(),
+
+
+        /*
+        ====================================================
+        BRANCH ACCESS
+        ====================================================
+        */
+
+        branches:
+            branchesSchema
+                .optional(),
+
+        defaultBranch:
+            defaultBranchSchema
                 .optional(),
 
 
@@ -258,6 +343,30 @@ const updateUserSchema =
 
         profile:
             profileSchema
+                .optional(),
+
+
+        /*
+        ====================================================
+        BRANCH ACCESS
+        ====================================================
+
+        IMPORTANT:
+
+        These fields must exist in the UPDATE validator too.
+
+        Otherwise PATCH /users/:id can receive the branch
+        assignment from the frontend but the validated body
+        will not pass it to userService.updateUser().
+        ====================================================
+        */
+
+        branches:
+            branchesSchema
+                .optional(),
+
+        defaultBranch:
+            defaultBranchSchema
                 .optional(),
 
 

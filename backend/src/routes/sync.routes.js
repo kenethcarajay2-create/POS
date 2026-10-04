@@ -1,12 +1,17 @@
 import express from "express";
 
-import syncController from "../controllers/sync.controller.js";
+import syncController
+    from "../controllers/sync.controller.js";
 
-import protect from "../middleware/auth.middleware.js";
-import permit from "../middleware/permission.middleware.js";
+import protect
+    from "../middleware/auth.middleware.js";
+
+import permit
+    from "../middleware/permission.middleware.js";
 
 
-const router = express.Router();
+const router =
+    express.Router();
 
 
 /*
@@ -38,6 +43,43 @@ router.get(
     protect,
     permit("settings"),
     syncController.getSyncStatus
+);
+
+
+/*
+============================================================
+SYNC PRICED PRODUCTS
+============================================================
+POST /api/sync/priced-products
+
+Pulls finalized products from the Product Pricing database
+into the local StorePOS catalog.
+
+BranchInventory quantities are preserved.
+============================================================
+*/
+
+router.post(
+    "/priced-products",
+    protect,
+    permit("settings"),
+    syncController.syncPricedProducts
+);
+
+
+/*
+============================================================
+GET PRICED PRODUCT SYNC STATUS
+============================================================
+GET /api/sync/priced-products/status
+============================================================
+*/
+
+router.get(
+    "/priced-products/status",
+    protect,
+    permit("settings"),
+    syncController.getPricedProductSyncStatus
 );
 
 

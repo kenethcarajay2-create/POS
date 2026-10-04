@@ -8,15 +8,35 @@ import Sale from "../models/sale.model.js";
 
 import ApiError from "../utils/ApiError.js";
 
+import withTransaction from "../utils/withTransaction.js";
+
+import syncOutboxService from "./syncOutbox.service.js";
+
 
 /*
 ============================================================
 CUSTOMER CODE
 ============================================================
+
+The counter can participate in the same MongoDB transaction
+as customer creation.
+
+That gives us:
+
+CustomerCounter
++
+Customer
++
+SyncOutbox
+
+as one atomic local operation.
+============================================================
 */
 
 const generateCustomerCode =
-    async () => {
+    async (
+        session = null
+    ) => {
 
         const counter =
             await CustomerCounter.findOneAndUpdate(
@@ -39,8 +59,33 @@ const generateCustomerCode =
 
                     setDefaultsOnInsert:
                         true,
+
+                    session:
+                        session ||
+                        undefined,
                 }
             );
+
+
+        if (
+            !counter ||
+            !Number.isSafeInteger(
+                Number(
+                    counter.sequence
+                )
+            ) ||
+            Number(
+                counter.sequence
+            ) <=
+                0
+        ) {
+
+            throw new ApiError(
+                500,
+                "Unable to generate customer code."
+            );
+
+        }
 
 
         return `CUST-${String(
@@ -63,13 +108,19 @@ const normalizeRfid = (
     value
 ) => {
 
-    if (!value) {
+    if (
+        !value
+    ) {
+
         return null;
+
     }
 
 
     const normalized =
-        String(value)
+        String(
+            value
+        )
             .trim()
             .toUpperCase();
 
@@ -117,7 +168,9 @@ const getCustomers =
                 .trim();
 
 
-        if (query) {
+        if (
+            query
+        ) {
 
             filter.$or = [
 
@@ -185,7 +238,10 @@ GET CUSTOMER
 
 const getCustomerById =
     async (
-        customerId
+        customerId,
+        {
+            session = null,
+        } = {}
     ) => {
 
         if (
@@ -203,13 +259,31 @@ const getCustomerById =
         }
 
 
-        const customer =
-            await Customer.findById(
+        let query =
+            Customer.findById(
                 customerId
             );
 
 
-        if (!customer) {
+        if (
+            session
+        ) {
+
+            query =
+                query.session(
+                    session
+                );
+
+        }
+
+
+        const customer =
+            await query;
+
+
+        if (
+            !customer
+        ) {
 
             throw new ApiError(
                 404,
@@ -227,6 +301,17 @@ const getCustomerById =
 /*
 ============================================================
 CREATE CUSTOMER
+============================================================
+
+Customer creation is now transactional.
+
+The following commit together:
+
+1. CustomerCounter
+2. Customer
+3. SyncOutbox
+
+If any step fails, all three roll back.
 ============================================================
 */
 
@@ -256,80 +341,151 @@ const createCustomer =
         }
 
 
+        const normalizedPhone =
+            String(
+                phone ||
+                ""
+            ).trim();
+
+
         const normalizedRfid =
             normalizeRfid(
                 rfidUid
             );
 
 
-        /*
-        --------------------------------------------------------
-        RFID MUST BE UNIQUE
-        --------------------------------------------------------
-        */
+        return await withTransaction(
+            async (
+                session
+            ) => {
 
-        if (
-            normalizedRfid
-        ) {
+                /*
+                ====================================================
+                RFID MUST BE UNIQUE
+                ====================================================
+                */
 
-            const existingRfid =
-                await Customer.findOne({
-                    rfidUid:
-                        normalizedRfid,
-                });
+                if (
+                    normalizedRfid
+                ) {
+
+                    const existingRfid =
+                        await Customer
+                            .findOne({
+                                rfidUid:
+                                    normalizedRfid,
+                            })
+                            .select(
+                                "_id"
+                            )
+                            .session(
+                                session
+                            )
+                            .lean();
 
 
-            if (
-                existingRfid
-            ) {
+                    if (
+                        existingRfid
+                    ) {
 
-                throw new ApiError(
-                    409,
-                    "This RFID card is already assigned to another customer."
-                );
+                        throw new ApiError(
+                            409,
+                            "This RFID card is already assigned to another customer."
+                        );
+
+                    }
+
+                }
+
+
+                /*
+                ====================================================
+                CUSTOMER CODE
+                ====================================================
+                */
+
+                const customerCode =
+                    await generateCustomerCode(
+                        session
+                    );
+
+
+                /*
+                ====================================================
+                CREATE CUSTOMER
+                ====================================================
+                */
+
+                const [
+                    customer,
+                ] =
+                    await Customer.create(
+                        [
+                            {
+                                customerCode,
+
+                                name:
+                                    normalizedName,
+
+                                phone:
+                                    normalizedPhone,
+
+                                rfidUid:
+                                    normalizedRfid,
+
+                                loyaltyPoints:
+                                    0,
+
+                                lifetimePoints:
+                                    0,
+
+                                loyaltyTier:
+                                    "REGULAR",
+
+                                isActive:
+                                    true,
+                            },
+                        ],
+                        {
+                            session,
+                        }
+                    );
+
+
+                /*
+                ====================================================
+                CLOUD SYNC OUTBOX
+                ====================================================
+
+                Customer and CustomerCounter changes are committed
+                together with this durable sync request.
+                ====================================================
+                */
+
+                await syncOutboxService
+                    .enqueueSyncRequest({
+
+                        source:
+                            "CUSTOMER",
+
+                        action:
+                            "CREATE",
+
+                        aggregateId:
+                            customer._id,
+
+                        branchId:
+                            null,
+
+                        session,
+
+                    });
+
+
+                return customer;
 
             }
-
-        }
-
-
-        const customerCode =
-            await generateCustomerCode();
-
-
-        const customer =
-            await Customer.create({
-
-                customerCode,
-
-                name:
-                    normalizedName,
-
-                phone:
-                    String(
-                        phone ||
-                        ""
-                    ).trim(),
-
-                rfidUid:
-                    normalizedRfid,
-
-                loyaltyPoints:
-                    0,
-
-                lifetimePoints:
-                    0,
-
-                loyaltyTier:
-                    "REGULAR",
-
-                isActive:
-                    true,
-
-            });
-
-
-        return customer;
+        );
 
     };
 
@@ -337,6 +493,9 @@ const createCustomer =
 /*
 ============================================================
 UPDATE CUSTOMER
+============================================================
+
+Customer updates and their outbox event now commit together.
 ============================================================
 */
 
@@ -346,141 +505,269 @@ const updateCustomer =
         data
     ) => {
 
-        const customer =
-            await getCustomerById(
-                customerId
+        if (
+            !mongoose.Types.ObjectId
+                .isValid(
+                    customerId
+                )
+        ) {
+
+            throw new ApiError(
+                400,
+                "Invalid customer ID."
             );
 
-
-        /*
-        --------------------------------------------------------
-        NAME
-        --------------------------------------------------------
-        */
-
-        if (
-            data.name !==
-            undefined
-        ) {
-
-            const name =
-                String(
-                    data.name
-                ).trim();
-
-
-            if (!name) {
-
-                throw new ApiError(
-                    400,
-                    "Customer name cannot be empty."
-                );
-
-            }
-
-
-            customer.name =
-                name;
-
         }
 
 
-        /*
-        --------------------------------------------------------
-        PHONE
-        --------------------------------------------------------
-        */
+        return await withTransaction(
+            async (
+                session
+            ) => {
 
-        if (
-            data.phone !==
-            undefined
-        ) {
-
-            customer.phone =
-                String(
-                    data.phone ||
-                    ""
-                ).trim();
-
-        }
+                const customer =
+                    await getCustomerById(
+                        customerId,
+                        {
+                            session,
+                        }
+                    );
 
 
-        /*
-        --------------------------------------------------------
-        RFID
-        --------------------------------------------------------
-        */
+                /*
+                --------------------------------------------------------
+                NAME
+                --------------------------------------------------------
+                */
 
-        if (
-            data.rfidUid !==
-            undefined
-        ) {
+                if (
+                    data.name !==
+                    undefined
+                ) {
 
-            const normalizedRfid =
-                normalizeRfid(
-                    data.rfidUid
-                );
+                    const name =
+                        String(
+                            data.name
+                        ).trim();
 
 
-            if (
-                normalizedRfid
-            ) {
+                    if (
+                        !name
+                    ) {
 
-                const duplicate =
-                    await Customer.findOne({
+                        throw new ApiError(
+                            400,
+                            "Customer name cannot be empty."
+                        );
 
-                        rfidUid:
-                            normalizedRfid,
+                    }
 
-                        _id: {
-                            $ne:
-                                customer._id,
-                        },
+
+                    customer.name =
+                        name;
+
+                }
+
+
+                /*
+                --------------------------------------------------------
+                PHONE
+                --------------------------------------------------------
+                */
+
+                if (
+                    data.phone !==
+                    undefined
+                ) {
+
+                    customer.phone =
+                        String(
+                            data.phone ||
+                            ""
+                        ).trim();
+
+                }
+
+
+                /*
+                --------------------------------------------------------
+                RFID
+                --------------------------------------------------------
+                */
+
+                if (
+                    data.rfidUid !==
+                    undefined
+                ) {
+
+                    const normalizedRfid =
+                        normalizeRfid(
+                            data.rfidUid
+                        );
+
+
+                    if (
+                        normalizedRfid
+                    ) {
+
+                        const duplicate =
+                            await Customer
+                                .findOne({
+
+                                    rfidUid:
+                                        normalizedRfid,
+
+                                    _id: {
+                                        $ne:
+                                            customer._id,
+                                    },
+
+                                })
+                                .select(
+                                    "_id"
+                                )
+                                .session(
+                                    session
+                                )
+                                .lean();
+
+
+                        if (
+                            duplicate
+                        ) {
+
+                            throw new ApiError(
+                                409,
+                                "This RFID card is already assigned to another customer."
+                            );
+
+                        }
+
+                    }
+
+
+                    customer.rfidUid =
+                        normalizedRfid;
+
+                }
+
+
+                /*
+                --------------------------------------------------------
+                STATUS
+                --------------------------------------------------------
+                */
+
+                if (
+                    data.isActive !==
+                    undefined
+                ) {
+
+                    customer.isActive =
+                        Boolean(
+                            data.isActive
+                        );
+
+                }
+
+
+                /*
+                ====================================================
+                SAVE CUSTOMER
+                ====================================================
+                */
+
+                try {
+
+                    await customer.save({
+                        session,
+                    });
+
+
+                } catch (
+                    error
+                ) {
+
+                    /*
+                    Protect against a race where two requests try
+                    assigning the same unique field simultaneously.
+                    */
+
+                    if (
+                        error?.code ===
+                        11000
+                    ) {
+
+                        if (
+                            error?.keyPattern
+                                ?.rfidUid ||
+                            error?.keyValue
+                                ?.rfidUid
+                        ) {
+
+                            throw new ApiError(
+                                409,
+                                "This RFID card is already assigned to another customer."
+                            );
+
+                        }
+
+
+                        if (
+                            error?.keyPattern
+                                ?.customerCode ||
+                            error?.keyValue
+                                ?.customerCode
+                        ) {
+
+                            throw new ApiError(
+                                409,
+                                "Customer code already exists."
+                            );
+
+                        }
+
+                    }
+
+
+                    throw error;
+
+                }
+
+
+                /*
+                ====================================================
+                CLOUD SYNC OUTBOX
+                ====================================================
+                */
+
+                await syncOutboxService
+                    .enqueueSyncRequest({
+
+                        source:
+                            "CUSTOMER",
+
+                        action:
+                            customer.isActive ===
+                                false
+                                ? "UPDATE_INACTIVE"
+                                : "UPDATE",
+
+                        aggregateId:
+                            customer._id,
+
+                        branchId:
+                            null,
+
+                        session,
 
                     });
 
 
-                if (duplicate) {
-
-                    throw new ApiError(
-                        409,
-                        "This RFID card is already assigned to another customer."
-                    );
-
-                }
+                return customer;
 
             }
-
-
-            customer.rfidUid =
-                normalizedRfid;
-
-        }
-
-
-        /*
-        --------------------------------------------------------
-        STATUS
-        --------------------------------------------------------
-        */
-
-        if (
-            data.isActive !==
-            undefined
-        ) {
-
-            customer.isActive =
-                Boolean(
-                    data.isActive
-                );
-
-        }
-
-
-        await customer.save();
-
-
-        return customer;
+        );
 
     };
 
@@ -514,7 +801,9 @@ const identifyCustomer =
                 .toUpperCase();
 
 
-        if (!value) {
+        if (
+            !value
+        ) {
 
             throw new ApiError(
                 400,
@@ -567,7 +856,9 @@ const identifyCustomer =
             });
 
 
-        if (!customer) {
+        if (
+            !customer
+        ) {
 
             throw new ApiError(
                 404,

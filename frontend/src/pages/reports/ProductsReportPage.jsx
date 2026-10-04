@@ -25,10 +25,12 @@ import {
     FaBoxes,
     FaTimes,
     FaCheck,
+    FaBuilding,
 } from "react-icons/fa";
 
 import useSaleStore from "../../store/sale.store";
 import useProductStore from "../../store/product.store";
+import useBranchStore from "../../store/branch.store";
 
 
 /*
@@ -49,19 +51,73 @@ const PERIOD_OPTIONS = [
 
 /*
 ============================================================
-FORMAT CURRENCY
+BASIC HELPERS
 ============================================================
 */
+
+const normalizeId = (value) => {
+
+    if (!value) {
+        return "";
+    }
+
+    if (
+        typeof value ===
+        "object"
+    ) {
+
+        return String(
+            value._id ||
+            value.id ||
+            ""
+        );
+
+    }
+
+    return String(value);
+
+};
+
+
+const sanitizeFilePart = (value) => {
+
+    return (
+        String(
+            value ||
+            "branch"
+        )
+            .trim()
+            .toLowerCase()
+            .replace(
+                /[^a-z0-9-_]+/g,
+                "-"
+            )
+            .replace(
+                /^-+|-+$/g,
+                ""
+            ) ||
+        "branch"
+    );
+
+};
+
 
 const formatCurrency = (value) => {
 
     return new Intl.NumberFormat(
         "en-PH",
         {
-            style: "currency",
-            currency: "PHP",
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
+            style:
+                "currency",
+
+            currency:
+                "PHP",
+
+            minimumFractionDigits:
+                2,
+
+            maximumFractionDigits:
+                2,
         }
     ).format(
         Number(value) || 0
@@ -69,12 +125,6 @@ const formatCurrency = (value) => {
 
 };
 
-
-/*
-============================================================
-FORMAT NUMBER
-============================================================
-*/
 
 const formatNumber = (value) => {
 
@@ -89,42 +139,26 @@ const formatNumber = (value) => {
 
 /*
 ============================================================
-PARSE LOCAL DATE STRING
-============================================================
-
-Avoids YYYY-MM-DD being interpreted as UTC.
-
-Example:
-2026-09-04
-
-becomes local:
-Sep 4, 2026 12:00 AM
+DATE HELPERS
 ============================================================
 */
 
 const parseLocalDateString = (value) => {
 
     if (!value) {
-
         return null;
-
     }
-
 
     const parts =
         String(value)
             .split("-")
             .map(Number);
 
-
     if (
         parts.length !== 3
     ) {
-
         return null;
-
     }
-
 
     const [
         year,
@@ -132,17 +166,13 @@ const parseLocalDateString = (value) => {
         day,
     ] = parts;
 
-
     if (
         !year ||
         !month ||
         !day
     ) {
-
         return null;
-
     }
-
 
     const date =
         new Date(
@@ -151,28 +181,18 @@ const parseLocalDateString = (value) => {
             day
         );
 
-
     if (
         Number.isNaN(
             date.getTime()
         )
     ) {
-
         return null;
-
     }
-
 
     return date;
 
 };
 
-
-/*
-============================================================
-DATE HELPERS
-============================================================
-*/
 
 const startOfDay = (value) => {
 
@@ -249,12 +269,6 @@ const endOfWeek = (value) => {
 };
 
 
-/*
-============================================================
-DAYS BETWEEN
-============================================================
-*/
-
 const daysBetween = (
     start,
     end
@@ -265,7 +279,6 @@ const daysBetween = (
 
     const second =
         startOfDay(end);
-
 
     return (
         Math.floor(
@@ -280,27 +293,17 @@ const daysBetween = (
 };
 
 
-/*
-============================================================
-FORMAT DATE
-============================================================
-*/
-
 const formatDate = (value) => {
 
     if (!value) {
-
         return "";
-
     }
-
 
     let date;
 
-
     if (
         typeof value ===
-        "string" &&
+            "string" &&
         /^\d{4}-\d{2}-\d{2}$/.test(
             value
         )
@@ -318,25 +321,26 @@ const formatDate = (value) => {
 
     }
 
-
     if (
         !date ||
         Number.isNaN(
             date.getTime()
         )
     ) {
-
         return "";
-
     }
-
 
     return new Intl.DateTimeFormat(
         "en-PH",
         {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
+            month:
+                "short",
+
+            day:
+                "numeric",
+
+            year:
+                "numeric",
         }
     ).format(date);
 
@@ -346,12 +350,6 @@ const formatDate = (value) => {
 /*
 ============================================================
 GET PERIOD RANGE
-============================================================
-
-Existing period function preserved.
-
-Now also supports:
-Custom Range
 ============================================================
 */
 
@@ -366,7 +364,8 @@ const getPeriodRange = (
 
 
     if (
-        period === "Today"
+        period ===
+        "Today"
     ) {
 
         return {
@@ -381,7 +380,8 @@ const getPeriodRange = (
 
 
     if (
-        period === "Yesterday"
+        period ===
+        "Yesterday"
     ) {
 
         const yesterday =
@@ -408,7 +408,8 @@ const getPeriodRange = (
 
 
     if (
-        period === "This Week"
+        period ===
+        "This Week"
     ) {
 
         return {
@@ -423,7 +424,8 @@ const getPeriodRange = (
 
 
     if (
-        period === "This Month"
+        period ===
+        "This Month"
     ) {
 
         return {
@@ -450,7 +452,8 @@ const getPeriodRange = (
 
 
     if (
-        period === "Custom Range"
+        period ===
+        "Custom Range"
     ) {
 
         const customStart =
@@ -458,12 +461,10 @@ const getPeriodRange = (
                 customStartDate
             );
 
-
         const customEnd =
             parseLocalDateString(
                 customEndDate
             );
-
 
         if (
             customStart &&
@@ -483,7 +484,6 @@ const getPeriodRange = (
             };
 
         }
-
 
         return {
             start:
@@ -523,12 +523,6 @@ const getPeriodRange = (
 };
 
 
-/*
-============================================================
-PERIOD LABEL
-============================================================
-*/
-
 const getPeriodDateLabel = (
     period,
     customStartDate = "",
@@ -545,17 +539,20 @@ const getPeriodDateLabel = (
             customEndDate
         );
 
-
     const formatter =
         new Intl.DateTimeFormat(
             "en-PH",
             {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
+                month:
+                    "short",
+
+                day:
+                    "numeric",
+
+                year:
+                    "numeric",
             }
         );
-
 
     if (
         start.toDateString() ===
@@ -568,17 +565,18 @@ const getPeriodDateLabel = (
 
     }
 
-
-    return (
-        `${formatter.format(start)} - ${formatter.format(end)}`
-    );
+    return `${formatter.format(
+        start
+    )} - ${formatter.format(
+        end
+    )}`;
 
 };
 
 
 /*
 ============================================================
-GET SALE DATE
+SALE HELPERS
 ============================================================
 */
 
@@ -592,44 +590,34 @@ const getSaleDate = (sale) => {
         sale?.completedAt ||
         null;
 
-
     if (!value) {
-
         return null;
-
     }
-
 
     const date =
         new Date(value);
-
 
     if (
         Number.isNaN(
             date.getTime()
         )
     ) {
-
         return null;
-
     }
-
 
     return date;
 
 };
 
 
-/*
-============================================================
-SALE IN PERIOD
-============================================================
+const getSaleBranchId = (sale) => {
 
-Existing function preserved.
+    return normalizeId(
+        sale?.branch
+    );
 
-Now supports custom dates.
-============================================================
-*/
+};
+
 
 const isSaleInPeriod = (
     sale,
@@ -641,13 +629,9 @@ const isSaleInPeriod = (
     const date =
         getSaleDate(sale);
 
-
     if (!date) {
-
         return false;
-
     }
-
 
     const {
         start,
@@ -659,24 +643,18 @@ const isSaleInPeriod = (
             customEndDate
         );
 
-
     const time =
         date.getTime();
 
-
     return (
-        time >= start.getTime() &&
-        time <= end.getTime()
+        time >=
+            start.getTime() &&
+        time <=
+            end.getTime()
     );
 
 };
 
-
-/*
-============================================================
-GET SALE ITEMS
-============================================================
-*/
 
 const getSaleItems = (sale) => {
 
@@ -685,31 +663,38 @@ const getSaleItems = (sale) => {
             sale?.items
         )
     ) {
-
         return sale.items;
-
     }
-
 
     if (
         Array.isArray(
             sale?.saleItems
         )
     ) {
-
         return sale.saleItems;
-
     }
-
 
     return [];
 
 };
 
 
+const isVoidedSale = (sale) => {
+
+    return (
+        String(
+            sale?.status ||
+            ""
+        ).toUpperCase() ===
+        "VOIDED"
+    );
+
+};
+
+
 /*
 ============================================================
-PRODUCT ID
+SALE ITEM HELPERS
 ============================================================
 */
 
@@ -718,10 +703,10 @@ const getItemProductId = (item) => {
     const product =
         item?.product;
 
-
     if (
         product &&
-        typeof product === "object"
+        typeof product ===
+            "object"
     ) {
 
         return String(
@@ -732,7 +717,6 @@ const getItemProductId = (item) => {
 
     }
 
-
     return String(
         item?.productId ||
         item?.product_id ||
@@ -742,12 +726,6 @@ const getItemProductId = (item) => {
 
 };
 
-
-/*
-============================================================
-ITEM NAME
-============================================================
-*/
 
 const getItemName = (item) => {
 
@@ -761,12 +739,6 @@ const getItemName = (item) => {
 };
 
 
-/*
-============================================================
-ITEM BARCODE
-============================================================
-*/
-
 const getItemBarcode = (item) => {
 
     return String(
@@ -778,19 +750,12 @@ const getItemBarcode = (item) => {
 };
 
 
-/*
-============================================================
-ITEM CATEGORY
-============================================================
-*/
-
 const getItemCategory = (item) => {
 
     const category =
         item?.category ||
         item?.product?.category ||
         "Uncategorized";
-
 
     if (
         typeof category ===
@@ -804,28 +769,22 @@ const getItemCategory = (item) => {
 
     }
 
-
     return String(category);
 
 };
 
 
-/*
-============================================================
-PRODUCT CATEGORY
-============================================================
-*/
-
-const getProductCategory = (product) => {
+const getProductCategory = (
+    product
+) => {
 
     const category =
         product?.category;
 
-
     if (
         category &&
         typeof category ===
-        "object"
+            "object"
     ) {
 
         return (
@@ -835,7 +794,6 @@ const getProductCategory = (product) => {
 
     }
 
-
     return (
         category ||
         "Uncategorized"
@@ -843,12 +801,6 @@ const getProductCategory = (product) => {
 
 };
 
-
-/*
-============================================================
-ITEM QUANTITY
-============================================================
-*/
 
 const getItemQuantity = (item) => {
 
@@ -860,12 +812,6 @@ const getItemQuantity = (item) => {
 
 };
 
-
-/*
-============================================================
-REFUNDED QUANTITY
-============================================================
-*/
 
 const getItemRefundedQuantity = (
     item
@@ -880,16 +826,6 @@ const getItemRefundedQuantity = (
 };
 
 
-/*
-============================================================
-NET ITEM QUANTITY
-============================================================
-
-Refunded quantities are removed from
-the product report.
-============================================================
-*/
-
 const getNetItemQuantity = (
     item
 ) => {
@@ -899,12 +835,10 @@ const getNetItemQuantity = (
             item
         );
 
-
     const refunded =
         getItemRefundedQuantity(
             item
         );
-
 
     return Math.max(
         quantity -
@@ -915,13 +849,9 @@ const getNetItemQuantity = (
 };
 
 
-/*
-============================================================
-ITEM UNIT PRICE
-============================================================
-*/
-
-const getItemUnitPrice = (item) => {
+const getItemUnitPrice = (
+    item
+) => {
 
     return Number(
         item?.unitPrice ??
@@ -933,63 +863,6 @@ const getItemUnitPrice = (item) => {
 
 };
 
-
-/*
-============================================================
-ITEM TOTAL
-============================================================
-
-Existing function preserved.
-============================================================
-*/
-
-const getItemTotal = (item) => {
-
-    const value =
-        item?.subtotal ??
-        item?.total ??
-        item?.amount;
-
-
-    if (
-        value !== undefined &&
-        value !== null
-    ) {
-
-        const explicit =
-            Number(value);
-
-
-        if (
-            Number.isFinite(
-                explicit
-            )
-        ) {
-
-            return explicit;
-
-        }
-
-    }
-
-
-    return (
-        getItemQuantity(item) *
-        getItemUnitPrice(item)
-    );
-
-};
-
-
-/*
-============================================================
-NET ITEM TOTAL
-============================================================
-
-Used by report so refunded quantities
-do not remain counted as revenue.
-============================================================
-*/
 
 const getNetItemTotal = (
     item
@@ -1009,18 +882,164 @@ const getNetItemTotal = (
 
 /*
 ============================================================
-IS VOIDED SALE
+PRODUCT PRICE
 ============================================================
 */
 
-const isVoidedSale = (sale) => {
+const getProductBasePrice = (
+    product
+) => {
 
-    return (
-        String(
-            sale?.status ||
-            ""
-        ).toUpperCase() ===
-        "VOIDED"
+    if (
+        !product
+    ) {
+        return 0;
+    }
+
+    if (
+        Array.isArray(
+            product?.pricing
+        ) &&
+        product.pricing.length >
+            0
+    ) {
+
+        const unitTier =
+            product.pricing.find(
+                (tier) =>
+                    Number(
+                        tier?.quantity
+                    ) === 1
+            );
+
+        if (
+            unitTier
+        ) {
+
+            return Number(
+                unitTier?.price ||
+                0
+            ) || 0;
+
+        }
+
+        return Number(
+            product.pricing[0]
+                ?.price ||
+            0
+        ) || 0;
+
+    }
+
+    return Number(
+        product?.price ||
+        product?.sellingPrice ||
+        0
+    ) || 0;
+
+};
+
+
+/*
+============================================================
+SALE NET PRODUCT REVENUES
+============================================================
+
+Refunded quantities are removed first.
+
+The sale discount is proportionally allocated across
+remaining product values.
+
+This ensures total product revenue matches the sale-level
+net revenue represented by its remaining item quantities.
+============================================================
+*/
+
+const getSaleNetItemRevenues = (
+    sale
+) => {
+
+    const items =
+        getSaleItems(
+            sale
+        );
+
+    if (
+        isVoidedSale(
+            sale
+        )
+    ) {
+
+        return items.map(
+            () => 0
+        );
+
+    }
+
+    const grossValues =
+        items.map(
+            (item) =>
+                getNetItemTotal(
+                    item
+                )
+        );
+
+    const netSubtotal =
+        grossValues.reduce(
+            (
+                sum,
+                value
+            ) =>
+                sum +
+                Number(
+                    value ||
+                    0
+                ),
+            0
+        );
+
+    if (
+        netSubtotal <=
+        0
+    ) {
+
+        return items.map(
+            () => 0
+        );
+
+    }
+
+    const discount =
+        Math.max(
+            Number(
+                sale?.discount ||
+                0
+            ),
+            0
+        );
+
+    const netSaleTotal =
+        Math.max(
+            netSubtotal -
+            discount,
+            0
+        );
+
+    return grossValues.map(
+        (
+            grossValue
+        ) => {
+
+            const proportion =
+                grossValue /
+                netSubtotal;
+
+            return (
+                netSaleTotal *
+                proportion
+            );
+
+        }
     );
 
 };
@@ -1031,13 +1050,14 @@ const isVoidedSale = (sale) => {
 FIND CURRENT PRODUCT
 ============================================================
 
-Matching priority:
+Priority:
 
-1. MongoDB product ID
+1. Product ID
 2. Barcode
-3. Product name
+3. Name
 
-This makes the report work with older sale snapshots too.
+This allows historical sale snapshots to continue appearing
+even when the live product document has changed.
 ============================================================
 */
 
@@ -1051,13 +1071,6 @@ const findCurrentProduct = (
             saleItem
         );
 
-
-    /*
-    --------------------------------------------------------
-    MATCH BY ID
-    --------------------------------------------------------
-    */
-
     if (
         saleProductId
     ) {
@@ -1067,45 +1080,34 @@ const findCurrentProduct = (
                 (item) => {
 
                     const id =
-                        String(
-                            item?._id ||
-                            item?.id ||
-                            ""
+                        normalizeId(
+                            item
                         );
-
 
                     return (
                         id &&
                         id ===
-                        saleProductId
+                            saleProductId
                     );
 
                 }
             );
 
-
         if (product) {
-
             return product;
-
         }
 
     }
 
-
-    /*
-    --------------------------------------------------------
-    MATCH BY BARCODE
-    --------------------------------------------------------
-    */
 
     const barcode =
         getItemBarcode(
             saleItem
         );
 
-
-    if (barcode) {
+    if (
+        barcode
+    ) {
 
         const product =
             productCatalog.find(
@@ -1117,21 +1119,12 @@ const findCurrentProduct = (
                     barcode
             );
 
-
         if (product) {
-
             return product;
-
         }
 
     }
 
-
-    /*
-    --------------------------------------------------------
-    MATCH BY NAME
-    --------------------------------------------------------
-    */
 
     const name =
         getItemName(
@@ -1140,10 +1133,10 @@ const findCurrentProduct = (
             .trim()
             .toLowerCase();
 
-
     if (
         name &&
-        name !== "unknown product"
+        name !==
+            "unknown product"
     ) {
 
         return (
@@ -1162,7 +1155,6 @@ const findCurrentProduct = (
 
     }
 
-
     return null;
 
 };
@@ -1170,7 +1162,24 @@ const findCurrentProduct = (
 
 /*
 ============================================================
-CURRENT STOCK
+BRANCH STOCK
+============================================================
+
+GET /products decorates the global Product document with the
+active branch's BranchInventory:
+
+product.stock
+product.minimumStock
+product.branchInventoryConfigured
+product.branchId
+
+Therefore product.stock here is intentionally the active
+branch's stock, NOT Product.stock from the legacy database
+field.
+
+If branchInventoryConfigured is false, inventory is treated
+as unavailable instead of pretending that missing inventory
+means zero stock.
 ============================================================
 */
 
@@ -1178,37 +1187,38 @@ const getCurrentStock = (
     product
 ) => {
 
-    if (!product) {
-
+    if (
+        !product
+    ) {
         return null;
-
     }
-
-
-    const value =
-        product?.stock ??
-        product?.quantity ??
-        product?.stockQuantity ??
-        product?.currentStock ??
-        product?.inventory ??
-        null;
-
 
     if (
-        value === null ||
-        value === undefined
+        product
+            ?.branchInventoryConfigured ===
+        false
     ) {
-
         return null;
-
     }
 
+    const value =
+        product?.stock;
+
+    if (
+        value ===
+            null ||
+        value ===
+            undefined
+    ) {
+        return null;
+    }
 
     const stock =
         Number(value);
 
-
-    return Number.isFinite(stock)
+    return Number.isFinite(
+        stock
+    )
         ? stock
         : null;
 
@@ -1221,10 +1231,14 @@ STOCK STATUS
 ============================================================
 */
 
-const getStockStatus = (stock) => {
+const getStockStatus = (
+    stock,
+    minimumStock = 10
+) => {
 
     if (
-        stock === null
+        stock ===
+        null
     ) {
 
         return {
@@ -1236,7 +1250,6 @@ const getStockStatus = (stock) => {
         };
 
     }
-
 
     if (
         stock <= 0
@@ -1252,24 +1265,19 @@ const getStockStatus = (stock) => {
 
     }
 
+    const threshold =
+        Math.max(
+            Number(
+                minimumStock
+            ) || 0,
+            0
+        );
 
     if (
-        stock <= 5
-    ) {
-
-        return {
-            label:
-                "Critical",
-
-            className:
-                "badge badge-error badge-sm",
-        };
-
-    }
-
-
-    if (
-        stock <= 10
+        threshold >
+            0 &&
+        stock <=
+            threshold
     ) {
 
         return {
@@ -1281,7 +1289,6 @@ const getStockStatus = (stock) => {
         };
 
     }
-
 
     return {
         label:
@@ -1297,12 +1304,6 @@ const getStockStatus = (stock) => {
 /*
 ============================================================
 SALES VELOCITY
-============================================================
-
-Existing function preserved.
-
-Custom ranges use a scaled threshold
-based on number of selected days.
 ============================================================
 */
 
@@ -1320,8 +1321,10 @@ const getSalesVelocity = (
 
 
     if (
-        period === "Today" ||
-        period === "Yesterday"
+        period ===
+            "Today" ||
+        period ===
+            "Yesterday"
     ) {
 
         fastThreshold =
@@ -1334,7 +1337,8 @@ const getSalesVelocity = (
 
 
     if (
-        period === "This Week"
+        period ===
+        "This Week"
     ) {
 
         fastThreshold =
@@ -1347,7 +1351,8 @@ const getSalesVelocity = (
 
 
     if (
-        period === "This Month"
+        period ===
+        "This Month"
     ) {
 
         fastThreshold =
@@ -1360,7 +1365,8 @@ const getSalesVelocity = (
 
 
     if (
-        period === "This Year"
+        period ===
+        "This Year"
     ) {
 
         fastThreshold =
@@ -1371,24 +1377,6 @@ const getSalesVelocity = (
 
     }
 
-
-    /*
-    --------------------------------------------------------
-    CUSTOM RANGE
-    --------------------------------------------------------
-
-    Approximate daily thresholds:
-
-    Fast:
-    about 7 units / day
-
-    Normal:
-    about 3 units / day
-
-    Minimum thresholds prevent very small
-    ranges becoming too sensitive.
-    --------------------------------------------------------
-    */
 
     if (
         period ===
@@ -1403,7 +1391,6 @@ const getSalesVelocity = (
                 1
             );
 
-
         fastThreshold =
             Math.max(
                 Math.ceil(
@@ -1411,7 +1398,6 @@ const getSalesVelocity = (
                 ),
                 15
             );
-
 
         normalThreshold =
             Math.max(
@@ -1425,7 +1411,8 @@ const getSalesVelocity = (
 
 
     if (
-        sold >= fastThreshold
+        sold >=
+        fastThreshold
     ) {
 
         return {
@@ -1440,7 +1427,8 @@ const getSalesVelocity = (
 
 
     if (
-        sold >= normalThreshold
+        sold >=
+        normalThreshold
     ) {
 
         return {
@@ -1494,7 +1482,7 @@ function ProductsReportPage() {
 
     /*
     ========================================================
-    SALE STORE
+    STORES
     ========================================================
     */
 
@@ -1505,17 +1493,50 @@ function ProductsReportPage() {
         useSaleStore();
 
 
-    /*
-    ========================================================
-    PRODUCT STORE
-    ========================================================
-    */
-
     const {
-        products: productCatalog,
+        products:
+            productCatalog,
         fetchProducts,
     } =
         useProductStore();
+
+
+    const activeBranch =
+        useBranchStore(
+            (
+                state
+            ) =>
+                state.activeBranch
+        );
+
+
+    const activeBranchId =
+        normalizeId(
+            activeBranch
+        );
+
+
+    const activeBranchCode =
+        String(
+            activeBranch?.code ||
+            ""
+        );
+
+
+    const activeBranchName =
+        String(
+            activeBranch?.name ||
+            ""
+        );
+
+
+    const activeBranchLabel =
+        activeBranchCode &&
+        activeBranchName
+            ? `${activeBranchCode} — ${activeBranchName}`
+            : activeBranchName ||
+              activeBranchCode ||
+              "Active Branch";
 
 
     /*
@@ -1527,88 +1548,113 @@ function ProductsReportPage() {
     const [
         period,
         setPeriod,
-    ] = useState(
-        "This Week"
-    );
+    ] =
+        useState(
+            "This Week"
+        );
 
 
     const [
         search,
         setSearch,
-    ] = useState("");
+    ] =
+        useState("");
 
 
     const [
         sortBy,
         setSortBy,
-    ] = useState(
-        "sold"
-    );
+    ] =
+        useState(
+            "sold"
+        );
 
 
     const [
         refreshing,
         setRefreshing,
-    ] = useState(false);
+    ] =
+        useState(false);
 
 
     const [
         loading,
         setLoading,
-    ] = useState(true);
+    ] =
+        useState(true);
 
 
     const [
         error,
         setError,
-    ] = useState("");
+    ] =
+        useState("");
 
 
     /*
     ========================================================
-    CUSTOM RANGE STATE
+    CUSTOM RANGE
     ========================================================
     */
 
     const [
         showCustomRange,
         setShowCustomRange,
-    ] = useState(false);
+    ] =
+        useState(false);
 
 
     const [
         customStartDate,
         setCustomStartDate,
-    ] = useState("");
+    ] =
+        useState("");
 
 
     const [
         customEndDate,
         setCustomEndDate,
-    ] = useState("");
+    ] =
+        useState("");
 
 
     const [
         appliedStartDate,
         setAppliedStartDate,
-    ] = useState("");
+    ] =
+        useState("");
 
 
     const [
         appliedEndDate,
         setAppliedEndDate,
-    ] = useState("");
+    ] =
+        useState("");
 
 
     const [
         dateError,
         setDateError,
-    ] = useState("");
+    ] =
+        useState("");
 
 
     /*
     ========================================================
-    LOAD SALES + PRODUCTS
+    LOAD REPORT
+    ========================================================
+
+    Both endpoints are branch-sensitive.
+
+    fetchSales()
+        returns active branch sales.
+
+    fetchProducts()
+        returns global products decorated with the active
+        branch's BranchInventory.
+
+    Changing the Navbar branch changes activeBranchId and
+    therefore executes this function again.
     ========================================================
     */
 
@@ -1618,12 +1664,21 @@ function ProductsReportPage() {
                 manual = false
             ) => {
 
+                if (
+                    !activeBranchId
+                ) {
+                    return;
+                }
+
                 try {
 
-                    setError("");
+                    setError(
+                        ""
+                    );
 
-
-                    if (manual) {
+                    if (
+                        manual
+                    ) {
 
                         setRefreshing(
                             true
@@ -1637,20 +1692,19 @@ function ProductsReportPage() {
 
                     }
 
-
                     await Promise.all([
                         fetchSales(),
                         fetchProducts(),
                     ]);
 
-
-                } catch (err) {
+                } catch (
+                    err
+                ) {
 
                     console.error(
                         "Failed to load product report:",
                         err
                     );
-
 
                     setError(
                         err?.response
@@ -1659,7 +1713,6 @@ function ProductsReportPage() {
                         err?.message ||
                         "Failed to load product report."
                     );
-
 
                 } finally {
 
@@ -1675,6 +1728,7 @@ function ProductsReportPage() {
 
             },
             [
+                activeBranchId,
                 fetchSales,
                 fetchProducts,
             ]
@@ -1695,22 +1749,97 @@ function ProductsReportPage() {
 
     /*
     ========================================================
-    SAFE DATA
+    SAFE BRANCH DATA
+    ========================================================
+
+    The backend is authoritative.
+
+    These frontend checks additionally prevent old Zustand
+    data from another branch appearing briefly while branch
+    switching occurs.
     ========================================================
     */
 
     const safeSales =
-        Array.isArray(sales)
-            ? sales
-            : [];
+        useMemo(
+            () => {
+
+                const list =
+                    Array.isArray(
+                        sales
+                    )
+                        ? sales
+                        : [];
+
+                if (
+                    !activeBranchId
+                ) {
+                    return [];
+                }
+
+                return list.filter(
+                    (sale) => {
+
+                        const branchId =
+                            getSaleBranchId(
+                                sale
+                            );
+
+                        return (
+                            branchId ===
+                            activeBranchId
+                        );
+
+                    }
+                );
+
+            },
+            [
+                sales,
+                activeBranchId,
+            ]
+        );
 
 
     const safeProductCatalog =
-        Array.isArray(
-            productCatalog
-        )
-            ? productCatalog
-            : [];
+        useMemo(
+            () => {
+
+                const list =
+                    Array.isArray(
+                        productCatalog
+                    )
+                        ? productCatalog
+                        : [];
+
+                if (
+                    !activeBranchId
+                ) {
+                    return [];
+                }
+
+                return list.filter(
+                    (product) => {
+
+                        const branchId =
+                            normalizeId(
+                                product?.branchId
+                            );
+
+                        return (
+                            branchId ===
+                            activeBranchId
+                        );
+
+                    }
+                );
+
+            },
+            [
+                productCatalog,
+                activeBranchId,
+            ]
+        );
 
 
     /*
@@ -1725,37 +1854,29 @@ function ProductsReportPage() {
 
                 if (
                     period !==
-                    "Custom Range" ||
+                        "Custom Range" ||
                     !appliedStartDate ||
                     !appliedEndDate
                 ) {
-
                     return null;
-
                 }
-
 
                 const start =
                     parseLocalDateString(
                         appliedStartDate
                     );
 
-
                 const end =
                     parseLocalDateString(
                         appliedEndDate
                     );
 
-
                 if (
                     !start ||
                     !end
                 ) {
-
                     return null;
-
                 }
-
 
                 return daysBetween(
                     start,
@@ -1797,7 +1918,7 @@ function ProductsReportPage() {
 
     /*
     ========================================================
-    SALES FOR SELECTED PERIOD
+    SALES FOR PERIOD
     ========================================================
     */
 
@@ -1806,7 +1927,9 @@ function ProductsReportPage() {
             () => {
 
                 return safeSales.filter(
-                    (sale) =>
+                    (
+                        sale
+                    ) =>
                         isSaleInPeriod(
                             sale,
                             period,
@@ -1830,17 +1953,16 @@ function ProductsReportPage() {
     BUILD PRODUCT REPORT
     ========================================================
 
-    Sales still control which products appear.
+    The report begins with the full current global catalog.
 
-    Current Products database supplies:
-    - stock
-    - category
-    - current product name
-    - current barcode
+    This allows products with zero sales to appear and makes
+    branch inventory warnings complete.
 
-    Voided sales are excluded.
+    Branch sales are then applied on top.
 
-    Refunded quantities are subtracted.
+    If a historical sale contains a product no longer present
+    in the current catalog, that historical product is still
+    included using its sale snapshot.
     ========================================================
     */
 
@@ -1852,38 +1974,138 @@ function ProductsReportPage() {
                     new Map();
 
 
+                /*
+                ==================================================
+                START WITH CURRENT CATALOG
+                ==================================================
+                */
+
+                for (
+                    const currentProduct
+                    of safeProductCatalog
+                ) {
+
+                    const productId =
+                        normalizeId(
+                            currentProduct
+                        );
+
+                    if (
+                        !productId
+                    ) {
+                        continue;
+                    }
+
+                    const stock =
+                        getCurrentStock(
+                            currentProduct
+                        );
+
+                    const minimumStock =
+                        Number(
+                            currentProduct
+                                ?.minimumStock ||
+                            0
+                        ) || 0;
+
+                    map.set(
+                        productId,
+                        {
+                            id:
+                                productId,
+
+                            name:
+                                currentProduct
+                                    ?.name ||
+                                "Unknown Product",
+
+                            barcode:
+                                String(
+                                    currentProduct
+                                        ?.barcode ||
+                                    ""
+                                ),
+
+                            category:
+                                getProductCategory(
+                                    currentProduct
+                                ),
+
+                            sold:
+                                0,
+
+                            revenue:
+                                0,
+
+                            stock,
+
+                            minimumStock,
+
+                            price:
+                                getProductBasePrice(
+                                    currentProduct
+                                ),
+
+                            transactions:
+                                0,
+
+                            currentProduct:
+                                true,
+
+                            isActive:
+                                currentProduct
+                                    ?.isActive !==
+                                false,
+                        }
+                    );
+
+                }
+
+
+                /*
+                ==================================================
+                APPLY ACTIVE BRANCH SALES
+                ==================================================
+                */
+
                 for (
                     const sale
                     of periodSales
                 ) {
-
-                    /*
-                    ----------------------------------------
-                    DO NOT COUNT VOIDED SALES
-                    ----------------------------------------
-                    */
 
                     if (
                         isVoidedSale(
                             sale
                         )
                     ) {
-
                         continue;
-
                     }
-
 
                     const items =
                         getSaleItems(
                             sale
                         );
 
+                    const itemNetRevenues =
+                        getSaleNetItemRevenues(
+                            sale
+                        );
 
                     for (
-                        const item
-                        of items
+                        let itemIndex =
+                            0;
+
+                        itemIndex <
+                        items.length;
+
+                        itemIndex +=
+                            1
                     ) {
+
+                        const item =
+                            items[
+                                itemIndex
+                            ];
 
                         const currentProduct =
                             findCurrentProduct(
@@ -1891,52 +2113,41 @@ function ProductsReportPage() {
                                 safeProductCatalog
                             );
 
-
-                        /*
-                        ----------------------------------------
-                        REPORT KEY
-                        ----------------------------------------
-                        */
-
                         const productId =
                             String(
-                                currentProduct?._id ||
-                                currentProduct?.id ||
-                                getItemProductId(
-                                    item
-                                ) ||
-                                getItemBarcode(
-                                    item
-                                ) ||
-                                getItemName(
-                                    item
-                                )
+                                currentProduct
+                                    ? normalizeId(
+                                        currentProduct
+                                    )
+                                    : getItemProductId(
+                                        item
+                                    ) ||
+                                      getItemBarcode(
+                                          item
+                                      ) ||
+                                      getItemName(
+                                          item
+                                      )
                             );
 
-
-                        /*
-                        ----------------------------------------
-                        NET QUANTITY AFTER REFUNDS
-                        ----------------------------------------
-                        */
+                        if (
+                            !productId
+                        ) {
+                            continue;
+                        }
 
                         const quantity =
                             getNetItemQuantity(
                                 item
                             );
 
-
-                        /*
-                        ----------------------------------------
-                        NET REVENUE AFTER REFUNDS
-                        ----------------------------------------
-                        */
-
                         const revenue =
-                            getNetItemTotal(
-                                item
+                            Number(
+                                itemNetRevenues[
+                                    itemIndex
+                                ] ||
+                                0
                             );
-
 
                         const unitPrice =
                             getItemUnitPrice(
@@ -1945,55 +2156,23 @@ function ProductsReportPage() {
 
 
                         /*
-                        If fully refunded, there is nothing
-                        left to count as product sales.
+                        Fully refunded item:
+                        nothing remains sold.
                         */
 
                         if (
-                            quantity <= 0 &&
-                            revenue <= 0
+                            quantity <=
+                                0 &&
+                            revenue <=
+                                0
                         ) {
-
                             continue;
-
                         }
 
 
                         /*
-                        ----------------------------------------
-                        LIVE PRODUCT DATA
-                        ----------------------------------------
+                        Historical product not in live catalog.
                         */
-
-                        const currentStock =
-                            getCurrentStock(
-                                currentProduct
-                            );
-
-
-                        const currentName =
-                            currentProduct?.name ||
-                            getItemName(
-                                item
-                            );
-
-
-                        const currentBarcode =
-                            currentProduct?.barcode ||
-                            getItemBarcode(
-                                item
-                            );
-
-
-                        const currentCategory =
-                            currentProduct
-                                ? getProductCategory(
-                                    currentProduct
-                                )
-                                : getItemCategory(
-                                    item
-                                );
-
 
                         if (
                             !map.has(
@@ -2008,13 +2187,19 @@ function ProductsReportPage() {
                                         productId,
 
                                     name:
-                                        currentName,
+                                        getItemName(
+                                            item
+                                        ),
 
                                     barcode:
-                                        currentBarcode,
+                                        getItemBarcode(
+                                            item
+                                        ),
 
                                     category:
-                                        currentCategory,
+                                        getItemCategory(
+                                            item
+                                        ),
 
                                     sold:
                                         0,
@@ -2023,7 +2208,10 @@ function ProductsReportPage() {
                                         0,
 
                                     stock:
-                                        currentStock,
+                                        null,
+
+                                    minimumStock:
+                                        0,
 
                                     price:
                                         unitPrice,
@@ -2032,9 +2220,10 @@ function ProductsReportPage() {
                                         0,
 
                                     currentProduct:
-                                        Boolean(
-                                            currentProduct
-                                        ),
+                                        false,
+
+                                    isActive:
+                                        false,
                                 }
                             );
 
@@ -2059,42 +2248,9 @@ function ProductsReportPage() {
                             1;
 
 
-                        /*
-                        Always use LIVE stock.
-                        */
-
                         if (
-                            currentStock !==
-                            null
-                        ) {
-
-                            product.stock =
-                                currentStock;
-
-                        }
-
-
-                        if (
-                            currentProduct
-                        ) {
-
-                            product.name =
-                                currentName;
-
-                            product.barcode =
-                                currentBarcode;
-
-                            product.category =
-                                currentCategory;
-
-                            product.currentProduct =
-                                true;
-
-                        }
-
-
-                        if (
-                            unitPrice > 0
+                            unitPrice >
+                            0
                         ) {
 
                             product.price =
@@ -2143,10 +2299,11 @@ function ProductsReportPage() {
                             .toLowerCase()
                             .trim();
 
-
                     result =
                         result.filter(
-                            (product) => {
+                            (
+                                product
+                            ) => {
 
                                 return (
                                     String(
@@ -2190,7 +2347,8 @@ function ProductsReportPage() {
                     ) => {
 
                         if (
-                            sortBy === "sold"
+                            sortBy ===
+                            "sold"
                         ) {
 
                             return (
@@ -2202,7 +2360,8 @@ function ProductsReportPage() {
 
 
                         if (
-                            sortBy === "revenue"
+                            sortBy ===
+                            "revenue"
                         ) {
 
                             return (
@@ -2214,26 +2373,23 @@ function ProductsReportPage() {
 
 
                         if (
-                            sortBy === "stock"
+                            sortBy ===
+                            "stock"
                         ) {
 
                             if (
-                                a.stock === null
+                                a.stock ===
+                                null
                             ) {
-
                                 return 1;
-
                             }
-
 
                             if (
-                                b.stock === null
+                                b.stock ===
+                                null
                             ) {
-
                                 return -1;
-
                             }
-
 
                             return (
                                 a.stock -
@@ -2244,7 +2400,8 @@ function ProductsReportPage() {
 
 
                         if (
-                            sortBy === "name"
+                            sortBy ===
+                            "name"
                         ) {
 
                             return String(
@@ -2315,23 +2472,44 @@ function ProductsReportPage() {
 
                 const productsWithStock =
                     products.filter(
-                        (product) =>
+                        (
+                            product
+                        ) =>
                             product.stock !==
                             null
                     );
 
 
-                const lowStock =
+                const lowStockProducts =
                     productsWithStock.filter(
-                        (product) =>
-                            product.stock <=
-                            10
-                    ).length;
+                        (
+                            product
+                        ) => {
+
+                            const threshold =
+                                Math.max(
+                                    Number(
+                                        product
+                                            .minimumStock
+                                    ) ||
+                                    0,
+                                    0
+                                );
+
+                            return (
+                                product.stock <=
+                                threshold
+                            );
+
+                        }
+                    );
 
 
                 const outOfStock =
                     productsWithStock.filter(
-                        (product) =>
+                        (
+                            product
+                        ) =>
                             product.stock <=
                             0
                     ).length;
@@ -2339,7 +2517,9 @@ function ProductsReportPage() {
 
                 const fastMoving =
                     products.filter(
-                        (product) =>
+                        (
+                            product
+                        ) =>
                             getSalesVelocity(
                                 product.sold,
                                 period,
@@ -2349,9 +2529,19 @@ function ProductsReportPage() {
                     ).length;
 
 
+                const soldProducts =
+                    products.filter(
+                        (
+                            product
+                        ) =>
+                            product.sold >
+                            0
+                    );
+
+
                 const bestSelling =
                     [
-                        ...products,
+                        ...soldProducts,
                     ].sort(
                         (
                             a,
@@ -2365,7 +2555,7 @@ function ProductsReportPage() {
 
                 const highestRevenue =
                     [
-                        ...products,
+                        ...soldProducts,
                     ].sort(
                         (
                             a,
@@ -2379,15 +2569,28 @@ function ProductsReportPage() {
 
                 return {
                     totalSold,
+
                     totalRevenue,
-                    lowStock,
+
+                    lowStock:
+                        lowStockProducts
+                            .length,
+
                     outOfStock,
+
                     fastMoving,
+
                     bestSelling,
+
                     highestRevenue,
 
                     productsWithStock:
-                        productsWithStock.length,
+                        productsWithStock
+                            .length,
+
+                    catalogProducts:
+                        safeProductCatalog
+                            .length,
                 };
 
             },
@@ -2395,18 +2598,21 @@ function ProductsReportPage() {
                 products,
                 period,
                 customRangeDays,
+                safeProductCatalog,
             ]
         );
 
 
     /*
     ========================================================
-    HANDLE PERIOD CHANGE
+    PERIOD CHANGE
     ========================================================
     */
 
     const handlePeriodChange =
-        (event) => {
+        (
+            event
+        ) => {
 
             const selectedPeriod =
                 event.target.value;
@@ -2416,6 +2622,28 @@ function ProductsReportPage() {
                 selectedPeriod ===
                 "Custom Range"
             ) {
+
+                if (
+                    appliedStartDate
+                ) {
+
+                    setCustomStartDate(
+                        appliedStartDate
+                    );
+
+                }
+
+
+                if (
+                    appliedEndDate
+                ) {
+
+                    setCustomEndDate(
+                        appliedEndDate
+                    );
+
+                }
+
 
                 setShowCustomRange(
                     true
@@ -2448,12 +2676,6 @@ function ProductsReportPage() {
 
         };
 
-
-    /*
-    ========================================================
-    HANDLE OPEN CUSTOM RANGE
-    ========================================================
-    */
 
     const handleOpenCustomRange =
         () => {
@@ -2492,12 +2714,6 @@ function ProductsReportPage() {
         };
 
 
-    /*
-    ========================================================
-    HANDLE APPLY CUSTOM RANGE
-    ========================================================
-    */
-
     const handleApplyCustomRange =
         () => {
 
@@ -2509,7 +2725,6 @@ function ProductsReportPage() {
                 setDateError(
                     "Please select both a start date and an end date."
                 );
-
 
                 return;
 
@@ -2524,7 +2739,6 @@ function ProductsReportPage() {
                 setDateError(
                     "The start date cannot be after the end date."
                 );
-
 
                 return;
 
@@ -2558,12 +2772,6 @@ function ProductsReportPage() {
         };
 
 
-    /*
-    ========================================================
-    HANDLE CANCEL CUSTOM RANGE
-    ========================================================
-    */
-
     const handleCancelCustomRange =
         () => {
 
@@ -2585,38 +2793,68 @@ function ProductsReportPage() {
     ========================================================
     */
 
-    const handleExport = () => {
+    const handleExport =
+        () => {
 
-        if (
-            filteredProducts.length ===
-            0
-        ) {
+            if (
+                filteredProducts.length ===
+                0
+            ) {
 
-            window.alert(
-                "There are no products to export."
-            );
+                window.alert(
+                    "There are no products to export."
+                );
 
-            return;
+                return;
 
-        }
-
-
-        const headers = [
-            "Rank",
-            "Product",
-            "Barcode",
-            "Category",
-            "Units Sold",
-            "Revenue",
-            "Average Price",
-            "Stock",
-            "Sales Status",
-            "Stock Status",
-        ];
+            }
 
 
-        const rows =
-            filteredProducts.map(
+            const rows = [
+
+                [
+                    "Product Report",
+                ],
+
+                [
+                    "Branch",
+                    activeBranchLabel,
+                ],
+
+                [
+                    "Period",
+                    currentPeriodTitle,
+                ],
+
+                [
+                    "Date Range",
+                    getPeriodDateLabel(
+                        period,
+                        appliedStartDate,
+                        appliedEndDate
+                    ),
+                ],
+
+                [],
+
+                [
+                    "Rank",
+                    "Product",
+                    "Barcode",
+                    "Category",
+                    "Units Sold",
+                    "Revenue",
+                    "Average Price",
+                    "Branch Stock",
+                    "Minimum Stock",
+                    "Sales Status",
+                    "Stock Status",
+                ],
+
+            ];
+
+
+            filteredProducts.forEach(
                 (
                     product,
                     index
@@ -2632,136 +2870,192 @@ function ProductsReportPage() {
 
                     const stockStatus =
                         getStockStatus(
-                            product.stock
+                            product.stock,
+                            product.minimumStock
                         );
 
 
                     const averagePrice =
-                        product.sold > 0
+                        product.sold >
+                        0
                             ? product.revenue /
                               product.sold
                             : product.price;
 
 
-                    return [
+                    rows.push([
                         index + 1,
+
                         product.name,
+
                         product.barcode,
+
                         product.category,
+
                         product.sold,
+
                         Number(
                             product.revenue
                         ).toFixed(2),
+
                         Number(
                             averagePrice
                         ).toFixed(2),
-                        product.stock ?? "",
+
+                        product.stock ??
+                            "",
+
+                        product.minimumStock ??
+                            "",
+
                         velocity.label,
+
                         stockStatus.label,
-                    ];
+                    ]);
 
                 }
             );
 
 
-        const escapeCsv = (
-            value
-        ) => {
+            rows.push(
+                []
+            );
 
-            const text =
-                String(
-                    value ??
-                    ""
+
+            rows.push([
+                "Total Units Sold",
+                summary.totalSold,
+            ]);
+
+
+            rows.push([
+                "Product Revenue",
+                summary.totalRevenue.toFixed(
+                    2
+                ),
+            ]);
+
+
+            rows.push([
+                "Fast Moving Products",
+                summary.fastMoving,
+            ]);
+
+
+            rows.push([
+                "Low Stock Products",
+                summary.lowStock,
+            ]);
+
+
+            rows.push([
+                "Out of Stock Products",
+                summary.outOfStock,
+            ]);
+
+
+            const escapeCsv =
+                (
+                    value
+                ) => {
+
+                    const text =
+                        String(
+                            value ??
+                            ""
+                        );
+
+
+                    return `"${text.replace(
+                        /"/g,
+                        '""'
+                    )}"`;
+
+                };
+
+
+            const csv =
+                rows
+                    .map(
+                        (
+                            row
+                        ) =>
+                            row
+                                .map(
+                                    escapeCsv
+                                )
+                                .join(",")
+                    )
+                    .join("\n");
+
+
+            const blob =
+                new Blob(
+                    [
+                        "\uFEFF",
+                        csv,
+                    ],
+                    {
+                        type:
+                            "text/csv;charset=utf-8;",
+                    }
                 );
 
 
-            return `"${text.replace(
-                /"/g,
-                '""'
-            )}"`;
-
-        };
+            const url =
+                URL.createObjectURL(
+                    blob
+                );
 
 
-        const csv =
-            [
-                headers,
-                ...rows,
-            ]
-                .map(
-                    (row) =>
-                        row
-                            .map(
-                                escapeCsv
-                            )
-                            .join(",")
-                )
-                .join("\n");
+            const anchor =
+                document.createElement(
+                    "a"
+                );
 
 
-        const blob =
-            new Blob(
-                [
-                    "\uFEFF",
-                    csv,
-                ],
-                {
-                    type:
-                        "text/csv;charset=utf-8;",
-                }
-            );
+            const branchPart =
+                sanitizeFilePart(
+                    activeBranchCode ||
+                    activeBranchName
+                );
 
 
-        const url =
-            URL.createObjectURL(
-                blob
-            );
-
-
-        const anchor =
-            document.createElement(
-                "a"
-            );
-
-
-        const safePeriod =
-            period ===
-            "Custom Range"
-                ? `${appliedStartDate}-to-${appliedEndDate}`
-                : period
-                    .toLowerCase()
-                    .replace(
-                        /\s+/g,
-                        "-"
+            const safePeriod =
+                period ===
+                "Custom Range"
+                    ? `${appliedStartDate}-to-${appliedEndDate}`
+                    : sanitizeFilePart(
+                        period
                     );
 
 
-        anchor.href =
-            url;
+            anchor.href =
+                url;
 
 
-        anchor.download =
-            `product-report-${safePeriod}.csv`;
+            anchor.download =
+                `product-report-${branchPart}-${safePeriod}.csv`;
 
 
-        document.body.appendChild(
-            anchor
-        );
+            document.body.appendChild(
+                anchor
+            );
 
 
-        anchor.click();
+            anchor.click();
 
 
-        document.body.removeChild(
-            anchor
-        );
+            document.body.removeChild(
+                anchor
+            );
 
 
-        URL.revokeObjectURL(
-            url
-        );
+            URL.revokeObjectURL(
+                url
+            );
 
-    };
+        };
 
 
     /*
@@ -2771,8 +3065,7 @@ function ProductsReportPage() {
     */
 
     if (
-        loading &&
-        safeSales.length === 0
+        loading
     ) {
 
         return (
@@ -2825,16 +3118,7 @@ function ProductsReportPage() {
                                 "/reports"
                             )
                         }
-                        className="
-                            mb-3
-                            flex
-                            items-center
-                            gap-2
-                            text-sm
-                            text-base-content/50
-                            transition
-                            hover:text-primary
-                        "
+                        className="mb-3 flex items-center gap-2 text-sm text-base-content/50 transition hover:text-primary"
                     >
 
                         <FaArrowLeft />
@@ -2846,18 +3130,7 @@ function ProductsReportPage() {
 
                     <div className="flex items-center gap-3">
 
-                        <div
-                            className="
-                                flex
-                                h-12
-                                w-12
-                                items-center
-                                justify-center
-                                rounded-xl
-                                bg-primary/10
-                                text-primary
-                            "
-                        >
+                        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
 
                             <FaBox />
 
@@ -2875,7 +3148,7 @@ function ProductsReportPage() {
 
                             <p className="mt-1 text-sm text-base-content/55">
 
-                                Actual product sales, revenue and inventory performance.
+                                Product sales, revenue, and branch inventory performance.
 
                             </p>
 
@@ -2903,7 +3176,9 @@ function ProductsReportPage() {
                     >
 
                         {PERIOD_OPTIONS.map(
-                            (option) => (
+                            (
+                                option
+                            ) => (
 
                                 <option
                                     key={
@@ -2941,11 +3216,8 @@ function ProductsReportPage() {
 
                                 <FaCalendarDay />
 
-
                                 <span className="hidden sm:inline">
-
                                     Change Range
-
                                 </span>
 
                             </button>
@@ -2973,7 +3245,6 @@ function ProductsReportPage() {
                                     : ""
                             }
                         />
-
 
                         {
                             refreshing
@@ -3021,40 +3292,49 @@ function ProductsReportPage() {
 
 
             {/* ==================================================
+                ACTIVE BRANCH
+            ================================================== */}
+
+            <div className="flex items-center gap-3 rounded-xl border border-info/20 bg-info/5 px-4 py-3">
+
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-info/10 text-info">
+
+                    <FaBuilding />
+
+                </div>
+
+
+                <div>
+
+                    <p className="text-xs text-base-content/50">
+
+                        Active Branch
+
+                    </p>
+
+
+                    <p className="text-sm font-semibold">
+
+                        {
+                            activeBranchLabel
+                        }
+
+                    </p>
+
+                </div>
+
+            </div>
+
+
+            {/* ==================================================
                 PERIOD INDICATOR
             ================================================== */}
 
-            <div
-                className="
-                    flex
-                    flex-col
-                    gap-3
-                    rounded-xl
-                    border
-                    border-primary/20
-                    bg-primary/5
-                    px-4
-                    py-4
-                    sm:flex-row
-                    sm:items-center
-                    sm:justify-between
-                "
-            >
+            <div className="flex flex-col gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
 
                 <div className="flex items-center gap-3">
 
-                    <div
-                        className="
-                            flex
-                            h-10
-                            w-10
-                            items-center
-                            justify-center
-                            rounded-lg
-                            bg-primary/10
-                            text-primary
-                        "
-                    >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
 
                         <FaCalendarDay />
 
@@ -3091,11 +3371,15 @@ function ProductsReportPage() {
 
                                 <p className="mt-1 text-[10px] text-base-content/40">
 
-                                    {customRangeDays}{" "}
+                                    {
+                                        customRangeDays
+                                    }{" "}
+
                                     {customRangeDays ===
                                     1
                                         ? "day"
                                         : "days"}{" "}
+
                                     selected
 
                                 </p>
@@ -3113,18 +3397,18 @@ function ProductsReportPage() {
                         formatNumber(
                             periodSales.length
                         )
-                    }
+                    }{" "}
 
-                    {" "}sale
+                    sale
 
                     {
                         periodSales.length !==
                         1
                             ? "s"
                             : ""
-                    }
+                    }{" "}
 
-                    {" "}included
+                    included
 
                 </div>
 
@@ -3159,7 +3443,7 @@ function ProductsReportPage() {
                             summary.totalRevenue
                         )
                     }
-                    description="Net revenue from product sales"
+                    description="Net branch revenue from product sales"
                     icon={
                         FaMoneyBillWave
                     }
@@ -3197,8 +3481,8 @@ function ProductsReportPage() {
                     description={
                         summary.productsWithStock >
                         0
-                            ? "Products needing attention"
-                            : "No matching live stock data"
+                            ? "Based on branch minimum stock"
+                            : "No branch inventory available"
                     }
                     icon={
                         FaExclamationTriangle
@@ -3267,18 +3551,7 @@ function ProductsReportPage() {
                 />
 
 
-                {/* INVENTORY WARNING */}
-
-                <div
-                    className="
-                        rounded-xl
-                        border
-                        border-base-300
-                        bg-base-100
-                        p-5
-                        shadow-sm
-                    "
-                >
+                <div className="rounded-xl border border-base-300 bg-base-100 p-5 shadow-sm">
 
                     <div className="flex items-start justify-between">
 
@@ -3309,7 +3582,7 @@ function ProductsReportPage() {
                                     summary.productsWithStock >
                                     0
                                         ? `${summary.outOfStock} currently out of stock`
-                                        : "No matching live product stock was found."
+                                        : "No branch inventory information was found."
                                 }
 
                             </p>
@@ -3317,18 +3590,7 @@ function ProductsReportPage() {
                         </div>
 
 
-                        <div
-                            className="
-                                flex
-                                h-10
-                                w-10
-                                items-center
-                                justify-center
-                                rounded-xl
-                                bg-error/10
-                                text-error
-                            "
-                        >
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-error/10 text-error">
 
                             <FaWarehouse />
 
@@ -3344,7 +3606,7 @@ function ProductsReportPage() {
                                 "/inventory"
                             )
                         }
-                        className="btn btn-sm btn-outline mt-5"
+                        className="btn btn-outline btn-sm mt-5"
                     >
 
                         Open Inventory
@@ -3360,30 +3622,9 @@ function ProductsReportPage() {
                 PRODUCT TABLE
             ================================================== */}
 
-            <div
-                className="
-                    overflow-hidden
-                    rounded-xl
-                    border
-                    border-base-300
-                    bg-base-100
-                    shadow-sm
-                "
-            >
+            <div className="overflow-hidden rounded-xl border border-base-300 bg-base-100 shadow-sm">
 
-                <div
-                    className="
-                        flex
-                        flex-col
-                        gap-4
-                        border-b
-                        border-base-200
-                        p-5
-                        lg:flex-row
-                        lg:items-center
-                        lg:justify-between
-                    "
-                >
+                <div className="flex flex-col gap-4 border-b border-base-200 p-5 lg:flex-row lg:items-center lg:justify-between">
 
                     <div>
 
@@ -3396,7 +3637,7 @@ function ProductsReportPage() {
 
                         <p className="mt-1 text-xs text-base-content/50">
 
-                            Products aggregated from actual sales in the selected period.
+                            Global product catalog with sales and inventory for the active branch.
 
                         </p>
 
@@ -3407,16 +3648,7 @@ function ProductsReportPage() {
 
                         <div className="relative">
 
-                            <FaSearch
-                                className="
-                                    absolute
-                                    left-3
-                                    top-1/2
-                                    -translate-y-1/2
-                                    text-xs
-                                    text-base-content/35
-                                "
-                            />
+                            <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/35" />
 
 
                             <input
@@ -3428,8 +3660,7 @@ function ProductsReportPage() {
                                     event
                                 ) =>
                                     setSearch(
-                                        event
-                                            .target
+                                        event.target
                                             .value
                                     )
                                 }
@@ -3448,8 +3679,7 @@ function ProductsReportPage() {
                                 event
                             ) =>
                                 setSortBy(
-                                    event
-                                        .target
+                                    event.target
                                         .value
                                 )
                             }
@@ -3538,7 +3768,8 @@ function ProductsReportPage() {
 
                                     const stockStatus =
                                         getStockStatus(
-                                            product.stock
+                                            product.stock,
+                                            product.minimumStock
                                         );
 
 
@@ -3569,19 +3800,7 @@ function ProductsReportPage() {
 
                                             <td>
 
-                                                <div
-                                                    className="
-                                                        flex
-                                                        h-8
-                                                        w-8
-                                                        items-center
-                                                        justify-center
-                                                        rounded-lg
-                                                        bg-base-200
-                                                        text-xs
-                                                        font-bold
-                                                    "
-                                                >
+                                                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-base-200 text-xs font-bold">
 
                                                     {
                                                         index +
@@ -3614,6 +3833,17 @@ function ProductsReportPage() {
                                                         }
 
                                                     </p>
+
+
+                                                    {!product.currentProduct && (
+
+                                                        <p className="mt-1 text-[10px] text-warning">
+
+                                                            Historical product
+
+                                                        </p>
+
+                                                    )}
 
                                                 </div>
 
@@ -3691,10 +3921,10 @@ function ProductsReportPage() {
                                                             <span
                                                                 className={
                                                                     product.stock <=
-                                                                    5
+                                                                    0
                                                                         ? "font-bold text-error"
                                                                         : product.stock <=
-                                                                          10
+                                                                          product.minimumStock
                                                                             ? "font-bold text-warning"
                                                                             : "font-semibold"
                                                                 }
@@ -3770,46 +4000,16 @@ function ProductsReportPage() {
 
                                         <h3 className="mt-3 font-semibold">
 
-                                            {
-                                                products.length ===
-                                                0
-                                                    ? "No product sales in this period"
-                                                    : "No matching products"
-                                            }
+                                            No matching products
 
                                         </h3>
 
 
                                         <p className="mt-1 text-xs text-base-content/50">
 
-                                            {
-                                                products.length ===
-                                                0
-                                                    ? "Choose another period or make a sale."
-                                                    : "Try another product, barcode or category."
-                                            }
+                                            Try another product, barcode, or category.
 
                                         </p>
-
-
-                                        {products.length ===
-                                            0 && (
-
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    navigate(
-                                                        "/pos"
-                                                    )
-                                                }
-                                                className="btn btn-primary btn-sm mt-4"
-                                            >
-
-                                                Open POS
-
-                                            </button>
-
-                                        )}
 
                                     </td>
 
@@ -3824,22 +4024,7 @@ function ProductsReportPage() {
                 </div>
 
 
-                <div
-                    className="
-                        flex
-                        flex-col
-                        gap-2
-                        border-t
-                        border-base-200
-                        px-5
-                        py-3
-                        text-xs
-                        text-base-content/40
-                        sm:flex-row
-                        sm:items-center
-                        sm:justify-between
-                    "
-                >
+                <div className="flex flex-col gap-2 border-t border-base-200 px-5 py-3 text-xs text-base-content/40 sm:flex-row sm:items-center sm:justify-between">
 
                     <span>
 
@@ -3847,22 +4032,28 @@ function ProductsReportPage() {
 
                         {
                             filteredProducts.length
-                        }
+                        }{" "}
 
-                        {" "}of{" "}
+                        of{" "}
 
                         {
                             products.length
-                        }
+                        }{" "}
 
-                        {" "}products
+                        products
 
                     </span>
 
 
                     <span>
 
-                        Period:{" "}
+                        {
+                            activeBranchCode ||
+                            activeBranchName ||
+                            "Active Branch"
+                        }{" "}
+
+                        ·{" "}
 
                         {
                             currentPeriodTitle
@@ -3883,7 +4074,7 @@ function ProductsReportPage() {
 
                 <InsightPanel
                     title="Fast-Moving Products"
-                    description="Products with the strongest sales activity."
+                    description="Products with the strongest sales activity in this branch."
                     icon={
                         FaArrowUp
                     }
@@ -3894,7 +4085,9 @@ function ProductsReportPage() {
                         ...products,
                     ]
                         .filter(
-                            (product) =>
+                            (
+                                product
+                            ) =>
                                 getSalesVelocity(
                                     product.sold,
                                     period,
@@ -3915,7 +4108,9 @@ function ProductsReportPage() {
                             5
                         )
                         .map(
-                            (product) => (
+                            (
+                                product
+                            ) => (
 
                                 <InsightRow
                                     key={
@@ -3941,7 +4136,9 @@ function ProductsReportPage() {
 
                     {
                         products.filter(
-                            (product) =>
+                            (
+                                product
+                            ) =>
                                 getSalesVelocity(
                                     product.sold,
                                     period,
@@ -3963,7 +4160,7 @@ function ProductsReportPage() {
 
                 <InsightPanel
                     title="Products Needing Restock"
-                    description="Current stock warnings from the Products database."
+                    description="Current stock warnings for the active branch."
                     icon={
                         FaExclamationTriangle
                     }
@@ -3972,11 +4169,19 @@ function ProductsReportPage() {
 
                     {products
                         .filter(
-                            (product) =>
+                            (
+                                product
+                            ) =>
                                 product.stock !==
                                     null &&
                                 product.stock <=
-                                    10
+                                    Math.max(
+                                        Number(
+                                            product.minimumStock
+                                        ) ||
+                                        0,
+                                        0
+                                    )
                         )
                         .sort(
                             (
@@ -3991,7 +4196,9 @@ function ProductsReportPage() {
                             5
                         )
                         .map(
-                            (product) => (
+                            (
+                                product
+                            ) => (
 
                                 <InsightRow
                                     key={
@@ -4011,7 +4218,7 @@ function ProductsReportPage() {
                                     valueLabel="remaining"
                                     danger={
                                         product.stock <=
-                                        5
+                                        0
                                     }
                                 />
 
@@ -4025,16 +4232,24 @@ function ProductsReportPage() {
                             ? (
 
                                 <EmptyInsight
-                                    text="No matching current stock information was found."
+                                    text="No branch inventory information was found."
                                 />
 
                             )
                             : products.filter(
-                                (product) =>
+                                (
+                                    product
+                                ) =>
                                     product.stock !==
                                         null &&
                                     product.stock <=
-                                        10
+                                        Math.max(
+                                            Number(
+                                                product.minimumStock
+                                            ) ||
+                                            0,
+                                            0
+                                        )
                             ).length ===
                               0
                                 ? (
@@ -4056,32 +4271,11 @@ function ProductsReportPage() {
                 REPORT INFORMATION
             ================================================== */}
 
-            <div
-                className="
-                    rounded-xl
-                    border
-                    border-base-300
-                    bg-base-100
-                    p-5
-                    shadow-sm
-                "
-            >
+            <div className="rounded-xl border border-base-300 bg-base-100 p-5 shadow-sm">
 
                 <div className="flex items-start gap-3">
 
-                    <div
-                        className="
-                            flex
-                            h-10
-                            w-10
-                            shrink-0
-                            items-center
-                            justify-center
-                            rounded-lg
-                            bg-primary/10
-                            text-primary
-                        "
-                    >
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
 
                         <FaBoxes />
 
@@ -4099,7 +4293,7 @@ function ProductsReportPage() {
 
                         <p className="mt-1 text-xs leading-relaxed text-base-content/50">
 
-                            Sales figures are calculated from your actual sales records for the selected period. Voided transactions are excluded, refunded quantities are removed from units sold and revenue, and current stock, category, product name and barcode are matched against your live Products database. Custom Range lets you analyze any selected period.
+                            Product definitions and pricing come from the global product catalog. Sales quantities and revenue come only from the active branch. Voided sales are excluded and refunded quantities are removed. Stock and minimum-stock thresholds come from the active branch's BranchInventory records. Products with no sales remain visible so branch inventory warnings stay complete.
 
                         </p>
 
@@ -4118,9 +4312,6 @@ function ProductsReportPage() {
 
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
 
-
-                    {/* BACKDROP */}
-
                     <button
                         type="button"
                         aria-label="Close custom date range"
@@ -4131,12 +4322,7 @@ function ProductsReportPage() {
                     />
 
 
-                    {/* MODAL */}
-
                     <div className="relative z-10 w-full max-w-lg overflow-hidden rounded-2xl border border-base-200 bg-base-100 shadow-2xl">
-
-
-                        {/* HEADER */}
 
                         <div className="flex items-center justify-between border-b border-base-200 px-5 py-4">
 
@@ -4184,14 +4370,9 @@ function ProductsReportPage() {
                         </div>
 
 
-                        {/* BODY */}
-
                         <div className="space-y-5 p-5">
 
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-
-
-                                {/* FROM */}
 
                                 <div>
 
@@ -4216,11 +4397,9 @@ function ProductsReportPage() {
                                         ) => {
 
                                             setCustomStartDate(
-                                                event
-                                                    .target
+                                                event.target
                                                     .value
                                             );
-
 
                                             setDateError(
                                                 ""
@@ -4232,8 +4411,6 @@ function ProductsReportPage() {
 
                                 </div>
 
-
-                                {/* TO */}
 
                                 <div>
 
@@ -4258,11 +4435,9 @@ function ProductsReportPage() {
                                         ) => {
 
                                             setCustomEndDate(
-                                                event
-                                                    .target
+                                                event.target
                                                     .value
                                             );
-
 
                                             setDateError(
                                                 ""
@@ -4276,8 +4451,6 @@ function ProductsReportPage() {
 
                             </div>
 
-
-                            {/* RANGE PREVIEW */}
 
                             {customStartDate &&
                                 customEndDate &&
@@ -4325,29 +4498,23 @@ function ProductsReportPage() {
                                                             customStartDate
                                                         );
 
-
                                                     const end =
                                                         parseLocalDateString(
                                                             customEndDate
                                                         );
 
-
                                                     if (
                                                         !start ||
                                                         !end
                                                     ) {
-
                                                         return "";
-
                                                     }
-
 
                                                     const totalDays =
                                                         daysBetween(
                                                             start,
                                                             end
                                                         );
-
 
                                                     return `${totalDays} ${
                                                         totalDays ===
@@ -4369,8 +4536,6 @@ function ProductsReportPage() {
                             )}
 
 
-                            {/* ERROR */}
-
                             {dateError && (
 
                                 <div className="alert alert-error py-3">
@@ -4389,8 +4554,6 @@ function ProductsReportPage() {
 
                         </div>
 
-
-                        {/* FOOTER */}
 
                         <div className="flex items-center justify-end gap-2 border-t border-base-200 px-5 py-4">
 
@@ -4452,19 +4615,7 @@ function ReportCard({
 
     return (
 
-        <div
-            className="
-                rounded-xl
-                border
-                border-base-300
-                bg-base-100
-                p-5
-                shadow-sm
-                transition
-                hover:-translate-y-0.5
-                hover:shadow-md
-            "
-        >
+        <div className="rounded-xl border border-base-300 bg-base-100 p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
 
             <div className="flex items-start justify-between gap-3">
 
@@ -4536,16 +4687,7 @@ function HighlightCard({
 
     return (
 
-        <div
-            className="
-                rounded-xl
-                border
-                border-base-300
-                bg-base-100
-                p-5
-                shadow-sm
-            "
-        >
+        <div className="rounded-xl border border-base-300 bg-base-100 p-5 shadow-sm">
 
             <div className="flex items-start justify-between gap-3">
 
@@ -4634,16 +4776,7 @@ function InsightPanel({
 
     return (
 
-        <div
-            className="
-                rounded-xl
-                border
-                border-base-300
-                bg-base-100
-                p-5
-                shadow-sm
-            "
-        >
+        <div className="rounded-xl border border-base-300 bg-base-100 p-5 shadow-sm">
 
             <div className="mb-4 flex items-center gap-3">
 

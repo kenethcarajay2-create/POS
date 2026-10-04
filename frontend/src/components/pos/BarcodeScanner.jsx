@@ -1,282 +1,886 @@
-import { useEffect, useRef } from "react";
+import {
+    useEffect,
+    useRef,
+} from "react";
 
-import useProductStore from "../../store/product.store";
-import useCartStore from "../../store/cart.store";
+import useProductStore
+    from "../../store/product.store";
 
-function BarcodeScanner({ onNotFound }) {
+import useCartStore
+    from "../../store/cart.store";
 
-    const products = useProductStore(
-        (state) => state.products
+import preparedCartService
+    from "../../services/preparedCart.service";
+
+
+const PREPARED_CART_PREFIX =
+    "POSCART:";
+
+
+function BarcodeScanner({
+    onNotFound,
+    onPreparedCartLoaded,
+    onPreparedCartError,
+}) {
+
+    const products =
+        useProductStore(
+            (
+                state
+            ) =>
+                state.products
+        );
+
+
+    const setSearch =
+        useProductStore(
+            (
+                state
+            ) =>
+                state.setSearch
+        );
+
+
+    const addItem =
+        useCartStore(
+            (
+                state
+            ) =>
+                state.addItem
+        );
+
+
+    const importPreparedCart =
+        useCartStore(
+            (
+                state
+            ) =>
+                state.importPreparedCart
+        );
+
+
+    const items =
+        useCartStore(
+            (
+                state
+            ) =>
+                state.items
+        );
+
+
+    const preparedCart =
+        useCartStore(
+            (
+                state
+            ) =>
+                state.preparedCart
+        );
+
+
+    /*
+    ============================================================
+    SCANNER STATE
+    ============================================================
+    */
+
+    const mode =
+        useRef(
+            "NORMAL"
+        );
+
+
+    const quantity =
+        useRef(
+            1
+        );
+
+
+    const quantityBuffer =
+        useRef(
+            ""
+        );
+
+
+    const barcodeBuffer =
+        useRef(
+            ""
+        );
+
+
+    const quantityTimer =
+        useRef(
+            null
+        );
+
+
+    const processingPreparedCart =
+        useRef(
+            false
+        );
+
+
+    const recoveryAttempted =
+        useRef(
+            false
+        );
+
+
+    /*
+    ============================================================
+    LATEST CART STATE
+    ============================================================
+    */
+
+    const itemsRef =
+        useRef(
+            items
+        );
+
+
+    const preparedCartRef =
+        useRef(
+            preparedCart
+        );
+
+
+    useEffect(
+        () => {
+
+            itemsRef.current =
+                items;
+
+        },
+        [
+            items,
+        ]
     );
 
-    const setSearch = useProductStore(
-        (state) => state.setSearch
+
+    useEffect(
+        () => {
+
+            preparedCartRef.current =
+                preparedCart;
+
+        },
+        [
+            preparedCart,
+        ]
     );
 
-    const addItem = useCartStore(
-        (state) => state.addItem
-    );
+
+    /*
+    ============================================================
+    RESET SCANNER
+    ============================================================
+    */
+
+    const resetScanner =
+        () => {
+
+            barcodeBuffer.current =
+                "";
+
+            quantity.current =
+                1;
+
+            quantityBuffer.current =
+                "";
+
+            mode.current =
+                "NORMAL";
+
+        };
 
 
-    // NORMAL
-    // QUANTITY
-    // WAIT_SCAN
+    /*
+    ============================================================
+    IMPORT CLAIM RESULT
+    ============================================================
+    */
 
-    const mode = useRef("NORMAL");
+    const importClaimResult =
+        async (
+            claimedCart
+        ) => {
 
-    const quantity = useRef(1);
+            /*
+            Save claim BEFORE importing.
 
-    const quantityBuffer = useRef("");
+            If the page crashes immediately after the cloud
+            claim succeeds, Ctrl+R can still recover it.
+            */
 
-    const barcodeBuffer = useRef("");
+            preparedCartService
+                .saveRecoveryClaim({
 
-    const quantityTimer = useRef(null);
+                    preparedCartId:
+                        claimedCart
+                            .preparedCartId,
+
+                    claimToken:
+                        claimedCart
+                            .claimToken,
+
+                });
 
 
-    useEffect(() => {
-
-        const handleKeyDown = (e) => {
-
-            // =================================
-            // F7 - QUANTITY MODE
-            // =================================
-
-            if (e.key === "F7") {
-
-                e.preventDefault();
-
-                mode.current = "QUANTITY";
-
-                quantityBuffer.current = "";
-
-                console.log(
-                    "Enter Quantity..."
+            const imported =
+                importPreparedCart(
+                    claimedCart
                 );
 
-                return;
-            }
-
-
-            // =================================
-            // ESC - CANCEL
-            // =================================
-
-            if (e.key === "Escape") {
-
-                mode.current = "NORMAL";
-
-                quantity.current = 1;
-
-                quantityBuffer.current = "";
-
-                barcodeBuffer.current = "";
-
-                console.log("Cancelled");
-
-                return;
-            }
-
-
-            // =================================
-            // QUANTITY MODE
-            // =================================
 
             if (
-                mode.current === "QUANTITY"
+                imported
             ) {
 
-                if (
-                    /^[0-9]$/.test(e.key)
-                ) {
+                return true;
 
-                    quantityBuffer.current +=
-                        e.key;
-
-                    console.log(
-                        "Qty:",
-                        quantityBuffer.current
-                    );
-
-                    clearTimeout(
-                        quantityTimer.current
-                    );
-
-                    quantityTimer.current =
-                        setTimeout(() => {
-
-                            quantity.current =
-                                Number(
-                                    quantityBuffer.current
-                                ) || 1;
-
-                            mode.current =
-                                "WAIT_SCAN";
-
-                            console.log(
-                                "Waiting for barcode..."
-                            );
-
-                        }, 500);
-
-                }
-
-                return;
             }
 
 
-            // =================================
-            // ENTER - BARCODE COMPLETE
-            // =================================
+            /*
+            Local cart changed while cloud request was in
+            flight.
 
-            if (e.key === "Enter") {
+            Release the claim if possible.
+            */
 
-                if (
-                    !barcodeBuffer.current
-                ) {
-                    return;
-                }
+            try {
 
-                e.preventDefault();
+                await preparedCartService
+                    .releasePreparedCart(
 
-                // Prevent ProductGrid from
-                // also processing this Enter.
-                e.stopImmediatePropagation();
+                        claimedCart
+                            .preparedCartId,
 
+                        claimedCart
+                            .claimToken
 
-                const scannedBarcode =
-                    barcodeBuffer.current.trim();
+                    );
 
 
-                // ---------------------------------
-                // SHOW BARCODE IN SEARCH BAR
-                // ---------------------------------
+                preparedCartService
+                    .clearRecoveryClaim();
 
-                setSearch(
-                    scannedBarcode
+
+            } catch (
+                releaseError
+            ) {
+
+                /*
+                Keep recovery credentials.
+
+                If release failed because of a network problem,
+                losing the token would strand the CLAIMED cart.
+                */
+
+                console.warn(
+                    "Unable to release PreparedCart after import failure:",
+                    releaseError
+                );
+
+            }
+
+
+            return false;
+
+        };
+
+
+    /*
+    ============================================================
+    PROCESS NEW QR CLAIM
+    ============================================================
+    */
+
+    const processPreparedCart =
+        async (
+            qrPayload
+        ) => {
+
+            if (
+                processingPreparedCart.current
+            ) {
+
+                return;
+
+            }
+
+
+            if (
+                itemsRef.current.length >
+                    0 ||
+                preparedCartRef.current
+            ) {
+
+                onPreparedCartError?.(
+                    "Clear or complete the current cart before scanning a mobile order."
                 );
 
 
-                // ---------------------------------
-                // FIND PRODUCT
-                // ---------------------------------
+                return;
 
-                const product =
-                    products.find(
-                        (p) =>
-                            String(
-                                p.barcode
-                            ).trim() ===
-                            scannedBarcode
-                    );
+            }
 
 
-                // ---------------------------------
-                // PRODUCT FOUND
-                // ---------------------------------
-
-                if (product) {
-
-                    addItem(
-                        product,
-                        quantity.current
-                    );
-
-                    console.log(
-                        `Added ${product.name} x${quantity.current}`
-                    );
-
-                }
+            processingPreparedCart.current =
+                true;
 
 
-                // ---------------------------------
-                // PRODUCT NOT FOUND
-                // ---------------------------------
+            try {
 
-                else {
-
-                    console.log(
-                        "Product not found:",
-                        scannedBarcode
-                    );
-
-                    if (onNotFound) {
-
-                        onNotFound(
-                            scannedBarcode
+                const claimedCart =
+                    await preparedCartService
+                        .claimPreparedCart(
+                            qrPayload
                         );
 
-                    }
 
-                }
+                const imported =
+                    await importClaimResult(
+                        claimedCart
+                    );
 
-
-                // ---------------------------------
-                // RESET
-                // ---------------------------------
-
-                barcodeBuffer.current = "";
-
-                quantity.current = 1;
-
-                quantityBuffer.current = "";
-
-                mode.current = "NORMAL";
-
-                return;
-            }
-
-
-            // =================================
-            // BARCODE CHARACTERS
-            // =================================
-
-            if (
-                mode.current === "NORMAL" ||
-                mode.current === "WAIT_SCAN"
-            ) {
 
                 if (
-                    e.key.length === 1
+                    !imported
                 ) {
 
-                    barcodeBuffer.current +=
-                        e.key;
+                    onPreparedCartError?.(
+                        "The mobile order was claimed but could not be loaded because the desktop cart changed."
+                    );
+
+
+                    return;
 
                 }
+
+
+                onPreparedCartLoaded?.(
+                    claimedCart
+                );
+
+
+            } catch (
+                error
+            ) {
+
+                onPreparedCartError?.(
+                    error?.response
+                        ?.data
+                        ?.message ||
+                    error?.message ||
+                    "Unable to load mobile prepared cart."
+                );
+
+
+            } finally {
+
+                processingPreparedCart.current =
+                    false;
 
             }
 
         };
 
 
-        window.addEventListener(
-            "keydown",
-            handleKeyDown
-        );
+    /*
+    ============================================================
+    AUTO-RECOVER AFTER REFRESH
+    ============================================================
+    */
+
+    useEffect(
+        () => {
+
+            if (
+                recoveryAttempted.current
+            ) {
+
+                return;
+
+            }
 
 
-        return () => {
+            recoveryAttempted.current =
+                true;
 
-            window.removeEventListener(
+
+            const recover =
+                async () => {
+
+                    const recoveryClaim =
+                        preparedCartService
+                            .getRecoveryClaim();
+
+
+                    if (
+                        !recoveryClaim
+                    ) {
+
+                        return;
+
+                    }
+
+
+                    /*
+                    If something already rebuilt the cart, do
+                    not overwrite it.
+                    */
+
+                    if (
+                        itemsRef.current.length >
+                            0 ||
+                        preparedCartRef.current
+                    ) {
+
+                        return;
+
+                    }
+
+
+                    processingPreparedCart.current =
+                        true;
+
+
+                    try {
+
+                        const recoveredCart =
+                            await preparedCartService
+                                .recoverPreparedCart(
+
+                                    recoveryClaim
+                                        .preparedCartId,
+
+                                    recoveryClaim
+                                        .claimToken
+
+                                );
+
+
+                        const imported =
+                            importPreparedCart(
+                                recoveredCart
+                            );
+
+
+                        if (
+                            !imported
+                        ) {
+
+                            return;
+
+                        }
+
+
+                        onPreparedCartLoaded?.({
+
+                            ...recoveredCart,
+
+                            recovered:
+                                true,
+
+                        });
+
+
+                    } catch (
+                        error
+                    ) {
+
+                        const status =
+                            error?.response
+                                ?.status;
+
+
+                        /*
+                        ------------------------------------------------
+                        TERMINAL RECOVERY RESULTS
+                        ------------------------------------------------
+
+                        404:
+                            cart no longer exists
+
+                        409:
+                            consumed/cancelled/local sale already
+                            committed/claim no longer belongs here
+
+                        410:
+                            expired
+
+                        In these cases the saved credential must not
+                        keep retrying forever after every refresh.
+
+                        503/network errors are intentionally retained.
+                        ------------------------------------------------
+                        */
+
+                        if (
+                            status ===
+                                404 ||
+                            status ===
+                                409 ||
+                            status ===
+                                410
+                        ) {
+
+                            preparedCartService
+                                .clearRecoveryClaim();
+
+                        }
+
+
+                        onPreparedCartError?.(
+                            error?.response
+                                ?.data
+                                ?.message ||
+                            error?.message ||
+                            "Unable to recover the mobile order."
+                        );
+
+
+                    } finally {
+
+                        processingPreparedCart.current =
+                            false;
+
+                    }
+
+                };
+
+
+            recover();
+
+        },
+        [
+            importPreparedCart,
+            onPreparedCartLoaded,
+            onPreparedCartError,
+        ]
+    );
+
+
+    /*
+    ============================================================
+    GLOBAL BARCODE LISTENER
+    ============================================================
+    */
+
+    useEffect(
+        () => {
+
+            const handleKeyDown =
+                (
+                    event
+                ) => {
+
+                    /*
+                    =============================================
+                    F7 QUANTITY MODE
+                    =============================================
+                    */
+
+                    if (
+                        event.key ===
+                        "F7"
+                    ) {
+
+                        event.preventDefault();
+
+
+                        mode.current =
+                            "QUANTITY";
+
+
+                        quantityBuffer.current =
+                            "";
+
+
+                        console.log(
+                            "Enter Quantity..."
+                        );
+
+
+                        return;
+
+                    }
+
+
+                    /*
+                    =============================================
+                    ESCAPE
+                    =============================================
+                    */
+
+                    if (
+                        event.key ===
+                        "Escape"
+                    ) {
+
+                        resetScanner();
+
+
+                        console.log(
+                            "Cancelled"
+                        );
+
+
+                        return;
+
+                    }
+
+
+                    /*
+                    =============================================
+                    QUANTITY MODE
+                    =============================================
+                    */
+
+                    if (
+                        mode.current ===
+                        "QUANTITY"
+                    ) {
+
+                        if (
+                            /^[0-9]$/
+                                .test(
+                                    event.key
+                                )
+                        ) {
+
+                            quantityBuffer.current +=
+                                event.key;
+
+
+                            console.log(
+                                "Qty:",
+                                quantityBuffer.current
+                            );
+
+
+                            clearTimeout(
+                                quantityTimer.current
+                            );
+
+
+                            quantityTimer.current =
+                                setTimeout(
+                                    () => {
+
+                                        quantity.current =
+                                            Number(
+                                                quantityBuffer.current
+                                            ) ||
+                                            1;
+
+
+                                        mode.current =
+                                            "WAIT_SCAN";
+
+
+                                        console.log(
+                                            "Waiting for barcode..."
+                                        );
+
+                                    },
+                                    500
+                                );
+
+                        }
+
+
+                        return;
+
+                    }
+
+
+                    /*
+                    =============================================
+                    ENTER - SCAN COMPLETE
+                    =============================================
+                    */
+
+                    if (
+                        event.key ===
+                        "Enter"
+                    ) {
+
+                        if (
+                            !barcodeBuffer.current
+                        ) {
+
+                            return;
+
+                        }
+
+
+                        event.preventDefault();
+
+                        event.stopImmediatePropagation();
+
+
+                        const scannedValue =
+                            barcodeBuffer.current
+                                .trim();
+
+
+                        /*
+                        IMPORTANT:
+
+                        Save quantity BEFORE resetScanner().
+                        */
+
+                        const scannedQuantity =
+                            quantity.current;
+
+
+                        resetScanner();
+
+
+                        /*
+                        =========================================
+                        PREPARED CART
+                        =========================================
+                        */
+
+                        if (
+                            scannedValue.startsWith(
+                                PREPARED_CART_PREFIX
+                            )
+                        ) {
+
+                            processPreparedCart(
+                                scannedValue
+                            );
+
+
+                            return;
+
+                        }
+
+
+                        /*
+                        =========================================
+                        NORMAL PRODUCT BARCODE
+                        =========================================
+                        */
+
+                        setSearch(
+                            scannedValue
+                        );
+
+
+                        const product =
+                            products.find(
+                                (
+                                    productItem
+                                ) =>
+
+                                    String(
+                                        productItem.barcode
+                                    ).trim() ===
+                                    scannedValue
+                            );
+
+
+                        if (
+                            product
+                        ) {
+
+                            addItem(
+                                product,
+                                scannedQuantity
+                            );
+
+
+                            console.log(
+                                `Added ${product.name} x${scannedQuantity}`
+                            );
+
+
+                            return;
+
+                        }
+
+
+                        console.log(
+                            "Product not found:",
+                            scannedValue
+                        );
+
+
+                        onNotFound?.(
+                            scannedValue
+                        );
+
+
+                        return;
+
+                    }
+
+
+                    /*
+                    =============================================
+                    BARCODE CHARACTERS
+                    =============================================
+                    */
+
+                    if (
+                        mode.current ===
+                            "NORMAL" ||
+                        mode.current ===
+                            "WAIT_SCAN"
+                    ) {
+
+                        if (
+                            event.key.length ===
+                            1
+                        ) {
+
+                            barcodeBuffer.current +=
+                                event.key;
+
+                        }
+
+                    }
+
+                };
+
+
+            window.addEventListener(
                 "keydown",
                 handleKeyDown
             );
 
-            clearTimeout(
-                quantityTimer.current
-            );
 
-        };
+            return () => {
 
-    }, [
-        products,
-        addItem,
-        setSearch,
-        onNotFound,
-    ]);
+                window.removeEventListener(
+                    "keydown",
+                    handleKeyDown
+                );
+
+
+                clearTimeout(
+                    quantityTimer.current
+                );
+
+            };
+
+        },
+        [
+            products,
+            addItem,
+            setSearch,
+            onNotFound,
+        ]
+    );
 
 
     return null;
+
 }
+
 
 export default BarcodeScanner;

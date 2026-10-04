@@ -50,6 +50,99 @@ const getUsers =
 
 /*
 ==========================================================
+GET USERS FOR ACTIVE BRANCH
+==========================================================
+
+Used by reports and other branch-sensitive screens.
+
+The branch comes only from resolveActiveBranch.
+The frontend does not choose a branch through query params.
+==========================================================
+*/
+
+const getUsersForBranch =
+    async (
+        req,
+        res,
+        next
+    ) => {
+
+        try {
+
+            /*
+            ==================================================
+            REPORT ACCESS
+            ==================================================
+
+            Admins always have access.
+
+            Other users must have reports permission.
+            ==================================================
+            */
+
+            const canViewReports =
+                req.user?.role ===
+                    "admin" ||
+                req.user?.permissions
+                    ?.reports ===
+                    true;
+
+
+            if (
+                !canViewReports
+            ) {
+
+                return res
+                    .status(
+                        403
+                    )
+                    .json({
+
+                        success:
+                            false,
+
+                        message:
+                            "You do not have permission to view report users.",
+
+                    });
+
+            }
+
+
+            const users =
+                await userService
+                    .getUsersForBranch(
+                        req.branchId
+                    );
+
+
+            res
+                .status(
+                    200
+                )
+                .json(
+                    new ApiResponse(
+                        true,
+                        "Branch users retrieved successfully",
+                        users
+                    )
+                );
+
+
+        } catch (
+            error
+        ) {
+
+            next(
+                error
+            );
+
+        }
+
+    };
+
+/*
+==========================================================
 GET USER BY ID
 ==========================================================
 */
@@ -419,10 +512,11 @@ const enableUser =
 EXPORT
 ==========================================================
 */
-
 export default {
 
     getUsers,
+
+    getUsersForBranch,
 
     getUserById,
 
@@ -436,6 +530,6 @@ export default {
 
     enableUser,
 
-    uploadProfileImage
+    uploadProfileImage,
 
 };

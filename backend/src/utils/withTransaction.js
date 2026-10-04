@@ -1,22 +1,61 @@
 import mongoose from "mongoose";
 
-const withTransaction = async (callback) => {
-    const session = await mongoose.startSession();
+
+/*
+============================================================
+WITH TRANSACTION
+============================================================
+
+Uses MongoDB driver's transaction helper.
+
+session.withTransaction() automatically retries certain
+transient transaction failures and commit uncertainty.
+
+IMPORTANT:
+
+MongoDB transactions require a replica set.
+
+MongoDB Atlas already supports this.
+
+A local standalone mongod does not.
+============================================================
+*/
+
+const withTransaction = async (
+    callback
+) => {
+
+    const session =
+        await mongoose.startSession();
+
 
     try {
-        session.startTransaction();
 
-        const result = await callback(session);
+        let result;
 
-        await session.commitTransaction();
+
+        await session.withTransaction(
+            async () => {
+
+                result =
+                    await callback(
+                        session
+                    );
+
+            }
+        );
+
 
         return result;
-    } catch (error) {
-        await session.abortTransaction();
-        throw error;
+
+
     } finally {
-        session.endSession();
+
+        await session.endSession();
+
     }
+
 };
+
 
 export default withTransaction;

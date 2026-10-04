@@ -1,15 +1,41 @@
-
 import {
     getCloudConnection,
     isCloudConnected,
     connectCloudDatabase,
 } from "../config/cloudDatabase.js";
 
-import SyncState from "../models/syncState.model.js";
+import SyncState
+    from "../models/syncState.model.js";
 
-import Product from "../models/product.model.js";
-import Sale from "../models/sale.model.js";
-import User from "../models/user.model.js";
+import Branch
+    from "../models/branch.model.js";
+
+import BranchInventory
+    from "../models/branchInventory.model.js";
+
+import Product
+    from "../models/product.model.js";
+
+import Sale
+    from "../models/sale.model.js";
+
+import SaleItem
+    from "../models/saleItem.model.js";
+
+import User
+    from "../models/user.model.js";
+
+import Counter
+    from "../models/counter.model.js";
+
+import Customer
+    from "../models/customer.model.js";
+
+import CustomerCounter
+    from "../models/customerCounter.model.js";
+
+import LoyaltyTransaction
+    from "../models/loyaltyTransaction.model.js";
 
 import InventoryMovement
     from "../models/inventoryMovement.model.js";
@@ -26,13 +52,44 @@ import LedgerTransaction
 import WorkerLedger
     from "../models/workerLedger.model.js";
 
+import WorkerAttendance
+    from "../models/workerAttendance.model.js";
+
+import StockTransfer
+    from "../models/stockTransfer.model.js";
+
+import BulkOrder
+    from "../models/bulkOrder.model.js";
+
+
 /*
 ============================================================
 SYNC CONFIG
 ============================================================
 */
 
-const SYNC_KEY = "cloudSync";
+const SYNC_KEY =
+    "cloudSync";
+
+
+/*
+============================================================
+STALE LOCK TIMEOUT
+============================================================
+
+If StorePOS crashes while status is SYNCING, the database
+can retain that value.
+
+After this amount of time we consider the old SYNCING state
+abandoned and allow synchronization to recover.
+
+Five minutes is intentionally much longer than the normal
+live-sync interval.
+============================================================
+*/
+
+const STALE_SYNC_LOCK_MS =
+    5 * 60 * 1000;
 
 
 /*
@@ -40,69 +97,384 @@ const SYNC_KEY = "cloudSync";
 COLLECTION REGISTRY
 ============================================================
 
-Add more local models here later.
+LOCAL DATABASE
+        ↓
+CLOUD DATABASE
 
-Example:
+Cloud remains a one-way mirror.
 
-{
-    key: "inventoryTransactions",
-    model: InventoryTransaction,
-    modelName: "InventoryTransaction",
-}
+The local StorePOS database is authoritative.
 
-The sync engine below will automatically include them.
+syncMode:
+
+incremental
+    Uses updatedAt.
+
+full
+    Synchronizes the complete collection every run.
+
+Counter requires full mode because it intentionally has no
+updatedAt field.
 ============================================================
-*/const SYNC_COLLECTIONS = [
+*/
+
+const SYNC_COLLECTIONS = [
 
     {
-        key: "products",
-        model: Product,
-        modelName: "Product",
+        key:
+            "branches",
+
+        model:
+            Branch,
+
+        modelName:
+            "Branch",
+
+        syncMode:
+            "incremental",
     },
 
-    {
-        key: "sales",
-        model: Sale,
-        modelName: "Sale",
-    },
 
     {
-        key: "users",
-        model: User,
-        modelName: "User",
+        key:
+            "products",
+
+        model:
+            Product,
+
+        modelName:
+            "Product",
+
+        syncMode:
+            "incremental",
     },
 
-    {
-        key: "inventoryMovements",
-        model: InventoryMovement,
-        modelName: "InventoryMovement",
-    },
 
     {
-        key: "inventoryTransactions",
-        model: InventoryTransaction,
-        modelName: "InventoryTransaction",
+        key:
+            "users",
+
+        model:
+            User,
+
+        modelName:
+            "User",
+
+        syncMode:
+            "incremental",
     },
 
-    {
-        key: "ledgerAccounts",
-        model: LedgerAccount,
-        modelName: "LedgerAccount",
-    },
+
+    /*
+    Counter must be backed up because it contains sequences
+    such as receipt numbers and product barcode sequences.
+
+    Counter does not have timestamps, so the entire tiny
+    collection is copied every synchronization.
+    */
 
     {
-        key: "ledgerTransactions",
-        model: LedgerTransaction,
-        modelName: "LedgerTransaction",
+        key:
+            "counters",
+
+        model:
+            Counter,
+
+        modelName:
+            "Counter",
+
+        syncMode:
+            "full",
     },
 
+
     {
-        key: "workerLedgers",
-        model: WorkerLedger,
-        modelName: "WorkerLedger",
+        key:
+            "customerCounters",
+
+        model:
+            CustomerCounter,
+
+        modelName:
+            "CustomerCounter",
+
+        syncMode:
+            "incremental",
+    },
+
+
+    /*
+    Customers can reference LedgerAccount, so accounts are
+    uploaded first.
+    */
+
+    {
+        key:
+            "ledgerAccounts",
+
+        model:
+            LedgerAccount,
+
+        modelName:
+            "LedgerAccount",
+
+        syncMode:
+            "incremental",
+    },
+
+
+    {
+        key:
+            "customers",
+
+        model:
+            Customer,
+
+        modelName:
+            "Customer",
+
+        syncMode:
+            "incremental",
+    },
+
+
+    /*
+    BranchInventory is the authoritative stock source.
+
+    Product.stock remains legacy compatibility data only.
+    */
+
+    {
+        key:
+            "branchInventories",
+
+        model:
+            BranchInventory,
+
+        modelName:
+            "BranchInventory",
+
+        syncMode:
+            "incremental",
+    },
+
+
+    {
+        key:
+            "sales",
+
+        model:
+            Sale,
+
+        modelName:
+            "Sale",
+
+        syncMode:
+            "incremental",
+    },
+
+
+    /*
+    SaleItem remains included because it is still a real
+    persisted model even though Sale may also contain
+    embedded item information.
+    */
+
+    {
+        key:
+            "saleItems",
+
+        model:
+            SaleItem,
+
+        modelName:
+            "SaleItem",
+
+        syncMode:
+            "incremental",
+    },
+
+
+    {
+        key:
+            "loyaltyTransactions",
+
+        model:
+            LoyaltyTransaction,
+
+        modelName:
+            "LoyaltyTransaction",
+
+        syncMode:
+            "incremental",
+    },
+
+
+    {
+        key:
+            "inventoryMovements",
+
+        model:
+            InventoryMovement,
+
+        modelName:
+            "InventoryMovement",
+
+        syncMode:
+            "incremental",
+    },
+
+
+    {
+        key:
+            "inventoryTransactions",
+
+        model:
+            InventoryTransaction,
+
+        modelName:
+            "InventoryTransaction",
+
+        syncMode:
+            "incremental",
+    },
+
+
+    {
+        key:
+            "ledgerTransactions",
+
+        model:
+            LedgerTransaction,
+
+        modelName:
+            "LedgerTransaction",
+
+        syncMode:
+            "incremental",
+    },
+
+
+    {
+        key:
+            "workerLedgers",
+
+        model:
+            WorkerLedger,
+
+        modelName:
+            "WorkerLedger",
+
+        syncMode:
+            "incremental",
+    },
+
+
+    /*
+    Worker attendance is branch-owned operational data.
+
+    Only absence overrides / attendance corrections are
+    persisted locally.
+
+    Since WorkerAttendance has timestamps, incremental sync
+    safely mirrors both:
+
+    PRESENT -> ABSENT
+    ABSENT  -> PRESENT
+    */
+
+    {
+        key:
+            "workerAttendances",
+
+        model:
+            WorkerAttendance,
+
+        modelName:
+            "WorkerAttendance",
+
+        syncMode:
+            "incremental",
+    },
+
+
+    /*
+    Stock transfers are normal locally-owned operational
+    records.
+
+    PreparedCart is intentionally NOT included here because
+    PreparedCart is cloud-owned and uses its own durable
+    finalize command workflow.
+    */
+
+    {
+        key:
+            "stockTransfers",
+
+        model:
+            StockTransfer,
+
+        modelName:
+            "StockTransfer",
+
+        syncMode:
+            "incremental",
+    },
+
+
+    /*
+    ========================================================
+    BULK ORDERS
+    ========================================================
+
+    Bulk Orders are locally-owned branch operational records.
+
+    They are created and edited on the StorePOS desktop/local
+    database and mirrored to the cloud.
+
+    Bulk Orders do NOT:
+
+    - reserve inventory
+    - deduct inventory
+    - create Sales
+    - process payment
+
+    When a Bulk Order is eventually loaded into POS, the
+    normal Sale workflow remains authoritative.
+
+    BulkOrder has timestamps, so incremental synchronization
+    safely captures:
+
+    - CREATE
+    - SAVE
+    - UPDATE / REVISION
+    - PRINT AUDIT
+    - CANCEL
+    - COMPLETE / SALE LINK
+
+    PreparedCart remains different because PreparedCart is
+    cloud-owned and is intentionally excluded from this
+    registry.
+    ========================================================
+    */
+
+    {
+        key:
+            "bulkOrders",
+
+        model:
+            BulkOrder,
+
+        modelName:
+            "BulkOrder",
+
+        syncMode:
+            "incremental",
     },
 
 ];
+
+
 /*
 ============================================================
 GET / CREATE SYNC STATE
@@ -113,31 +485,144 @@ const getSyncState = async () => {
 
     let state =
         await SyncState.findOne({
-            key: SYNC_KEY,
+            key:
+                SYNC_KEY,
         });
 
 
-    if (!state) {
+    if (
+        !state
+    ) {
 
         state =
             await SyncState.create({
-                key: SYNC_KEY,
+                key:
+                    SYNC_KEY,
             });
 
     }
 
 
     return state;
+
 };
 
 
 /*
 ============================================================
-GET CLOUD MODEL
+CHECK STALE SYNC LOCK
 ============================================================
 
-Uses the LOCAL schema but registers it against
-the separate Atlas connection.
+A real running synchronization updates SyncState when it
+enters SYNCING.
+
+If StorePOS crashes after that point, the document can stay
+SYNCING forever.
+
+We use updatedAt to determine whether the lock is stale.
+============================================================
+*/
+
+const isSyncLockStale = (
+    state
+) => {
+
+    if (
+        !state ||
+        state.status !==
+            "SYNCING"
+    ) {
+
+        return false;
+
+    }
+
+
+    if (
+        !state.updatedAt
+    ) {
+
+        return true;
+
+    }
+
+
+    const updatedAt =
+        new Date(
+            state.updatedAt
+        ).getTime();
+
+
+    if (
+        Number.isNaN(
+            updatedAt
+        )
+    ) {
+
+        return true;
+
+    }
+
+
+    const age =
+        Date.now() -
+        updatedAt;
+
+
+    return (
+        age >=
+        STALE_SYNC_LOCK_MS
+    );
+
+};
+
+
+/*
+============================================================
+RECOVER STALE SYNC LOCK
+============================================================
+*/
+
+const recoverStaleSyncLock =
+    async (
+        state
+    ) => {
+
+        if (
+            !isSyncLockStale(
+                state
+            )
+        ) {
+
+            return false;
+
+        }
+
+
+        console.warn(
+            "☁️ Recovering stale cloud sync lock."
+        );
+
+
+        state.status =
+            "FAILED";
+
+
+        state.lastError =
+            "Previous cloud sync was interrupted and its stale lock was automatically recovered.";
+
+
+        await state.save();
+
+
+        return true;
+
+    };
+
+
+/*
+============================================================
+GET CLOUD MODEL
 ============================================================
 */
 
@@ -150,7 +635,9 @@ const getCloudModel = (
         getCloudConnection();
 
 
-    if (!cloudConnection) {
+    if (
+        !cloudConnection
+    ) {
 
         throw new Error(
             "Cloud database is not connected."
@@ -158,10 +645,6 @@ const getCloudModel = (
 
     }
 
-
-    /*
-    Reuse already-registered cloud model.
-    */
 
     if (
         cloudConnection.models[
@@ -181,23 +664,59 @@ const getCloudModel = (
         localModel.schema,
         localModel.collection.name
     );
+
+};
+
+
+/*
+============================================================
+BUILD INCREMENTAL QUERY
+============================================================
+*/
+
+const buildIncrementalQuery = ({
+    lastSyncAt,
+    syncStartedAt,
+}) => {
+
+    if (
+        lastSyncAt
+    ) {
+
+        return {
+
+            updatedAt: {
+
+                $gt:
+                    lastSyncAt,
+
+                $lte:
+                    syncStartedAt,
+
+            },
+
+        };
+
+    }
+
+
+    return {
+
+        updatedAt: {
+
+            $lte:
+                syncStartedAt,
+
+        },
+
+    };
+
 };
 
 
 /*
 ============================================================
 SYNC COLLECTION
-============================================================
-
-Incremental sync:
-
-First sync:
-    uploads everything
-
-Next syncs:
-    only documents where updatedAt > lastSyncAt
-
-Each document keeps the SAME _id locally and in Atlas.
 ============================================================
 */
 
@@ -206,51 +725,85 @@ const syncCollection = async ({
     cloudModel,
     lastSyncAt,
     syncStartedAt,
+    syncMode = "incremental",
 }) => {
+
+    let query =
+        {};
+
 
     /*
     ========================================================
-    QUERY
-    ========================================================
-
-    The upper bound prevents us from including documents
-    modified after this sync started.
-
-    Those documents will be picked up by the next sync.
+    QUERY MODE
     ========================================================
     */
 
-    const query = {
+    if (
+        syncMode ===
+        "incremental"
+    ) {
 
-        ...(lastSyncAt
-            ? {
-                updatedAt: {
-                    $gt: lastSyncAt,
-                    $lte: syncStartedAt,
-                },
-            }
-            : {
-                updatedAt: {
-                    $lte: syncStartedAt,
-                },
-            }),
+        query =
+            buildIncrementalQuery({
+                lastSyncAt,
+                syncStartedAt,
+            });
 
-    };
+    } else if (
+        syncMode ===
+        "full"
+    ) {
 
+        query =
+            {};
+
+    } else {
+
+        throw new Error(
+            `Unsupported cloud sync mode: ${syncMode}`
+        );
+
+    }
+
+
+    /*
+    ========================================================
+    LOAD LOCAL DOCUMENTS
+    ========================================================
+    */
 
     const documents =
         await localModel
-            .find(query)
+            .find(
+                query
+            )
             .lean();
 
 
     if (
-        documents.length === 0
+        documents.length ===
+        0
     ) {
 
         return {
-            scanned: 0,
-            synced: 0,
+
+            scanned:
+                0,
+
+            synced:
+                0,
+
+            matched:
+                0,
+
+            modified:
+                0,
+
+            upserted:
+                0,
+
+            syncMode,
+
         };
 
     }
@@ -258,21 +811,21 @@ const syncCollection = async ({
 
     /*
     ========================================================
-    BULK UPSERT
-    ========================================================
-
-    Much faster than one updateOne() request per document.
+    BUILD CLOUD UPSERTS
     ========================================================
     */
 
     const operations =
         documents.map(
-            (document) => {
+            (
+                document
+            ) => {
 
                 const {
                     _id,
                     ...data
-                } = document;
+                } =
+                    document;
 
 
                 return {
@@ -284,10 +837,14 @@ const syncCollection = async ({
                         },
 
                         update: {
-                            $set: data,
+
+                            $set:
+                                data,
+
                         },
 
-                        upsert: true,
+                        upsert:
+                            true,
 
                     },
 
@@ -297,11 +854,18 @@ const syncCollection = async ({
         );
 
 
+    /*
+    ========================================================
+    WRITE TO CLOUD
+    ========================================================
+    */
+
     const result =
         await cloudModel.bulkWrite(
             operations,
             {
-                ordered: false,
+                ordered:
+                    false,
             }
         );
 
@@ -315,15 +879,21 @@ const syncCollection = async ({
             documents.length,
 
         matched:
-            result.matchedCount || 0,
+            result.matchedCount ||
+            0,
 
         modified:
-            result.modifiedCount || 0,
+            result.modifiedCount ||
+            0,
 
         upserted:
-            result.upsertedCount || 0,
+            result.upsertedCount ||
+            0,
+
+        syncMode,
 
     };
+
 };
 
 
@@ -335,13 +905,42 @@ SYNC TO CLOUD
 
 const syncToCloud = async () => {
 
-    const state =
+    let state =
         await getSyncState();
 
 
     /*
     ========================================================
-    PREVENT OVERLAPPING RUNS
+    STALE LOCK RECOVERY
+    ========================================================
+    */
+
+    if (
+        state.status ===
+        "SYNCING"
+    ) {
+
+        const recovered =
+            await recoverStaleSyncLock(
+                state
+            );
+
+
+        if (
+            recovered
+        ) {
+
+            state =
+                await getSyncState();
+
+        }
+
+    }
+
+
+    /*
+    ========================================================
+    PREVENT REAL OVERLAPPING RUNS
     ========================================================
     */
 
@@ -352,7 +951,8 @@ const syncToCloud = async () => {
 
         return {
 
-            success: false,
+            success:
+                false,
 
             message:
                 "A cloud sync is already running.",
@@ -364,15 +964,17 @@ const syncToCloud = async () => {
 
     /*
     ========================================================
-    MARK AS SYNCING
+    MARK SYNCING
     ========================================================
     */
 
     state.status =
         "SYNCING";
 
+
     state.lastError =
         "";
+
 
     await state.save();
 
@@ -381,7 +983,7 @@ const syncToCloud = async () => {
 
         /*
         ====================================================
-        ENSURE CLOUD CONNECTION
+        CLOUD CONNECTION
         ====================================================
         */
 
@@ -407,7 +1009,7 @@ const syncToCloud = async () => {
 
         /*
         ====================================================
-        SYNC WINDOW
+        COMMON SYNC WINDOW
         ====================================================
         */
 
@@ -419,24 +1021,19 @@ const syncToCloud = async () => {
             state.lastSyncAt;
 
 
-        /*
-        ====================================================
-        RESULT OBJECT
-        ====================================================
-        */
-
-        const collections = {};
+        const collections =
+            {};
 
 
         /*
         ====================================================
-        SYNC REGISTERED COLLECTIONS
+        SYNC COLLECTIONS
         ====================================================
         */
 
         for (
-            const config of
-            SYNC_COLLECTIONS
+            const config
+            of SYNC_COLLECTIONS
         ) {
 
             const CloudModel =
@@ -464,16 +1061,20 @@ const syncToCloud = async () => {
 
                     syncStartedAt,
 
+                    syncMode:
+                        config.syncMode,
+
                 });
 
 
             collections[
                 config.key
-            ] = result;
+            ] =
+                result;
 
 
             console.log(
-                `☁️ ${config.key}: ${result.synced} synced`
+                `☁️ ${config.key}: ${result.synced} synced (${result.syncMode})`
             );
 
         }
@@ -481,7 +1082,7 @@ const syncToCloud = async () => {
 
         /*
         ====================================================
-        SYNC SUCCESS
+        SUCCESS
         ====================================================
         */
 
@@ -506,7 +1107,8 @@ const syncToCloud = async () => {
 
         return {
 
-            success: true,
+            success:
+                true,
 
             syncedAt:
                 state.lastSuccessAt,
@@ -525,7 +1127,13 @@ const syncToCloud = async () => {
 
         /*
         ====================================================
-        SYNC FAILED
+        FAILURE
+        ====================================================
+
+        lastSyncAt intentionally remains unchanged.
+
+        Therefore all unsynchronized local changes remain
+        eligible for the next retry.
         ====================================================
         */
 
@@ -534,10 +1142,24 @@ const syncToCloud = async () => {
 
 
         state.lastError =
-            error.message;
+            error?.message ||
+            "Unknown cloud synchronization error.";
 
 
-        await state.save();
+        try {
+
+            await state.save();
+
+        } catch (
+            stateError
+        ) {
+
+            console.error(
+                "☁️ Unable to save failed sync state:",
+                stateError
+            );
+
+        }
 
 
         console.error(
@@ -555,20 +1177,7 @@ const syncToCloud = async () => {
 
 /*
 ============================================================
-GET SYNC STATUS
-============================================================
-*/
-/*
-============================================================
 GET NEXT SCHEDULED SYNC
-============================================================
-
-Automatic sync runs every 6 hours:
-
-12:00 AM
-6:00 AM
-12:00 PM
-6:00 PM
 ============================================================
 */
 
@@ -598,7 +1207,9 @@ const getNextSyncTime = () => {
 
     const nextHour =
         scheduledHours.find(
-            (scheduledHour) =>
+            (
+                scheduledHour
+            ) =>
                 scheduledHour >
                 hour
         );
@@ -618,13 +1229,9 @@ const getNextSyncTime = () => {
 
     } else {
 
-        /*
-        Next sync is midnight tomorrow.
-        */
-
         next.setDate(
             next.getDate() +
-            1
+                1
         );
 
 
@@ -651,8 +1258,27 @@ GET SYNC STATUS
 
 const getSyncStatus = async () => {
 
-    const state =
+    let state =
         await getSyncState();
+
+
+    if (
+        state.status ===
+        "SYNCING" &&
+        isSyncLockStale(
+            state
+        )
+    ) {
+
+        await recoverStaleSyncLock(
+            state
+        );
+
+
+        state =
+            await getSyncState();
+
+    }
 
 
     return {
@@ -678,30 +1304,49 @@ const getSyncStatus = async () => {
         automaticSync:
             true,
 
+        /*
+        The 6-hour sync remains our slower safety /
+        reconciliation schedule.
+
+        The live outbox worker operates separately.
+        */
+
         syncIntervalHours:
             6,
 
+        liveSyncEnabled:
+            true,
+
+        liveSyncIntervalSeconds:
+            5,
+
+        staleLockTimeoutMinutes:
+            STALE_SYNC_LOCK_MS /
+            60000,
+
         collections:
             SYNC_COLLECTIONS.map(
-                (item) =>
-                    item.key
+                (
+                    item
+                ) => ({
+
+                    key:
+                        item.key,
+
+                    syncMode:
+                        item.syncMode,
+
+                })
             ),
 
     };
 
 };
 
+
 /*
 ============================================================
 RESET SYNC STATE
-============================================================
-
-Useful if you ever want to force a complete upload again.
-
-This does NOT delete anything from Atlas.
-
-It only clears lastSyncAt so the next sync sends
-all local documents again.
 ============================================================
 */
 
@@ -714,18 +1359,22 @@ const resetSyncState = async () => {
     state.lastSyncAt =
         null;
 
+
     state.status =
         "IDLE";
 
+
     state.lastError =
         "";
+
 
     await state.save();
 
 
     return {
 
-        success: true,
+        success:
+            true,
 
         message:
             "Sync state reset. Next sync will perform a full upload.",

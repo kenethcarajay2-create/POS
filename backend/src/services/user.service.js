@@ -6,6 +6,14 @@ import User, {
 
 import ApiError from "../utils/ApiError.js";
 
+import withTransaction from "../utils/withTransaction.js";
+
+import branchService from "./branch.service.js";
+
+import branchAccessService from "./branch-access.service.js";
+
+import syncOutboxService from "./syncOutbox.service.js";
+
 
 /*
 ============================================================
@@ -39,6 +47,8 @@ const PERMISSION_KEYS = [
 
     "pos",
 
+    "bulkOrder",
+
     "sales",
 
     "customers",
@@ -71,306 +81,119 @@ ROLE DEFAULT PERMISSIONS
 */
 
 const ROLE_PERMISSION_PRESETS = {
-
     admin: {
-
-        dashboard:
-            true,
-
-        products:
-            true,
-
-        inventory:
-            true,
-
-        pos:
-            true,
-
-        sales:
-            true,
-
-        customers:
-            true,
-
-        suppliers:
-            true,
-
-        workers:
-            true,
-
-        ledger:
-            true,
-
-        reports:
-            true,
-
-        users:
-            true,
-
-        settings:
-            true,
-
-        salesRefund:
-            true,
-
-        salesVoid:
-            true,
-
-        salesReprint:
-            true,
-
-    },
-
-
-    manager: {
-
-        dashboard:
-            true,
-
-        products:
-            true,
-
-        inventory:
-            true,
-
-        pos:
-            true,
-
-        sales:
-            true,
-
-        customers:
-            true,
-
-        suppliers:
-            true,
-
-        workers:
-            true,
-
-        ledger:
-            true,
-
-        reports:
-            true,
-
-        users:
-            false,
-
-        settings:
-            false,
-
-        salesRefund:
-            true,
-
-        salesVoid:
-            false,
-
-        salesReprint:
-            true,
-
-    },
-
-
-    cashier: {
-
-        dashboard:
-            false,
-
-        products:
-            false,
-
-        inventory:
-            false,
-
-        pos:
-            true,
-
-        sales:
-            true,
-
-        customers:
-            false,
-
-        suppliers:
-            false,
-
-        workers:
-            false,
-
-        ledger:
-            false,
-
-        reports:
-            false,
-
-        users:
-            false,
-
-        settings:
-            false,
-
-        salesRefund:
-            false,
-
-        salesVoid:
-            false,
-
-        salesReprint:
-            false,
-
-    },
-
-
-    inventory: {
-
-        dashboard:
-            true,
-
-        products:
-            true,
-
-        inventory:
-            true,
-
-        pos:
-            false,
-
-        sales:
-            false,
-
-        customers:
-            false,
-
-        suppliers:
-            true,
-
-        workers:
-            false,
-
-        ledger:
-            false,
-
-        reports:
-            true,
-
-        users:
-            false,
-
-        settings:
-            false,
-
-        salesRefund:
-            false,
-
-        salesVoid:
-            false,
-
-        salesReprint:
-            false,
-
-    },
-
-
-    payroll: {
-
-        dashboard:
-            true,
-
-        products:
-            false,
-
-        inventory:
-            false,
-
-        pos:
-            false,
-
-        sales:
-            false,
-
-        customers:
-            false,
-
-        suppliers:
-            false,
-
-        workers:
-            true,
-
-        ledger:
-            true,
-
-        reports:
-            true,
-
-        users:
-            false,
-
-        settings:
-            false,
-
-        salesRefund:
-            false,
-
-        salesVoid:
-            false,
-
-        salesReprint:
-            false,
-
-    },
-
-
-    custom: {
-
-        dashboard:
-            true,
-
-        products:
-            false,
-
-        inventory:
-            false,
-
-        pos:
-            false,
-
-        sales:
-            false,
-
-        customers:
-            false,
-
-        suppliers:
-            false,
-
-        workers:
-            false,
-
-        ledger:
-            false,
-
-        reports:
-            false,
-
-        users:
-            false,
-
-        settings:
-            false,
-
-        salesRefund:
-            false,
-
-        salesVoid:
-            false,
-
-        salesReprint:
-            false,
-
-    },
-
+    dashboard: true,
+    products: true,
+    inventory: true,
+    pos: true,
+    bulkOrder: true,
+    sales: true,
+    customers: true,
+    suppliers: true,
+    workers: true,
+    ledger: true,
+    reports: true,
+    users: true,
+    settings: true,
+    salesRefund: true,
+    salesVoid: true,
+    salesReprint: true,
+},
+
+manager: {
+    dashboard: true,
+    products: true,
+    inventory: true,
+    pos: true,
+    bulkOrder: true,
+    sales: true,
+    customers: true,
+    suppliers: true,
+    workers: true,
+    ledger: true,
+    reports: true,
+    users: false,
+    settings: false,
+    salesRefund: true,
+    salesVoid: false,
+    salesReprint: true,
+},
+
+cashier: {
+    dashboard: false,
+    products: false,
+    inventory: false,
+    pos: true,
+    bulkOrder: false,
+    sales: true,
+    customers: false,
+    suppliers: false,
+    workers: false,
+    ledger: false,
+    reports: false,
+    users: false,
+    settings: false,
+    salesRefund: false,
+    salesVoid: false,
+    salesReprint: false,
+},
+
+inventory: {
+    dashboard: true,
+    products: true,
+    inventory: true,
+    pos: false,
+    bulkOrder: false,
+    sales: false,
+    customers: false,
+    suppliers: true,
+    workers: false,
+    ledger: false,
+    reports: true,
+    users: false,
+    settings: false,
+    salesRefund: false,
+    salesVoid: false,
+    salesReprint: false,
+},
+
+payroll: {
+    dashboard: true,
+    products: false,
+    inventory: false,
+    pos: false,
+    bulkOrder: false,
+    sales: false,
+    customers: false,
+    suppliers: false,
+    workers: true,
+    ledger: true,
+    reports: true,
+    users: false,
+    settings: false,
+    salesRefund: false,
+    salesVoid: false,
+    salesReprint: false,
+},
+
+custom: {
+    dashboard: true,
+    products: false,
+    inventory: false,
+    pos: false,
+    bulkOrder: false,
+    sales: false,
+    customers: false,
+    suppliers: false,
+    workers: false,
+    ledger: false,
+    reports: false,
+    users: false,
+    settings: false,
+    salesRefund: false,
+    salesVoid: false,
+    salesReprint: false,
+},
 };
 
 
@@ -422,10 +245,6 @@ const normalizePermissions = (
 
     }
 
-
-    /*
-    Admin always full access.
-    */
 
     if (
         role ===
@@ -481,6 +300,70 @@ const normalizeProfile = (
 
 /*
 ============================================================
+NORMALIZE ID
+============================================================
+*/
+
+const normalizeId = (
+    value
+) => {
+
+    if (
+        !value
+    ) {
+
+        return "";
+
+    }
+
+
+    return String(
+        value?._id ||
+        value
+    );
+
+};
+
+
+/*
+============================================================
+POPULATE USER BRANCHES
+============================================================
+*/
+
+const populateUserBranches =
+    async (
+        user
+    ) => {
+
+        if (
+            !user
+        ) {
+
+            return user;
+
+        }
+
+
+        await user.populate(
+            "branches",
+            "code name address phone email isDefault isActive"
+        );
+
+
+        await user.populate(
+            "defaultBranch",
+            "code name address phone email isDefault isActive"
+        );
+
+
+        return user;
+
+    };
+
+
+/*
+============================================================
 SAFE USER RESPONSE
 ============================================================
 */
@@ -507,12 +390,6 @@ const sanitizeUser = (
             user.role,
 
 
-        /*
-        ====================================================
-        PROFILE
-        ====================================================
-        */
-
         profile: {
 
             image:
@@ -528,32 +405,23 @@ const sanitizeUser = (
         },
 
 
-        /*
-        ====================================================
-        RFID
-        ====================================================
-        */
-
         rfidUid:
             user.rfidUid ||
             "",
 
 
-        /*
-        ====================================================
-        PERMISSIONS
-        ====================================================
-        */
-
         permissions:
             user.permissions,
 
 
-        /*
-        ====================================================
-        STATUS
-        ====================================================
-        */
+        branches:
+            user.branches ||
+            [],
+
+        defaultBranch:
+            user.defaultBranch ||
+            null,
+
 
         isActive:
             user.isActive,
@@ -573,12 +441,18 @@ const sanitizeUser = (
 ============================================================
 CHECK RFID DUPLICATE
 ============================================================
+
+Supports an optional MongoDB session so the final duplicate
+check can participate in the User write transaction.
+============================================================
 */
 
 const ensureRfidAvailable =
     async (
         rfidUid,
         excludeUserId =
+            null,
+        session =
             null
     ) => {
 
@@ -587,10 +461,6 @@ const ensureRfidAvailable =
                 rfidUid
             );
 
-
-        /*
-        Empty UID means no card assigned.
-        */
 
         if (
             !normalizedUid
@@ -623,10 +493,26 @@ const ensureRfidAvailable =
         }
 
 
-        const existingUser =
-            await User.findOne(
+        let userQuery =
+            User.findOne(
                 query
             );
+
+
+        if (
+            session
+        ) {
+
+            userQuery =
+                userQuery.session(
+                    session
+                );
+
+        }
+
+
+        const existingUser =
+            await userQuery;
 
 
         if (
@@ -648,6 +534,104 @@ const ensureRfidAvailable =
 
 /*
 ============================================================
+QUEUE USER SYNC
+============================================================
+*/
+
+const enqueueUserSync =
+    async (
+        user,
+        action,
+        session
+    ) => {
+
+        await syncOutboxService
+            .enqueueSyncRequest({
+
+                source:
+                    "USER",
+
+                action,
+
+                aggregateId:
+                    user._id,
+
+                /*
+                Users can belong to multiple branches and
+                admins are global.
+
+                The User document itself is therefore treated
+                as global synchronization data.
+                */
+
+                branchId:
+                    null,
+
+                session,
+
+            });
+
+    };
+
+
+/*
+============================================================
+HANDLE UNIQUE USER ERROR
+============================================================
+*/
+
+const handleUniqueUserError =
+    (
+        error
+    ) => {
+
+        if (
+            error?.code !==
+            11000
+        ) {
+
+            throw error;
+
+        }
+
+
+        if (
+            error?.keyPattern
+                ?.username ||
+            error?.keyValue
+                ?.username
+        ) {
+
+            throw new ApiError(
+                409,
+                "Username is already in use"
+            );
+
+        }
+
+
+        if (
+            error?.keyPattern
+                ?.rfidUid ||
+            error?.keyValue
+                ?.rfidUid
+        ) {
+
+            throw new ApiError(
+                409,
+                "This RFID/NFC card is already assigned to another user."
+            );
+
+        }
+
+
+        throw error;
+
+    };
+
+
+/*
+============================================================
 GET ALL USERS
 ============================================================
 */
@@ -660,6 +644,92 @@ const getUsers =
 
                 .select(
                     "-password"
+                )
+
+                .populate(
+                    "branches",
+                    "code name address phone email isDefault isActive"
+                )
+
+                .populate(
+                    "defaultBranch",
+                    "code name address phone email isDefault isActive"
+                )
+
+                .sort({
+
+                    createdAt:
+                        -1,
+
+                });
+
+
+        return users.map(
+            sanitizeUser
+        );
+
+    };
+
+
+/*
+============================================================
+GET USERS FOR ACTIVE BRANCH
+============================================================
+*/
+
+const getUsersForBranch =
+    async (
+        branchId
+    ) => {
+
+        if (
+            !branchId
+        ) {
+
+            throw new ApiError(
+                400,
+                "Active branch is required."
+            );
+
+        }
+
+
+        const users =
+            await User.find({
+
+                $or: [
+
+                    {
+                        role:
+                            "admin",
+                    },
+
+                    {
+                        branches:
+                            branchId,
+                    },
+
+                    {
+                        defaultBranch:
+                            branchId,
+                    },
+
+                ],
+
+            })
+
+                .select(
+                    "-password"
+                )
+
+                .populate(
+                    "branches",
+                    "code name address phone email isDefault isActive"
+                )
+
+                .populate(
+                    "defaultBranch",
+                    "code name address phone email isDefault isActive"
                 )
 
                 .sort({
@@ -691,7 +761,17 @@ const getUserById =
         const user =
             await User.findById(
                 id
-            );
+            )
+
+                .populate(
+                    "branches",
+                    "code name address phone email isDefault isActive"
+                )
+
+                .populate(
+                    "defaultBranch",
+                    "code name address phone email isDefault isActive"
+                );
 
 
         if (
@@ -728,6 +808,9 @@ const createUser =
         permissions,
         profile,
         rfidUid = "",
+        branches = [],
+        defaultBranch =
+            null,
     }) => {
 
         /*
@@ -750,11 +833,23 @@ const createUser =
         }
 
 
-        /*
-        ====================================================
-        NORMALIZE USERNAME
-        ====================================================
-        */
+        const normalizedName =
+            String(
+                name
+            ).trim();
+
+
+        if (
+            !normalizedName
+        ) {
+
+            throw new ApiError(
+                400,
+                "Name is required"
+            );
+
+        }
+
 
         const normalizedUsername =
             String(
@@ -776,39 +871,6 @@ const createUser =
         }
 
 
-        /*
-        ====================================================
-        DUPLICATE USERNAME
-        ====================================================
-        */
-
-        const existingUser =
-            await User.findOne({
-
-                username:
-                    normalizedUsername,
-
-            });
-
-
-        if (
-            existingUser
-        ) {
-
-            throw new ApiError(
-                409,
-                "Username is already in use"
-            );
-
-        }
-
-
-        /*
-        ====================================================
-        ROLE
-        ====================================================
-        */
-
         if (
             !ALLOWED_ROLES.includes(
                 role
@@ -823,12 +885,6 @@ const createUser =
         }
 
 
-        /*
-        ====================================================
-        PASSWORD
-        ====================================================
-        */
-
         if (
             password.length <
             6
@@ -842,30 +898,25 @@ const createUser =
         }
 
 
+        /*
+        ====================================================
+        EXPENSIVE / BRANCH PREPARATION BEFORE TRANSACTION
+        ====================================================
+
+        Password hashing does not need to hold a MongoDB
+        transaction open.
+
+        ensureDefaultBranch() has its own transaction, so it
+        must also remain outside our User transaction.
+        ====================================================
+        */
+
         const hashedPassword =
             await bcrypt.hash(
                 password,
                 10
             );
 
-
-        /*
-        ====================================================
-        RFID / NFC
-        ====================================================
-        */
-
-        const normalizedRfidUid =
-            await ensureRfidAvailable(
-                rfidUid
-            );
-
-
-        /*
-        ====================================================
-        PERMISSIONS
-        ====================================================
-        */
 
         const normalizedPermissions =
             normalizePermissions(
@@ -874,58 +925,280 @@ const createUser =
             );
 
 
-        /*
-        ====================================================
-        PROFILE
-        ====================================================
-        */
-
         const normalizedProfile =
             normalizeProfile(
                 profile
             );
 
 
+        const systemDefaultBranch =
+            await branchService
+                .ensureDefaultBranch();
+
+
         /*
         ====================================================
-        CREATE
+        RESOLVE BRANCH ASSIGNMENT
         ====================================================
         */
 
-        const user =
-            await User.create({
-
-                name:
-                    String(
-                        name
-                    ).trim(),
-
-                username:
-                    normalizedUsername,
-
-                password:
-                    hashedPassword,
-
-                role,
-
-                profile:
-                    normalizedProfile,
-
-                rfidUid:
-                    normalizedRfidUid,
-
-                permissions:
-                    normalizedPermissions,
-
-                isActive:
-                    true,
-
-            });
+        let assignedBranches =
+            [];
 
 
-        return sanitizeUser(
-            user
-        );
+        let selectedDefaultBranch =
+            null;
+
+
+        if (
+            role ===
+            "admin"
+        ) {
+
+            if (
+                defaultBranch
+            ) {
+
+                const validatedDefaultBranches =
+                    await branchAccessService
+                        .validateBranchIds([
+                            defaultBranch,
+                        ]);
+
+
+                selectedDefaultBranch =
+                    validatedDefaultBranches[0]
+                        ._id;
+
+            } else {
+
+                selectedDefaultBranch =
+                    systemDefaultBranch
+                        ._id;
+
+            }
+
+
+            assignedBranches =
+                [];
+
+        } else {
+
+            const requestedBranches =
+                Array.isArray(
+                    branches
+                ) &&
+                branches.length >
+                    0
+                    ? branches
+                    : [
+                        systemDefaultBranch
+                            ._id,
+                    ];
+
+
+            const validatedBranches =
+                await branchAccessService
+                    .validateBranchIds(
+                        requestedBranches
+                    );
+
+
+            assignedBranches =
+                validatedBranches.map(
+                    (
+                        branch
+                    ) =>
+                        branch._id
+                );
+
+
+            if (
+                defaultBranch
+            ) {
+
+                const requestedDefaultId =
+                    normalizeId(
+                        defaultBranch
+                    );
+
+
+                const belongsToAssignedBranches =
+                    assignedBranches.some(
+                        (
+                            branchId
+                        ) =>
+                            normalizeId(
+                                branchId
+                            ) ===
+                            requestedDefaultId
+                    );
+
+
+                if (
+                    !belongsToAssignedBranches
+                ) {
+
+                    throw new ApiError(
+                        400,
+                        "Default branch must be one of the user's assigned branches."
+                    );
+
+                }
+
+
+                selectedDefaultBranch =
+                    defaultBranch;
+
+            } else {
+
+                selectedDefaultBranch =
+                    assignedBranches[0];
+
+            }
+
+        }
+
+
+        try {
+
+            const user =
+                await withTransaction(
+                    async (
+                        session
+                    ) => {
+
+                        /*
+                        =========================================
+                        FINAL USERNAME DUPLICATE CHECK
+                        =========================================
+                        */
+
+                        const existingUser =
+                            await User
+                                .findOne({
+
+                                    username:
+                                        normalizedUsername,
+
+                                })
+                                .session(
+                                    session
+                                );
+
+
+                        if (
+                            existingUser
+                        ) {
+
+                            throw new ApiError(
+                                409,
+                                "Username is already in use"
+                            );
+
+                        }
+
+
+                        /*
+                        =========================================
+                        FINAL RFID DUPLICATE CHECK
+                        =========================================
+                        */
+
+                        const normalizedRfidUid =
+                            await ensureRfidAvailable(
+                                rfidUid,
+                                null,
+                                session
+                            );
+
+
+                        /*
+                        =========================================
+                        CREATE USER
+                        =========================================
+                        */
+
+                        const [
+                            createdUser,
+                        ] =
+                            await User.create(
+                                [
+                                    {
+                                        name:
+                                            normalizedName,
+
+                                        username:
+                                            normalizedUsername,
+
+                                        password:
+                                            hashedPassword,
+
+                                        role,
+
+                                        profile:
+                                            normalizedProfile,
+
+                                        rfidUid:
+                                            normalizedRfidUid,
+
+                                        permissions:
+                                            normalizedPermissions,
+
+                                        branches:
+                                            assignedBranches,
+
+                                        defaultBranch:
+                                            selectedDefaultBranch,
+
+                                        isActive:
+                                            true,
+                                    },
+                                ],
+                                {
+                                    session,
+                                }
+                            );
+
+
+                        /*
+                        =========================================
+                        CLOUD SYNC OUTBOX
+                        =========================================
+                        */
+
+                        await enqueueUserSync(
+                            createdUser,
+                            "CREATE",
+                            session
+                        );
+
+
+                        return createdUser;
+
+                    }
+                );
+
+
+            await populateUserBranches(
+                user
+            );
+
+
+            return sanitizeUser(
+                user
+            );
+
+
+        } catch (
+            error
+        ) {
+
+            handleUniqueUserError(
+                error
+            );
+
+        }
 
     };
 
@@ -947,17 +1220,30 @@ const updateUser =
             profile,
             rfidUid,
             isActive,
+            branches,
+            defaultBranch,
         }
     ) => {
 
-        const user =
+        /*
+        ====================================================
+        LOAD CURRENT USER FIRST
+        ====================================================
+
+        Branch resolution helpers operate outside our final
+        transaction because some of them can call
+        ensureDefaultBranch(), which owns its own transaction.
+        ====================================================
+        */
+
+        const existingUser =
             await User.findById(
                 id
             );
 
 
         if (
-            !user
+            !existingUser
         ) {
 
             throw new ApiError(
@@ -970,282 +1256,668 @@ const updateUser =
 
         /*
         ====================================================
-        NAME
+        PREPARE ROLE
         ====================================================
         */
 
-        if (
-            name !==
-            undefined
-        ) {
-
-            const normalizedName =
-                String(
-                    name
-                ).trim();
-
-
-            if (
-                !normalizedName
-            ) {
-
-                throw new ApiError(
-                    400,
-                    "Name cannot be empty"
-                );
-
-            }
-
-
-            user.name =
-                normalizedName;
-
-        }
-
-
-        /*
-        ====================================================
-        USERNAME
-        ====================================================
-        */
-
-        if (
-            username !==
-            undefined
-        ) {
-
-            const normalizedUsername =
-                String(
-                    username
-                )
-                    .trim()
-                    .toLowerCase();
-
-
-            if (
-                !normalizedUsername
-            ) {
-
-                throw new ApiError(
-                    400,
-                    "Username cannot be empty"
-                );
-
-            }
-
-
-            const existingUser =
-                await User.findOne({
-
-                    username:
-                        normalizedUsername,
-
-                    _id: {
-
-                        $ne:
-                            id,
-
-                    },
-
-                });
-
-
-            if (
-                existingUser
-            ) {
-
-                throw new ApiError(
-                    409,
-                    "Username is already in use"
-                );
-
-            }
-
-
-            user.username =
-                normalizedUsername;
-
-        }
-
-
-        /*
-        ====================================================
-        ROLE
-        ====================================================
-        */
-
-        if (
+        const effectiveRole =
             role !==
             undefined
+                ? role
+                : existingUser.role;
+
+
+        if (
+            !ALLOWED_ROLES.includes(
+                effectiveRole
+            )
         ) {
 
-            if (
-                !ALLOWED_ROLES
-                    .includes(
-                        role
-                    )
-            ) {
-
-                throw new ApiError(
-                    400,
-                    "Invalid user role"
-                );
-
-            }
-
-
-            user.role =
-                role;
+            throw new ApiError(
+                400,
+                "Invalid user role"
+            );
 
         }
 
 
         /*
         ====================================================
-        PROFILE
-        ====================================================
-
-        Allows partial updates.
-
-        Example:
-
-        {
-            profile: {
-                nickname: "Boss"
-            }
-        }
-
-        Existing image remains unchanged.
+        PREPARE BRANCH CHANGES
         ====================================================
         */
 
-        if (
-            profile !==
-            undefined
-        ) {
-
-            if (
-                profile.nickname !==
-                undefined
-            ) {
-
-                user.profile.nickname =
-                    String(
-                        profile.nickname ||
-                        ""
-                    ).trim();
-
-            }
+        let resolvedBranches =
+            null;
 
 
-            if (
-                profile.image !==
-                undefined
-            ) {
-
-                user.profile.image =
-                    String(
-                        profile.image ||
-                        ""
-                    ).trim();
-
-            }
-
-        }
+        let resolvedDefaultBranch =
+            null;
 
 
-        /*
-        ====================================================
-        RFID / NFC
-        ====================================================
-
-        Empty string removes the card.
-        ====================================================
-        */
-
-        if (
-            rfidUid !==
-            undefined
-        ) {
-
-            const normalizedUid =
-                await ensureRfidAvailable(
-                    rfidUid,
-                    user._id
-                );
-
-
-            user.rfidUid =
-                normalizedUid;
-
-        }
-
-
-        /*
-        ====================================================
-        PERMISSIONS
-        ====================================================
-        */
-
-        if (
-            permissions !==
-            undefined
-        ) {
-
-            user.permissions =
-                normalizePermissions(
-                    permissions,
-                    user.role
-                );
-
-        } else if (
+        const branchConfigurationChanged =
+            branches !==
+                undefined ||
+            defaultBranch !==
+                undefined ||
             role !==
-            undefined
-        ) {
+                undefined;
 
-            user.permissions =
-                normalizePermissions(
-                    {},
-                    user.role
-                );
-
-        }
-
-
-        /*
-        ====================================================
-        ACTIVE STATUS
-        ====================================================
-        */
 
         if (
-            isActive !==
-            undefined
+            branchConfigurationChanged
         ) {
 
-            user.isActive =
-                Boolean(
-                    isActive
-                );
+            if (
+                effectiveRole ===
+                "admin"
+            ) {
+
+                resolvedBranches =
+                    [];
+
+
+                if (
+                    defaultBranch !==
+                        undefined &&
+                    defaultBranch !==
+                        null &&
+                    defaultBranch !==
+                        ""
+                ) {
+
+                    const validatedDefault =
+                        await branchAccessService
+                            .validateBranchIds([
+                                defaultBranch,
+                            ]);
+
+
+                    resolvedDefaultBranch =
+                        validatedDefault[0]
+                            ._id;
+
+                } else {
+
+                    /*
+                    Try to preserve the current default.
+                    */
+
+                    let existingDefaultIsValid =
+                        false;
+
+
+                    if (
+                        existingUser.defaultBranch
+                    ) {
+
+                        try {
+
+                            const validated =
+                                await branchAccessService
+                                    .validateBranchIds([
+                                        existingUser
+                                            .defaultBranch,
+                                    ]);
+
+
+                            if (
+                                validated.length ===
+                                1
+                            ) {
+
+                                resolvedDefaultBranch =
+                                    validated[0]
+                                        ._id;
+
+                                existingDefaultIsValid =
+                                    true;
+
+                            }
+
+                        } catch {
+
+                            existingDefaultIsValid =
+                                false;
+
+                        }
+
+                    }
+
+
+                    if (
+                        !existingDefaultIsValid
+                    ) {
+
+                        const systemDefault =
+                            await branchService
+                                .ensureDefaultBranch();
+
+
+                        resolvedDefaultBranch =
+                            systemDefault
+                                ._id;
+
+                    }
+
+                }
+
+            } else {
+
+                let requestedBranchIds;
+
+
+                if (
+                    branches !==
+                    undefined
+                ) {
+
+                    requestedBranchIds =
+                        Array.isArray(
+                            branches
+                        )
+                            ? branches
+                            : [];
+
+                } else {
+
+                    requestedBranchIds =
+                        Array.isArray(
+                            existingUser.branches
+                        )
+                            ? existingUser
+                                .branches
+                            : [];
+
+                }
+
+
+                if (
+                    requestedBranchIds.length ===
+                    0
+                ) {
+
+                    const systemDefault =
+                        await branchService
+                            .ensureDefaultBranch();
+
+
+                    requestedBranchIds = [
+                        systemDefault
+                            ._id,
+                    ];
+
+                }
+
+
+                const validatedBranches =
+                    await branchAccessService
+                        .validateBranchIds(
+                            requestedBranchIds
+                        );
+
+
+                if (
+                    validatedBranches.length ===
+                    0
+                ) {
+
+                    throw new ApiError(
+                        400,
+                        "A non-admin user must have at least one active branch."
+                    );
+
+                }
+
+
+                resolvedBranches =
+                    validatedBranches.map(
+                        (
+                            branch
+                        ) =>
+                            branch._id
+                    );
+
+
+                if (
+                    defaultBranch !==
+                        undefined &&
+                    defaultBranch !==
+                        null &&
+                    defaultBranch !==
+                        ""
+                ) {
+
+                    const requestedDefaultId =
+                        normalizeId(
+                            defaultBranch
+                        );
+
+
+                    const belongsToAssignedBranches =
+                        resolvedBranches.some(
+                            (
+                                branchId
+                            ) =>
+                                normalizeId(
+                                    branchId
+                                ) ===
+                                requestedDefaultId
+                        );
+
+
+                    if (
+                        !belongsToAssignedBranches
+                    ) {
+
+                        throw new ApiError(
+                            400,
+                            "Default branch must be one of the user's assigned branches."
+                        );
+
+                    }
+
+
+                    resolvedDefaultBranch =
+                        defaultBranch;
+
+                } else {
+
+                    const existingDefaultId =
+                        normalizeId(
+                            existingUser
+                                .defaultBranch
+                        );
+
+
+                    const currentDefaultStillAssigned =
+                        existingDefaultId &&
+                        resolvedBranches.some(
+                            (
+                                branchId
+                            ) =>
+                                normalizeId(
+                                    branchId
+                                ) ===
+                                existingDefaultId
+                        );
+
+
+                    resolvedDefaultBranch =
+                        currentDefaultStillAssigned
+                            ? existingUser
+                                .defaultBranch
+                            : resolvedBranches[0];
+
+                }
+
+            }
 
         }
 
 
-        /*
-        ====================================================
-        SAVE
-        ====================================================
+        try {
 
-        save() also runs the admin permission hook.
-        ====================================================
-        */
+            const user =
+                await withTransaction(
+                    async (
+                        session
+                    ) => {
 
-        await user.save();
+                        /*
+                        =========================================
+                        RELOAD USER INSIDE TRANSACTION
+                        =========================================
+                        */
+
+                        const currentUser =
+                            await User
+                                .findById(
+                                    id
+                                )
+                                .session(
+                                    session
+                                );
 
 
-        return sanitizeUser(
-            user
-        );
+                        if (
+                            !currentUser
+                        ) {
+
+                            throw new ApiError(
+                                404,
+                                "User not found"
+                            );
+
+                        }
+
+
+                        /*
+                        =========================================
+                        NAME
+                        =========================================
+                        */
+
+                        if (
+                            name !==
+                            undefined
+                        ) {
+
+                            const normalizedName =
+                                String(
+                                    name
+                                ).trim();
+
+
+                            if (
+                                !normalizedName
+                            ) {
+
+                                throw new ApiError(
+                                    400,
+                                    "Name cannot be empty"
+                                );
+
+                            }
+
+
+                            currentUser.name =
+                                normalizedName;
+
+                        }
+
+
+                        /*
+                        =========================================
+                        USERNAME
+                        =========================================
+                        */
+
+                        if (
+                            username !==
+                            undefined
+                        ) {
+
+                            const normalizedUsername =
+                                String(
+                                    username
+                                )
+                                    .trim()
+                                    .toLowerCase();
+
+
+                            if (
+                                !normalizedUsername
+                            ) {
+
+                                throw new ApiError(
+                                    400,
+                                    "Username cannot be empty"
+                                );
+
+                            }
+
+
+                            const duplicateUsername =
+                                await User
+                                    .findOne({
+
+                                        username:
+                                            normalizedUsername,
+
+                                        _id: {
+                                            $ne:
+                                                currentUser
+                                                    ._id,
+                                        },
+
+                                    })
+                                    .session(
+                                        session
+                                    );
+
+
+                            if (
+                                duplicateUsername
+                            ) {
+
+                                throw new ApiError(
+                                    409,
+                                    "Username is already in use"
+                                );
+
+                            }
+
+
+                            currentUser.username =
+                                normalizedUsername;
+
+                        }
+
+
+                        /*
+                        =========================================
+                        ROLE
+                        =========================================
+                        */
+
+                        if (
+                            role !==
+                            undefined
+                        ) {
+
+                            currentUser.role =
+                                effectiveRole;
+
+                        }
+
+
+                        /*
+                        =========================================
+                        PROFILE
+                        =========================================
+                        */
+
+                        if (
+                            profile !==
+                            undefined
+                        ) {
+
+                            if (
+                                !currentUser.profile
+                            ) {
+
+                                currentUser.profile = {
+
+                                    image:
+                                        "",
+
+                                    nickname:
+                                        "",
+
+                                };
+
+                            }
+
+
+                            if (
+                                profile.nickname !==
+                                undefined
+                            ) {
+
+                                currentUser
+                                    .profile
+                                    .nickname =
+                                    String(
+                                        profile.nickname ||
+                                        ""
+                                    ).trim();
+
+                            }
+
+
+                            if (
+                                profile.image !==
+                                undefined
+                            ) {
+
+                                currentUser
+                                    .profile
+                                    .image =
+                                    String(
+                                        profile.image ||
+                                        ""
+                                    ).trim();
+
+                            }
+
+                        }
+
+
+                        /*
+                        =========================================
+                        RFID / NFC
+                        =========================================
+                        */
+
+                        if (
+                            rfidUid !==
+                            undefined
+                        ) {
+
+                            const normalizedUid =
+                                await ensureRfidAvailable(
+                                    rfidUid,
+                                    currentUser._id,
+                                    session
+                                );
+
+
+                            currentUser.rfidUid =
+                                normalizedUid;
+
+                        }
+
+
+                        /*
+                        =========================================
+                        PERMISSIONS
+                        =========================================
+                        */
+
+                        if (
+                            permissions !==
+                            undefined
+                        ) {
+
+                            currentUser.permissions =
+                                normalizePermissions(
+                                    permissions,
+                                    currentUser.role
+                                );
+
+                        } else if (
+                            role !==
+                            undefined
+                        ) {
+
+                            currentUser.permissions =
+                                normalizePermissions(
+                                    {},
+                                    currentUser.role
+                                );
+
+                        }
+
+
+                        /*
+                        =========================================
+                        BRANCH ACCESS
+                        =========================================
+                        */
+
+                        if (
+                            branchConfigurationChanged
+                        ) {
+
+                            currentUser.branches =
+                                resolvedBranches;
+
+
+                            currentUser.defaultBranch =
+                                resolvedDefaultBranch;
+
+                        }
+
+
+                        /*
+                        =========================================
+                        ACTIVE STATUS
+                        =========================================
+                        */
+
+                        if (
+                            isActive !==
+                            undefined
+                        ) {
+
+                            currentUser.isActive =
+                                Boolean(
+                                    isActive
+                                );
+
+                        }
+
+
+                        /*
+                        =========================================
+                        SAVE USER
+                        =========================================
+                        */
+
+                        await currentUser.save({
+                            session,
+                        });
+
+
+                        /*
+                        =========================================
+                        CLOUD SYNC OUTBOX
+                        =========================================
+                        */
+
+                        await enqueueUserSync(
+                            currentUser,
+                            "UPDATE",
+                            session
+                        );
+
+
+                        return currentUser;
+
+                    }
+                );
+
+
+            await populateUserBranches(
+                user
+            );
+
+
+            return sanitizeUser(
+                user
+            );
+
+
+        } catch (
+            error
+        ) {
+
+            handleUniqueUserError(
+                error
+            );
+
+        }
 
     };
 
@@ -1287,32 +1959,70 @@ const updatePassword =
         }
 
 
-        const user =
-            await User.findById(
-                id
-            );
+        /*
+        Hash outside the transaction.
+        */
 
-
-        if (
-            !user
-        ) {
-
-            throw new ApiError(
-                404,
-                "User not found"
-            );
-
-        }
-
-
-        user.password =
+        const hashedPassword =
             await bcrypt.hash(
                 newPassword,
                 10
             );
 
 
-        await user.save();
+        const user =
+            await withTransaction(
+                async (
+                    session
+                ) => {
+
+                    const currentUser =
+                        await User
+                            .findById(
+                                id
+                            )
+                            .session(
+                                session
+                            );
+
+
+                    if (
+                        !currentUser
+                    ) {
+
+                        throw new ApiError(
+                            404,
+                            "User not found"
+                        );
+
+                    }
+
+
+                    currentUser.password =
+                        hashedPassword;
+
+
+                    await currentUser.save({
+                        session,
+                    });
+
+
+                    await enqueueUserSync(
+                        currentUser,
+                        "PASSWORD_CHANGE",
+                        session
+                    );
+
+
+                    return currentUser;
+
+                }
+            );
+
+
+        await populateUserBranches(
+            user
+        );
 
 
         return sanitizeUser(
@@ -1334,28 +2044,74 @@ const disableUser =
     ) => {
 
         const user =
-            await User.findById(
-                id
+            await withTransaction(
+                async (
+                    session
+                ) => {
+
+                    const currentUser =
+                        await User
+                            .findById(
+                                id
+                            )
+                            .session(
+                                session
+                            );
+
+
+                    if (
+                        !currentUser
+                    ) {
+
+                        throw new ApiError(
+                            404,
+                            "User not found"
+                        );
+
+                    }
+
+
+                    /*
+                    Already disabled means there is no new
+                    business change and therefore no new
+                    outbox event.
+                    */
+
+                    if (
+                        currentUser.isActive ===
+                        false
+                    ) {
+
+                        return currentUser;
+
+                    }
+
+
+                    currentUser.isActive =
+                        false;
+
+
+                    await currentUser.save({
+                        session,
+                    });
+
+
+                    await enqueueUserSync(
+                        currentUser,
+                        "DISABLE",
+                        session
+                    );
+
+
+                    return currentUser;
+
+                }
             );
 
 
-        if (
-            !user
-        ) {
-
-            throw new ApiError(
-                404,
-                "User not found"
-            );
-
-        }
-
-
-        user.isActive =
-            false;
-
-
-        await user.save();
+        await populateUserBranches(
+            user
+        );
 
 
         return sanitizeUser(
@@ -1369,6 +2125,15 @@ const disableUser =
 ============================================================
 ENABLE USER
 ============================================================
+
+Legacy branch repair is deliberately performed BEFORE the
+final transaction because ensureLegacyUserBranch() can invoke
+branchService.ensureDefaultBranch(), which owns its own
+transaction.
+
+The final enabled state and ENABLE outbox event still commit
+atomically.
+============================================================
 */
 
 const enableUser =
@@ -1376,14 +2141,14 @@ const enableUser =
         id
     ) => {
 
-        const user =
+        let existingUser =
             await User.findById(
                 id
             );
 
 
         if (
-            !user
+            !existingUser
         ) {
 
             throw new ApiError(
@@ -1394,11 +2159,103 @@ const enableUser =
         }
 
 
-        user.isActive =
-            true;
+        /*
+        ====================================================
+        LEGACY BRANCH REPAIR
+        ====================================================
+        */
+
+        await branchAccessService
+            .ensureLegacyUserBranch(
+                existingUser
+            );
 
 
-        await user.save();
+        /*
+        ====================================================
+        FINAL ENABLE TRANSACTION
+        ====================================================
+        */
+
+        const user =
+            await withTransaction(
+                async (
+                    session
+                ) => {
+
+                    const currentUser =
+                        await User
+                            .findById(
+                                id
+                            )
+                            .session(
+                                session
+                            );
+
+
+                    if (
+                        !currentUser
+                    ) {
+
+                        throw new ApiError(
+                            404,
+                            "User not found"
+                        );
+
+                    }
+
+
+                    /*
+                    If already active, the legacy repair above
+                    may still have changed the user.
+
+                    We create UPDATE in that situation so the
+                    repaired branch information is guaranteed
+                    to reach the cloud.
+                    */
+
+                    if (
+                        currentUser.isActive ===
+                        true
+                    ) {
+
+                        await enqueueUserSync(
+                            currentUser,
+                            "UPDATE",
+                            session
+                        );
+
+
+                        return currentUser;
+
+                    }
+
+
+                    currentUser.isActive =
+                        true;
+
+
+                    await currentUser.save({
+                        session,
+                    });
+
+
+                    await enqueueUserSync(
+                        currentUser,
+                        "ENABLE",
+                        session
+                    );
+
+
+                    return currentUser;
+
+                }
+            );
+
+
+        await populateUserBranches(
+            user
+        );
 
 
         return sanitizeUser(
@@ -1417,6 +2274,8 @@ EXPORT
 export default {
 
     getUsers,
+
+    getUsersForBranch,
 
     getUserById,
 

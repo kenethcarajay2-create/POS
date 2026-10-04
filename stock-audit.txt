@@ -1,0 +1,196 @@
+backend/src/controllers/inventory.controller.js:23:                    .stockIn(
+backend/src/controllers/inventory.controller.js:71:                    .stockOut(
+backend/src/models/product.model.js:74:            minimumStock: {
+backend/src/routes/inventory.routes.js:67:            .stockInSchema
+backend/src/routes/inventory.routes.js:71:        .stockIn
+backend/src/routes/inventory.routes.js:94:            .stockOutSchema
+backend/src/routes/inventory.routes.js:98:        .stockOut
+backend/src/routes/inventory.routes.js:121:            .stockAdjustmentSchema
+backend/src/seeds/product.seed.js:24:        minimumStock: 5,
+backend/src/seeds/product.seed.js:40:        minimumStock: 10,
+backend/src/seeds/product.seed.js:56:        minimumStock: 10,
+backend/src/seeds/product.seed.js:72:        minimumStock: 5,
+backend/src/seeds/product.seed.js:88:        minimumStock: 5,
+backend/src/seeds/product.seed.js:104:        minimumStock: 5,
+backend/src/seeds/product.seed.js:120:        minimumStock: 10,
+backend/src/seeds/product.seed.js:136:        minimumStock: 5,
+backend/src/seeds/product.seed.js:152:        minimumStock: 5,
+backend/src/seeds/product.seed.js:168:        minimumStock: 10,
+backend/src/seeds/product.seed.js:189:        minimumStock: 5,
+backend/src/seeds/product.seed.js:205:        minimumStock: 5,
+backend/src/seeds/product.seed.js:221:        minimumStock: 5,
+backend/src/seeds/product.seed.js:237:        minimumStock: 5,
+backend/src/seeds/product.seed.js:253:        minimumStock: 10,
+backend/src/seeds/product.seed.js:269:        minimumStock: 5,
+backend/src/seeds/product.seed.js:285:        minimumStock: 10,
+backend/src/seeds/product.seed.js:301:        minimumStock: 5,
+backend/src/seeds/product.seed.js:322:        minimumStock: 5,
+backend/src/seeds/product.seed.js:338:        minimumStock: 5,
+backend/src/seeds/product.seed.js:354:        minimumStock: 5,
+backend/src/seeds/product.seed.js:370:        minimumStock: 5,
+backend/src/seeds/product.seed.js:386:        minimumStock: 5,
+backend/src/seeds/product.seed.js:402:        minimumStock: 5,
+backend/src/seeds/product.seed.js:418:        minimumStock: 5,
+backend/src/seeds/product.seed.js:434:        minimumStock: 5,
+backend/src/seeds/product.seed.js:455:        minimumStock: 3,
+backend/src/seeds/product.seed.js:471:        minimumStock: 3,
+backend/src/seeds/product.seed.js:487:        minimumStock: 3,
+backend/src/seeds/product.seed.js:503:        minimumStock: 3,
+backend/src/seeds/product.seed.js:519:        minimumStock: 3,
+backend/src/seeds/product.seed.js:540:        minimumStock: 10,
+backend/src/seeds/product.seed.js:556:        minimumStock: 10,
+backend/src/seeds/product.seed.js:572:        minimumStock: 10,
+backend/src/seeds/product.seed.js:588:        minimumStock: 5,
+backend/src/seeds/product.seed.js:604:        minimumStock: 5,
+backend/src/seeds/product.seed.js:620:        minimumStock: 5,
+backend/src/seeds/product.seed.js:641:        minimumStock: 5,
+backend/src/seeds/product.seed.js:657:        minimumStock: 5,
+backend/src/seeds/product.seed.js:673:        minimumStock: 10,
+backend/src/seeds/product.seed.js:689:        minimumStock: 5,
+backend/src/seeds/product.seed.js:705:        minimumStock: 5,
+backend/src/seeds/product.seed.js:721:        minimumStock: 5,
+backend/src/seeds/product.seed.js:742:        minimumStock: 10,
+backend/src/seeds/product.seed.js:758:        minimumStock: 10,
+backend/src/seeds/product.seed.js:774:        minimumStock: 5,
+backend/src/seeds/product.seed.js:790:        minimumStock: 5,
+backend/src/seeds/product.seed.js:806:        minimumStock: 5,
+backend/src/seeds/product.seed.js:822:        minimumStock: 5,
+backend/src/seeds/product.seed.js:838:        minimumStock: 5,
+backend/src/seeds/product.seed.js:854:        minimumStock: 5,
+backend/src/seeds/product.seed.js:870:        minimumStock: 5,
+backend/src/seeds/product.seed.js:886:        minimumStock: 5,
+backend/src/services/dashboard.service.js:5:import BranchInventory from "../models/branchInventory.model.js";
+backend/src/services/dashboard.service.js:229:        await BranchInventory
+backend/src/services/dashboard.service.js:242:                        "$minimumStock",
+backend/src/services/dashboard.service.js:280:        product.stock
+backend/src/services/dashboard.service.js:281:        product.minimumStock
+backend/src/services/dashboard.service.js:283:    but those values now come from BranchInventory.
+backend/src/services/dashboard.service.js:312:                        inventory.stock
+backend/src/services/dashboard.service.js:315:                minimumStock:
+backend/src/services/dashboard.service.js:317:                        inventory.minimumStock
+backend/src/services/inventory.service.js:148:        They come from BranchInventory.
+backend/src/services/inventory.service.js:150:        Product.stock is NOT modified.
+backend/src/services/inventory.service.js:155:                inventory?.stock
+backend/src/services/inventory.service.js:158:        minimumStock:
+backend/src/services/inventory.service.js:160:                inventory?.minimumStock
+backend/src/services/inventory.service.js:312:                        inventory.stock
+backend/src/services/inventory.service.js:330:                        updatedInventory.stock
+backend/src/services/inventory.service.js:560:                        inventory.stock
+backend/src/services/inventory.service.js:591:                        updatedInventory.stock
+backend/src/services/inventory.service.js:821:                        inventory.stock
+backend/src/services/inventory.service.js:864:                        updatedInventory.stock
+backend/src/services/ledger.service.js:3042:                updatedInventory.stock
+backend/src/services/ledger.service.js:3161:        Product.stock is NOT used.
+backend/src/services/ledger.service.js:3178:                updatedInventory.stock
+backend/src/services/product.service.js:3:import BranchInventory from "../models/branchInventory.model.js";
+backend/src/services/product.service.js:319:Product.stock still exists in MongoDB as a legacy field.
+backend/src/services/product.service.js:323:product.stock
+backend/src/services/product.service.js:324:product.minimumStock
+backend/src/services/product.service.js:326:with values from BranchInventory.
+backend/src/services/product.service.js:330:product.stock
+backend/src/services/product.service.js:360:            productData.stock
+backend/src/services/product.service.js:366:            productData.minimumStock
+backend/src/services/product.service.js:379:                inventory.stock
+backend/src/services/product.service.js:387:                inventory.minimumStock
+backend/src/services/product.service.js:406:        minimumStock:
+backend/src/services/product.service.js:440:        These can be removed once Product.stock is finally
+backend/src/services/product.service.js:462:only in BranchInventory.
+backend/src/services/product.service.js:505:                productData.stock,
+backend/src/services/product.service.js:512:                productData.minimumStock,
+backend/src/services/product.service.js:550:        Product.stock is no longer live stock.
+backend/src/services/product.service.js:555:        BranchInventory receives the real values.
+backend/src/services/product.service.js:571:        delete globalProductData.stock;
+backend/src/services/product.service.js:573:        delete globalProductData.minimumStock;
+backend/src/services/product.service.js:618:                                        minimumStock:
+backend/src/services/product.service.js:737:            await BranchInventory
+backend/src/services/product.service.js:863:            await BranchInventory.findOne({
+backend/src/services/product.service.js:893:minimumStock belongs to BranchInventory and can still be
+backend/src/services/product.service.js:975:                Some existing forms may send product.stock
+backend/src/services/product.service.js:989:                    productData.stock !==
+backend/src/services/product.service.js:995:                            productData.stock
+backend/src/services/product.service.js:1001:                            inventory.stock
+backend/src/services/product.service.js:1047:                    productData.minimumStock !==
+backend/src/services/product.service.js:1057:                                    .minimumStock,
+backend/src/services/product.service.js:1077:                delete globalProductData.stock;
+backend/src/services/product.service.js:1079:                delete globalProductData.minimumStock;
+backend/src/services/product.service.js:1301:            await BranchInventory.findOne({
+backend/src/validators/product.validator.js:33:    minimumStock: Joi.number().min(0).default(5),
+backend/src/validators/product.validator.js:61:    minimumStock: Joi.number().integer().min(0),
+frontend/src/components/cashier/ProductCard.jsx:21:                        {product.stock}
+frontend/src/components/cashier/ProductGrid.jsx:19:            product.stock > 0
+frontend/src/components/pos/ProductGrid.jsx:177:                                product.stock
+frontend/src/components/pos/ProductGrid.jsx:842:                                                            product.stock
+frontend/src/components/pos/ProductGrid.jsx:845:                                                            product.minimumStock
+frontend/src/components/pos/ProductGrid.jsx:856:                                                    product.stock
+frontend/src/components/products/ProductForm.jsx:20:    minimumStock: "5",
+frontend/src/components/products/ProductForm.jsx:135:                initialValues?.stock !==
+frontend/src/components/products/ProductForm.jsx:137:                initialValues?.stock !==
+frontend/src/components/products/ProductForm.jsx:140:                        initialValues.stock
+frontend/src/components/products/ProductForm.jsx:144:            minimumStock:
+frontend/src/components/products/ProductForm.jsx:145:                initialValues?.minimumStock !==
+frontend/src/components/products/ProductForm.jsx:147:                initialValues?.minimumStock !==
+frontend/src/components/products/ProductForm.jsx:150:                        initialValues.minimumStock
+frontend/src/components/products/ProductForm.jsx:655:            form.stock ===
+frontend/src/components/products/ProductForm.jsx:659:                    form.stock
+frontend/src/components/products/ProductForm.jsx:687:        const minimumStock =
+frontend/src/components/products/ProductForm.jsx:688:            form.minimumStock ===
+frontend/src/components/products/ProductForm.jsx:692:                    form.minimumStock
+frontend/src/components/products/ProductForm.jsx:698:                minimumStock
+frontend/src/components/products/ProductForm.jsx:700:            minimumStock <
+frontend/src/components/products/ProductForm.jsx:913:            minimumStock,
+frontend/src/components/products/ProductForm.jsx:1530:                                        form.stock
+frontend/src/components/products/ProductForm.jsx:1563:                                    name="minimumStock"
+frontend/src/components/products/ProductForm.jsx:1565:                                        form.minimumStock
+frontend/src/pages/Dashboard/DashboardPage.jsx:1506:                                                            product.stock
+frontend/src/pages/Inventory/InventoryPage.jsx:238:            product?.stock ?? 0
+frontend/src/pages/Inventory/InventoryPage.jsx:253:            product?.minimumStock ?? 0
+frontend/src/pages/Inventory/InventoryPage.jsx:371:        const minimumStock =
+frontend/src/pages/Inventory/InventoryPage.jsx:383:            minimumStock > 0 &&
+frontend/src/pages/Inventory/InventoryPage.jsx:384:            stock <= minimumStock
+frontend/src/pages/Inventory/InventoryPage.jsx:900:                    await inventoryService.stockIn({
+frontend/src/pages/Inventory/InventoryPage.jsx:967:                    await inventoryService.stockOut({
+frontend/src/pages/Inventory/InventoryPage.jsx:1141:        const minimumStock =
+frontend/src/pages/Inventory/InventoryPage.jsx:1157:            minimumStock > 0
+frontend/src/pages/Inventory/InventoryPage.jsx:1165:                            minimumStock *
+frontend/src/pages/Inventory/InventoryPage.jsx:1207:                            minimumStock
+frontend/src/pages/Ledger/LedgerPage.jsx:727:                            product?.stock
+frontend/src/pages/Ledger/LedgerPage.jsx:3090:                        product.stock
+frontend/src/pages/Ledger/LedgerPage.jsx:3120:                                product.stock
+frontend/src/pages/Ledger/LedgerPage.jsx:3178:                                    product.stock,
+frontend/src/pages/Ledger/LedgerPage.jsx:3944:                                                item.stock
+frontend/src/pages/Ledger/LedgerPage.jsx:7443:                                                                    product.stock <=
+frontend/src/pages/Ledger/LedgerPage.jsx:7472:                                                                        product.stock <=
+frontend/src/pages/Ledger/LedgerPage.jsx:7523:                                                                                product.stock
+frontend/src/pages/Ledger/LedgerPage.jsx:7687:                                                                            item.stock
+frontend/src/pages/Ledger/LedgerPage.jsx:8735:                                                            Stock: {product.stock}
+frontend/src/pages/Products/ProductsPage.jsx:649:                    product.stock ||
+frontend/src/pages/Products/ProductsPage.jsx:663:                    product.stock ||
+frontend/src/pages/Products/ProductsPage.jsx:669:                    product.stock ||
+frontend/src/pages/Products/ProductsPage.jsx:889:                            product.stock ||
+frontend/src/pages/reports/ProductsReportPage.jsx:1189:        product?.stock ??
+frontend/src/pages/reports/ProductsReportPage.jsx:1191:        product?.stockQuantity ??
+frontend/src/pages/reports/ProductsReportPage.jsx:2071:                            product.stock =
+frontend/src/pages/reports/ProductsReportPage.jsx:2221:                                a.stock === null
+frontend/src/pages/reports/ProductsReportPage.jsx:2230:                                b.stock === null
+frontend/src/pages/reports/ProductsReportPage.jsx:2239:                                a.stock -
+frontend/src/pages/reports/ProductsReportPage.jsx:2240:                                b.stock
+frontend/src/pages/reports/ProductsReportPage.jsx:2319:                            product.stock !==
+frontend/src/pages/reports/ProductsReportPage.jsx:2327:                            product.stock <=
+frontend/src/pages/reports/ProductsReportPage.jsx:2335:                            product.stock <=
+frontend/src/pages/reports/ProductsReportPage.jsx:2635:                            product.stock
+frontend/src/pages/reports/ProductsReportPage.jsx:2658:                        product.stock ?? "",
+frontend/src/pages/reports/ProductsReportPage.jsx:3541:                                            product.stock
+frontend/src/pages/reports/ProductsReportPage.jsx:3680:                                                    product.stock ===
+frontend/src/pages/reports/ProductsReportPage.jsx:3693:                                                                    product.stock <=
+frontend/src/pages/reports/ProductsReportPage.jsx:3696:                                                                        : product.stock <=
+frontend/src/pages/reports/ProductsReportPage.jsx:3705:                                                                        product.stock
+frontend/src/pages/reports/ProductsReportPage.jsx:3976:                                product.stock !==
+frontend/src/pages/reports/ProductsReportPage.jsx:3978:                                product.stock <=
+frontend/src/pages/reports/ProductsReportPage.jsx:3986:                                a.stock -
+frontend/src/pages/reports/ProductsReportPage.jsx:3987:                                b.stock
+frontend/src/pages/reports/ProductsReportPage.jsx:4008:                                            product.stock
+frontend/src/pages/reports/ProductsReportPage.jsx:4013:                                        product.stock <=
+frontend/src/pages/reports/ProductsReportPage.jsx:4034:                                    product.stock !==
+frontend/src/pages/reports/ProductsReportPage.jsx:4036:                                    product.stock <=
+frontend/src/store/cart.store.js:597:                            product.stock
+frontend/src/store/cart.store.js:1102:                                item.stock

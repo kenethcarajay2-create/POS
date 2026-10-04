@@ -16,6 +16,7 @@ import {
     FaSignOutAlt,
     FaBook,
     FaUserTie,
+    FaClipboardList,
 } from "react-icons/fa";
 
 import useAuthStore from "../../store/auth.store";
@@ -61,11 +62,11 @@ function Sidebar() {
     const navigation = [
 
         {
-    name: "Dashboard",
-    path: "/",
-    icon: FaHome,
-    permission: "dashboard",
-},
+            name: "Dashboard",
+            path: "/",
+            icon: FaHome,
+            permission: "dashboard",
+        },
 
         {
             name: "Products",
@@ -88,6 +89,31 @@ function Sidebar() {
             permission: "pos",
         },
 
+        /*
+========================================================
+BULK ORDERS
+========================================================
+
+Bulk Orders have their own independent permission.
+
+Frontend:
+permission: "bulkOrder"
+
+Backend:
+permit("bulkOrder")
+
+This allows POS and Bulk Order access to be assigned
+independently.
+========================================================
+*/
+
+{
+    name: "Bulk Orders",
+    path: "/bulk-orders",
+    icon: FaClipboardList,
+    permission: "bulkOrder",
+},
+
         {
             name: "Sales",
             path: "/sales",
@@ -102,11 +128,21 @@ function Sidebar() {
             permission: "customers",
         },
 
+        /*
+        ========================================================
+        STOCK TRANSFER
+        ========================================================
+
+        Stock Transfer is protected by the inventory permission
+        in AppRoutes.jsx, so the sidebar must use inventory too.
+        ========================================================
+        */
+
         {
-            name: "Suppliers",
-            path: "/suppliers",
+            name: "Stock Transfer",
+            path: "/stock-transfers",
             icon: FaTruck,
-            permission: "suppliers",
+            permission: "inventory",
         },
 
         {
@@ -418,23 +454,32 @@ function Sidebar() {
                                     >
 
                                         <NavLink
-    to={item.path}
-    className={({ isActive }) =>
-        `
-        flex items-center gap-3
-        px-3 py-2.5
-        rounded-lg
-        text-sm font-medium
-        transition-all duration-200
+                                            to={
+                                                item.path
+                                            }
+                                            className={({
+                                                isActive,
+                                            }) =>
+                                                `
+                                                flex
+                                                items-center
+                                                gap-3
+                                                px-3
+                                                py-2.5
+                                                rounded-lg
+                                                text-sm
+                                                font-medium
+                                                transition-all
+                                                duration-200
 
-        ${
-            isActive
-                ? "bg-indigo-600 text-white shadow-md"
-                : "text-slate-300 hover:bg-white/10 hover:text-white"
-        }
-        `
-    }
->
+                                                ${
+                                                    isActive
+                                                        ? "bg-indigo-600 text-white shadow-md"
+                                                        : "text-slate-300 hover:bg-white/10 hover:text-white"
+                                                }
+                                                `
+                                            }
+                                        >
 
                                             <Icon
                                                 className="
@@ -680,4 +725,4 @@ function Sidebar() {
 }
 
 
-export default Sidebar;
+export default Sidebar; 

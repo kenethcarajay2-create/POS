@@ -1,5 +1,10 @@
 import { create } from "zustand";
-import { calculateBestPrice } from "../utils/pricing";
+
+import { calculateBestPrice }
+    from "../utils/pricing";
+
+import preparedCartService
+    from "../services/preparedCart.service";
 
 
 /*
@@ -7,88 +12,293 @@ import { calculateBestPrice } from "../utils/pricing";
 WHOLESALE PRICE
 ============================================================
 */
+/*
+============================================================
+WHOLESALE PRICE
+============================================================
 
-const calculateWholesalePrice = (pricing) => {
+Wholesale mode ignores tier minimum quantities.
 
-    if (
-        !pricing ||
-        pricing.length === 0
-    ) {
-        return 0;
-    }
+It selects the configured pricing tier with the LOWEST
+effective price per base unit.
+
+Example:
+
+1  = P200      -> P200.00 each
+6  = P1000     -> P166.67 each
+12 = P1900     -> P158.33 each
+
+Wholesale price = P158.33 each.
+
+The exact ratio is retained internally. We do not round the
+unit price before calculating the subtotal.
+============================================================
+*/
+
+const calculateWholesalePrice =
+    (
+        pricing
+    ) => {
+
+        if (
+            !Array.isArray(
+                pricing
+            ) ||
+            pricing.length ===
+                0
+        ) {
+
+            return 0;
+
+        }
 
 
-    const bulkTiers = pricing
-        .filter(
-            (tier) =>
-                Number(tier.quantity) > 1
-        )
-        .sort(
-            (a, b) =>
-                Number(a.quantity) -
-                Number(b.quantity)
-        );
+        /*
+        --------------------------------------------------------
+        NORMALIZE VALID TIERS
+        --------------------------------------------------------
+        */
+
+        const validTiers =
+            pricing
+                .map(
+                    (
+                        tier
+                    ) => {
+
+                        return {
+
+                            quantity:
+                                Number(
+                                    tier?.quantity
+                                ),
+
+                            price:
+                                Number(
+                                    tier?.price
+                                ),
+
+                        };
+
+                    }
+                )
+                .filter(
+                    (
+                        tier
+                    ) => {
+
+                        return (
+
+                            Number.isFinite(
+                                tier.quantity
+                            ) &&
+
+                            Number.isFinite(
+                                tier.price
+                            ) &&
+
+                            tier.quantity >
+                                0 &&
+
+                            tier.price >=
+                                0
+
+                        );
+
+                    }
+                );
 
 
-    /*
-    --------------------------------------------------------
-    NO BULK PRICING
-    --------------------------------------------------------
-    */
+        if (
+            validTiers.length ===
+                0
+        ) {
 
-    if (
-        bulkTiers.length === 0
-    ) {
+            return 0;
 
-        const regularTier =
-            pricing.find(
-                (tier) =>
-                    Number(tier.quantity) === 1
+        }
+
+
+        /*
+        --------------------------------------------------------
+        FIND LOWEST EFFECTIVE UNIT PRICE
+        --------------------------------------------------------
+        */
+
+        const bestTier =
+            validTiers.reduce(
+                (
+                    best,
+                    tier
+                ) => {
+
+                    if (
+                        !best
+                    ) {
+
+                        return tier;
+
+                    }
+
+
+                    const currentUnitPrice =
+                        tier.price /
+                        tier.quantity;
+
+
+                    const bestUnitPrice =
+                        best.price /
+                        best.quantity;
+
+
+                    /*
+                    Lower effective unit price wins.
+                    */
+
+                    if (
+                        currentUnitPrice <
+                        bestUnitPrice
+                    ) {
+
+                        return tier;
+
+                    }
+
+
+                    /*
+                    If the effective unit prices are exactly the
+                    same, prefer the larger tier.
+                    */
+
+                    if (
+                        currentUnitPrice ===
+                            bestUnitPrice &&
+
+                        tier.quantity >
+                            best.quantity
+                    ) {
+
+                        return tier;
+
+                    }
+
+
+                    return best;
+
+                },
+                null
             );
 
 
-        return Number(
-            regularTier?.price ?? 0
+        if (
+            !bestTier
+        ) {
+
+            return 0;
+
+        }
+
+
+        return (
+            bestTier.price /
+            bestTier.quantity
         );
 
-    }
+    };
 
+/*
+============================================================
+HAS PREPARED ITEMS
+============================================================
+*/
 
-    /*
-    --------------------------------------------------------
-    FIRST BULK TIER
-    --------------------------------------------------------
-    */
+const hasPreparedCartItems =
+    (
+        items
+    ) => {
 
-    const bulkTier =
-        bulkTiers[0];
-
-
-    const bulkQuantity =
-        Number(
-            bulkTier.quantity
+        return Array.isArray(
+            items
+        ) &&
+        items.some(
+            (
+                item
+            ) =>
+                item
+                    ?.preparedCartItem ===
+                true
         );
 
-
-    const bulkTotal =
-        Number(
-            bulkTier.price
-        );
+    };
 
 
-    if (
-        bulkQuantity <= 0
-    ) {
-        return 0;
-    }
+/*
+============================================================
+RELEASE PREPARED CART SAFELY
+============================================================
+*/
+
+const releasePreparedCartSafely =
+    async (
+        preparedCart
+    ) => {
+
+        if (
+            !preparedCart
+        ) {
+
+            return true;
+
+        }
 
 
-    return (
-        bulkTotal /
-        bulkQuantity
-    );
+        try {
 
-};
+            await preparedCartService
+                .releasePreparedCart(
+
+                    preparedCart
+                        .preparedCartId,
+
+                    preparedCart
+                        .claimToken
+
+                );
+
+
+            preparedCartService
+                .clearRecoveryClaim();
+
+
+            return true;
+
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                "Unable to release PreparedCart claim:",
+                error?.response
+                    ?.data
+                    ?.message ||
+                error?.message ||
+                error
+            );
+
+
+            /*
+            Keep recovery credentials.
+
+            Losing them after a network failure would strand
+            the CLAIMED cart.
+            */
+
+            return false;
+
+        }
+
+    };
 
 
 /*
@@ -110,36 +320,26 @@ const useCartStore =
             ====================================================
             */
 
-            items: [],
+            items:
+                [],
 
-            heldCarts: [],
+            heldCarts:
+                [],
 
-            nextHeldNumber: 1,
+            nextHeldNumber:
+                1,
 
-            wholesaleMode: false,
+            wholesaleMode:
+                false,
 
-            selectedIndex: 0,
+            selectedIndex:
+                0,
 
+            pendingMultiplier:
+                1,
 
-            /*
-            ====================================================
-            F7 PENDING MULTIPLIER
-            ====================================================
-
-            Applies ONLY to the next product/open-price item.
-
-            Example:
-
-            F7 -> X10
-
-            Scan Coke
-            -> Coke x10
-
-            multiplier resets to x1
-            ====================================================
-            */
-
-            pendingMultiplier: 1,
+            preparedCart:
+                null,
 
 
             /*
@@ -163,7 +363,8 @@ const useCartStore =
                         !Number.isInteger(
                             multiplier
                         ) ||
-                        multiplier < 1
+                        multiplier <
+                            1
                     ) {
 
                         return false;
@@ -209,21 +410,166 @@ const useCartStore =
             ====================================================
             */
 
-            setWholesaleMode:
+            /*
+============================================================
+SET WHOLESALE MODE
+============================================================
+
+Used by the Retail / Wholesale selector.
+
+Changing the pricing mode immediately recalculates every
+normal product already inside the cart.
+
+Open-price Grocery items are intentionally unchanged.
+
+Prepared mobile carts cannot change pricing mode because
+their pricing must remain tied to their claimed cart.
+============================================================
+*/
+
+setWholesaleMode:
+    (
+        enabled
+    ) => {
+
+        if (
+            get()
+                .preparedCart
+        ) {
+
+            alert(
+                "Wholesale mode cannot be changed while a mobile prepared cart is loaded."
+            );
+
+
+            return false;
+
+        }
+
+
+        const newMode =
+            Boolean(
+                enabled
+            );
+
+
+        const currentMode =
+            get()
+                .wholesaleMode;
+
+
+        /*
+        Nothing to do.
+        */
+
+        if (
+            newMode ===
+            currentMode
+        ) {
+
+            return true;
+
+        }
+
+
+        const items =
+            get()
+                .items;
+
+
+        const updatedItems =
+            items.map(
                 (
-                    enabled
+                    item
                 ) => {
 
-                    set({
+                    /*
+                    Manual/open-price products do not participate
+                    in Retail / Wholesale tier pricing.
+                    */
 
-                        wholesaleMode:
-                            Boolean(
-                                enabled
-                            ),
+                    if (
+                        item.isOpenPrice
+                    ) {
 
-                    });
+                        return item;
 
-                },
+                    }
+
+
+                    if (
+                        !Array.isArray(
+                            item.pricing
+                        ) ||
+                        item.pricing.length ===
+                            0
+                    ) {
+
+                        return item;
+
+                    }
+
+
+                    let subtotal;
+
+
+                    if (
+                        newMode
+                    ) {
+
+                        const wholesalePrice =
+                            calculateWholesalePrice(
+                                item.pricing
+                            );
+
+
+                        subtotal =
+                            wholesalePrice *
+                            Number(
+                                item.quantity ||
+                                0
+                            );
+
+                    } else {
+
+                        subtotal =
+                            calculateBestPrice(
+                                item.pricing,
+                                Number(
+                                    item.quantity ||
+                                    0
+                                )
+                            );
+
+                    }
+
+
+                    return {
+
+                        ...item,
+
+                        subtotal,
+
+                    };
+
+                }
+            );
+
+
+        set({
+
+            wholesaleMode:
+                newMode,
+
+            items:
+                updatedItems,
+
+        });
+
+
+        return true;
+
+    },
 
 
             /*
@@ -239,7 +585,8 @@ const useCartStore =
 
                     const {
                         items,
-                    } = get();
+                    } =
+                        get();
 
 
                     if (
@@ -266,9 +613,10 @@ const useCartStore =
                             Math.min(
                                 Number(
                                     index
-                                ) || 0,
+                                ) ||
+                                0,
                                 items.length -
-                                    1
+                                1
                             )
                         );
 
@@ -295,7 +643,8 @@ const useCartStore =
                     const {
                         items,
                         selectedIndex,
-                    } = get();
+                    } =
+                        get();
 
 
                     if (
@@ -334,7 +683,8 @@ const useCartStore =
                     const {
                         items,
                         selectedIndex,
-                    } = get();
+                    } =
+                        get();
 
 
                     if (
@@ -376,7 +726,9 @@ const useCartStore =
                     const {
                         items,
                         selectedIndex,
-                    } = get();
+                        preparedCart,
+                    } =
+                        get();
 
 
                     if (
@@ -400,6 +752,13 @@ const useCartStore =
                         );
 
 
+                    const shouldDetachPreparedCart =
+                        preparedCart &&
+                        !hasPreparedCartItems(
+                            updated
+                        );
+
+
                     set({
 
                         items:
@@ -411,11 +770,27 @@ const useCartStore =
                                 Math.min(
                                     selectedIndex,
                                     updated.length -
-                                        1
+                                    1
                                 )
                             ),
 
+                        preparedCart:
+                            shouldDetachPreparedCart
+                                ? null
+                                : preparedCart,
+
                     });
+
+
+                    if (
+                        shouldDetachPreparedCart
+                    ) {
+
+                        releasePreparedCartSafely(
+                            preparedCart
+                        );
+
+                    }
 
                 },
 
@@ -434,13 +809,14 @@ const useCartStore =
 
                     const {
                         wholesaleMode,
-                    } = get();
+                    } =
+                        get();
 
 
                     if (
                         !pricing ||
                         pricing.length ===
-                        0
+                            0
                     ) {
 
                         return 0;
@@ -451,14 +827,9 @@ const useCartStore =
                     const qty =
                         Number(
                             quantity
-                        ) || 0;
+                        ) ||
+                        0;
 
-
-                    /*
-                    ------------------------------------------------
-                    WHOLESALE MODE
-                    ------------------------------------------------
-                    */
 
                     if (
                         wholesaleMode
@@ -478,12 +849,6 @@ const useCartStore =
                     }
 
 
-                    /*
-                    ------------------------------------------------
-                    NORMAL MODE
-                    ------------------------------------------------
-                    */
-
                     return calculateBestPrice(
                         pricing,
                         qty
@@ -494,20 +859,220 @@ const useCartStore =
 
             /*
             ====================================================
-            ADD NORMAL PRODUCT
+            IMPORT PREPARED CART
             ====================================================
+            */
 
-            Uses F7 multiplier if one is armed.
+            importPreparedCart:
+                (
+                    claimedCart
+                ) => {
 
-            Example:
+                    if (
+                        !claimedCart ||
+                        !claimedCart
+                            .preparedCartId ||
+                        !claimedCart
+                            .claimToken ||
+                        !Array.isArray(
+                            claimedCart.items
+                        ) ||
+                        claimedCart.items.length ===
+                            0
+                    ) {
 
-            F7 -> X12
+                        return false;
 
-            addItem(product)
+                    }
 
-            Adds 12 units.
 
-            Then multiplier resets to 1.
+                    const {
+                        items,
+                        preparedCart,
+                    } =
+                        get();
+
+
+                    if (
+                        items.length >
+                            0 ||
+                        preparedCart
+                    ) {
+
+                        return false;
+
+                    }
+
+
+                    const importedItems =
+                        claimedCart.items.map(
+                            (
+                                item
+                            ) => {
+
+                                const quantity =
+                                    Number(
+                                        item.quantity
+                                    );
+
+
+                                const lineTotal =
+                                    Number(
+                                        item.lineTotal
+                                    );
+
+
+                                const unitPrice =
+                                    Number(
+                                        item.unitPrice
+                                    );
+
+
+                                return {
+
+                                    _id:
+                                        item.productId,
+
+                                    productId:
+                                        item.productId,
+
+                                    isOpenPrice:
+                                        false,
+
+                                    barcode:
+                                        item.barcode ||
+                                        "",
+
+                                    name:
+                                        item.name,
+
+                                    baseUnit:
+                                        item.baseUnit ||
+                                        "Piece",
+
+                                    quantity,
+
+                                    unitPrice,
+
+                                    price:
+                                        unitPrice,
+
+                                    subtotal:
+                                        lineTotal,
+
+                                    stock:
+                                        Number(
+                                            item.availableStock
+                                        ),
+
+                                    pricing:
+                                        Array.isArray(
+                                            item.pricing
+                                        )
+                                            ? item.pricing
+                                            : [],
+
+                                    preparedCartItem:
+                                        true,
+
+                                };
+
+                            }
+                        );
+
+
+                    preparedCartService
+                        .saveRecoveryClaim({
+
+                            preparedCartId:
+                                claimedCart
+                                    .preparedCartId,
+
+                            claimToken:
+                                claimedCart
+                                    .claimToken,
+
+                        });
+
+
+                    set({
+
+                        items:
+                            importedItems,
+
+                        selectedIndex:
+                            0,
+
+                        pendingMultiplier:
+                            1,
+
+                        wholesaleMode:
+                            false,
+
+                        preparedCart: {
+
+                            preparedCartId:
+                                String(
+                                    claimedCart
+                                        .preparedCartId
+                                ),
+
+                            claimToken:
+                                claimedCart
+                                    .claimToken,
+
+                            claimExpiresAt:
+                                claimedCart
+                                    .claimExpiresAt ||
+                                null,
+
+                            preparedAt:
+                                claimedCart
+                                    .preparedAt ||
+                                null,
+
+                            snapshotTotal:
+                                Number(
+                                    claimedCart
+                                        .snapshotTotal ||
+                                    0
+                                ),
+
+                            currentTotal:
+                                Number(
+                                    claimedCart
+                                        .currentTotal ||
+                                    0
+                                ),
+
+                            hasChanges:
+                                Boolean(
+                                    claimedCart
+                                        .hasChanges
+                                ),
+
+                            warnings:
+                                Array.isArray(
+                                    claimedCart
+                                        .warnings
+                                )
+                                    ? claimedCart
+                                        .warnings
+                                    : [],
+
+                        },
+
+                    });
+
+
+                    return true;
+
+                },
+
+
+            /*
+            ====================================================
+            ADD NORMAL PRODUCT
             ====================================================
             */
 
@@ -520,19 +1085,22 @@ const useCartStore =
                     const {
                         items,
                         pendingMultiplier,
-                    } = get();
+                    } =
+                        get();
 
 
                     const baseQuantity =
                         Number(
                             quantityToAdd
-                        ) || 1;
+                        ) ||
+                        1;
 
 
                     const multiplier =
                         Number(
                             pendingMultiplier
-                        ) || 1;
+                        ) ||
+                        1;
 
 
                     const actualQuantityToAdd =
@@ -540,18 +1108,14 @@ const useCartStore =
                         multiplier;
 
 
-                    /*
-                    ------------------------------------------------
-                    FIND EXISTING PRODUCT
-                    ------------------------------------------------
-                    */
-
                     const existingIndex =
                         items.findIndex(
                             (
                                 item
                             ) =>
-                                !item.isOpenPrice &&
+
+                                !item
+                                    .isOpenPrice &&
 
                                 String(
                                     item._id
@@ -586,12 +1150,6 @@ const useCartStore =
                         actualQuantityToAdd;
 
 
-                    /*
-                    =================================================
-                    STOCK CHECK
-                    =================================================
-                    */
-
                     const availableStock =
                         Number(
                             product.stock
@@ -621,15 +1179,21 @@ const useCartStore =
                     }
 
 
-                    /*
-                    =================================================
-                    EXISTING PRODUCT
-                    =================================================
-                    */
-
                     if (
                         existing
                     ) {
+
+                        const pricing =
+                            Array.isArray(
+                                existing.pricing
+                            ) &&
+                            existing.pricing.length >
+                                0
+
+                                ? existing.pricing
+
+                                : product.pricing;
+
 
                         const updatedItems =
                             items.map(
@@ -652,13 +1216,15 @@ const useCartStore =
 
                                         ...item,
 
+                                        pricing,
+
                                         quantity:
                                             requestedQuantity,
 
                                         subtotal:
                                             get()
                                                 .calculateItemSubtotal(
-                                                    item.pricing,
+                                                    pricing,
                                                     requestedQuantity
                                                 ),
 
@@ -686,12 +1252,6 @@ const useCartStore =
 
                     }
 
-
-                    /*
-                    =================================================
-                    NEW NORMAL PRODUCT
-                    =================================================
-                    */
 
                     const newItem = {
 
@@ -738,38 +1298,6 @@ const useCartStore =
             ====================================================
             ADD OPEN PRICE ITEM
             ====================================================
-
-            Used for:
-
-            - Grocery
-            - Miscellaneous
-            - Manual amount
-
-            Supports an optional note describing what was sold.
-
-            Example:
-
-            amount = 125
-            note = "Vegetables"
-
-            Adds:
-
-            Grocery
-            Vegetables
-            Qty 1
-            Unit Price ₱125
-            Total ₱125
-
-            If F7 X3 is active:
-
-            Grocery
-            Vegetables
-            Qty 3
-            Unit Price ₱125
-            Total ₱375
-
-            Open price items do NOT affect inventory.
-            ====================================================
             */
 
             addOpenPriceItem:
@@ -782,14 +1310,9 @@ const useCartStore =
                     const {
                         items,
                         pendingMultiplier,
-                    } = get();
+                    } =
+                        get();
 
-
-                    /*
-                    ------------------------------------------------
-                    VALIDATE AMOUNT
-                    ------------------------------------------------
-                    */
 
                     const unitPrice =
                         Number(
@@ -801,19 +1324,14 @@ const useCartStore =
                         !Number.isFinite(
                             unitPrice
                         ) ||
-                        unitPrice <= 0
+                        unitPrice <=
+                            0
                     ) {
 
                         return false;
 
                     }
 
-
-                    /*
-                    ------------------------------------------------
-                    SANITIZE NAME
-                    ------------------------------------------------
-                    */
 
                     const safeName =
                         String(
@@ -828,23 +1346,6 @@ const useCartStore =
                         "Grocery";
 
 
-                    /*
-                    ------------------------------------------------
-                    SANITIZE NOTE
-                    ------------------------------------------------
-
-                    The note is optional.
-
-                    Examples:
-
-                    Rice
-                    Vegetables
-                    Ice
-                    Candy
-                    Cooking ingredients
-                    ------------------------------------------------
-                    */
-
                     const safeNote =
                         String(
                             note ||
@@ -857,12 +1358,6 @@ const useCartStore =
                             );
 
 
-                    /*
-                    ------------------------------------------------
-                    USE F7 MULTIPLIER
-                    ------------------------------------------------
-                    */
-
                     const multiplier =
                         Number(
                             pendingMultiplier
@@ -874,40 +1369,17 @@ const useCartStore =
                             multiplier
                         ) &&
                         multiplier >
-                        0
+                            0
 
                             ? multiplier
 
                             : 1;
 
 
-                    /*
-                    ------------------------------------------------
-                    CALCULATE SUBTOTAL
-                    ------------------------------------------------
-                    */
-
                     const subtotal =
                         unitPrice *
                         quantity;
 
-
-                    /*
-                    ------------------------------------------------
-                    UNIQUE ID
-                    ------------------------------------------------
-
-                    Every open-price item remains its own line.
-
-                    Grocery ₱100 / Rice
-
-                    and
-
-                    Grocery ₱100 / Vegetables
-
-                    stay separate.
-                    ------------------------------------------------
-                    */
 
                     const openItemId =
                         `OPEN-${Date.now()}-${Math.random()
@@ -919,12 +1391,6 @@ const useCartStore =
                                 8
                             )}`;
 
-
-                    /*
-                    ------------------------------------------------
-                    CREATE OPEN PRICE ITEM
-                    ------------------------------------------------
-                    */
 
                     const newItem = {
 
@@ -940,16 +1406,8 @@ const useCartStore =
                         name:
                             safeName,
 
-
-                        /*
-                        ============================================
-                        OPEN PRICE NOTE
-                        ============================================
-                        */
-
                         note:
                             safeNote,
-
 
                         category:
                             "OPEN PRICE",
@@ -966,18 +1424,8 @@ const useCartStore =
 
                         subtotal,
 
-
-                        /*
-                        No regular pricing tiers.
-                        */
-
-                        pricing: [],
-
-
-                        /*
-                        No inventory stock because this is
-                        not a registered inventory product.
-                        */
+                        pricing:
+                            [],
 
                         stock:
                             null,
@@ -988,12 +1436,6 @@ const useCartStore =
                     };
 
 
-                    /*
-                    ------------------------------------------------
-                    ADD TO CART
-                    ------------------------------------------------
-                    */
-
                     set({
 
                         items: [
@@ -1001,18 +1443,8 @@ const useCartStore =
                             newItem,
                         ],
 
-
-                        /*
-                        Select the newly added cart item.
-                        */
-
                         selectedIndex:
                             items.length,
-
-
-                        /*
-                        F7 is one-shot.
-                        */
 
                         pendingMultiplier:
                             1,
@@ -1029,13 +1461,6 @@ const useCartStore =
             ====================================================
             INCREASE QUANTITY
             ====================================================
-
-            Open-price items use:
-
-            unitPrice × quantity
-
-            Normal products use normal/bulk pricing.
-            ====================================================
             */
 
             increaseQuantity:
@@ -1045,7 +1470,8 @@ const useCartStore =
 
                     const {
                         items,
-                    } = get();
+                    } =
+                        get();
 
 
                     const index =
@@ -1084,14 +1510,6 @@ const useCartStore =
                         ) +
                         1;
 
-
-                    /*
-                    ------------------------------------------------
-                    STOCK CHECK
-
-                    Skip this for open-price items.
-                    ------------------------------------------------
-                    */
 
                     if (
                         !item.isOpenPrice
@@ -1145,12 +1563,6 @@ const useCartStore =
                                 }
 
 
-                                /*
-                                ------------------------------------
-                                OPEN PRICE
-                                ------------------------------------
-                                */
-
                                 if (
                                     cartItem.isOpenPrice
                                 ) {
@@ -1173,12 +1585,6 @@ const useCartStore =
 
                                 }
 
-
-                                /*
-                                ------------------------------------
-                                NORMAL PRODUCT
-                                ------------------------------------
-                                */
 
                                 return {
 
@@ -1229,7 +1635,9 @@ const useCartStore =
                     const {
                         items,
                         selectedIndex,
-                    } = get();
+                        preparedCart,
+                    } =
+                        get();
 
 
                     const index =
@@ -1269,12 +1677,6 @@ const useCartStore =
                         1;
 
 
-                    /*
-                    ------------------------------------------------
-                    REMOVE AT ZERO
-                    ------------------------------------------------
-                    */
-
                     if (
                         quantity <=
                         0
@@ -1291,6 +1693,13 @@ const useCartStore =
                             );
 
 
+                        const shouldDetachPreparedCart =
+                            preparedCart &&
+                            !hasPreparedCartItems(
+                                updated
+                            );
+
+
                         set({
 
                             items:
@@ -1302,23 +1711,33 @@ const useCartStore =
                                     Math.min(
                                         selectedIndex,
                                         updated.length -
-                                            1
+                                        1
                                     )
                                 ),
 
+                            preparedCart:
+                                shouldDetachPreparedCart
+                                    ? null
+                                    : preparedCart,
+
                         });
+
+
+                        if (
+                            shouldDetachPreparedCart
+                        ) {
+
+                            releasePreparedCartSafely(
+                                preparedCart
+                            );
+
+                        }
 
 
                         return true;
 
                     }
 
-
-                    /*
-                    ------------------------------------------------
-                    UPDATE QUANTITY
-                    ------------------------------------------------
-                    */
 
                     const updated =
                         items.map(
@@ -1336,12 +1755,6 @@ const useCartStore =
 
                                 }
 
-
-                                /*
-                                ------------------------------------
-                                OPEN PRICE
-                                ------------------------------------
-                                */
 
                                 if (
                                     cartItem.isOpenPrice
@@ -1365,12 +1778,6 @@ const useCartStore =
 
                                 }
 
-
-                                /*
-                                ------------------------------------
-                                NORMAL PRODUCT
-                                ------------------------------------
-                                */
 
                                 return {
 
@@ -1421,7 +1828,9 @@ const useCartStore =
                     const {
                         items,
                         selectedIndex,
-                    } = get();
+                        preparedCart,
+                    } =
+                        get();
 
 
                     const updated =
@@ -1438,6 +1847,13 @@ const useCartStore =
                         );
 
 
+                    const shouldDetachPreparedCart =
+                        preparedCart &&
+                        !hasPreparedCartItems(
+                            updated
+                        );
+
+
                     set({
 
                         items:
@@ -1449,11 +1865,27 @@ const useCartStore =
                                 Math.min(
                                     selectedIndex,
                                     updated.length -
-                                        1
+                                    1
                                 )
                             ),
 
+                        preparedCart:
+                            shouldDetachPreparedCart
+                                ? null
+                                : preparedCart,
+
                     });
+
+
+                    if (
+                        shouldDetachPreparedCart
+                    ) {
+
+                        releasePreparedCartSafely(
+                            preparedCart
+                        );
+
+                    }
 
                 },
 
@@ -1462,14 +1894,44 @@ const useCartStore =
             ====================================================
             CLEAR CART
             ====================================================
+
+            USER CLEAR:
+
+            clearCart()
+
+                local cart clears
+                claim release attempted
+                recovery credentials clear only after release
+
+            SUCCESSFUL CHECKOUT:
+
+            clearCart({
+                releasePreparedCart: false
+            })
+
+                local Sale already committed
+                durable finalize event exists
+                browser recovery credential is deleted
+            ====================================================
             */
 
             clearCart:
-                () => {
+                async (
+                    {
+                        releasePreparedCart = true,
+                    } = {}
+                ) => {
+
+                    const {
+                        preparedCart,
+                    } =
+                        get();
+
 
                     set({
 
-                        items: [],
+                        items:
+                            [],
 
                         selectedIndex:
                             0,
@@ -1477,7 +1939,46 @@ const useCartStore =
                         pendingMultiplier:
                             1,
 
+                        preparedCart:
+                            null,
+
                     });
+
+
+                    if (
+                        !preparedCart
+                    ) {
+
+                        return true;
+
+                    }
+
+
+                    /*
+                    Successful local checkout.
+                    */
+
+                    if (
+                        releasePreparedCart ===
+                        false
+                    ) {
+
+                        preparedCartService
+                            .clearRecoveryClaim();
+
+
+                        return true;
+
+                    }
+
+
+                    /*
+                    User intentionally discarded order.
+                    */
+
+                    return await releasePreparedCartSafely(
+                        preparedCart
+                    );
 
                 },
 
@@ -1486,139 +1987,38 @@ const useCartStore =
             ====================================================
             TOGGLE WHOLESALE
             ====================================================
-
-            IMPORTANT:
-
-            Open-price items are NOT affected by wholesale mode.
-
-            Grocery ₱125 stays ₱125.
-            ====================================================
             */
 
-            toggleWholesale:
-                () => {
+            /*
+============================================================
+TOGGLE WHOLESALE
+============================================================
 
-                    const newMode =
-                        !get()
-                            .wholesaleMode;
+F11 uses this function.
 
+The actual mode change is delegated to setWholesaleMode()
+so keyboard and button controls always behave identically.
+============================================================
+*/
 
-                    const items =
-                        get()
-                            .items;
+toggleWholesale:
+    () => {
 
-
-                    const updatedItems =
-                        items.map(
-                            (
-                                item
-                            ) => {
-
-                                /*
-                                ------------------------------------
-                                OPEN PRICE ITEMS
-
-                                Leave unchanged, including note.
-                                ------------------------------------
-                                */
-
-                                if (
-                                    item.isOpenPrice
-                                ) {
-
-                                    return item;
-
-                                }
+        const {
+            wholesaleMode,
+            setWholesaleMode,
+        } =
+            get();
 
 
-                                if (
-                                    !item.pricing ||
-                                    item.pricing.length ===
-                                    0
-                                ) {
+        return setWholesaleMode(
+            !wholesaleMode
+        );
 
-                                    return item;
-
-                                }
-
-
-                                let subtotal;
-
-
-                                /*
-                                ------------------------------------
-                                WHOLESALE ON
-                                ------------------------------------
-                                */
-
-                                if (
-                                    newMode
-                                ) {
-
-                                    const wholesalePrice =
-                                        calculateWholesalePrice(
-                                            item.pricing
-                                        );
-
-
-                                    subtotal =
-                                        wholesalePrice *
-                                        Number(
-                                            item.quantity
-                                        );
-
-                                }
-
-
-                                /*
-                                ------------------------------------
-                                WHOLESALE OFF
-                                ------------------------------------
-                                */
-
-                                else {
-
-                                    subtotal =
-                                        calculateBestPrice(
-                                            item.pricing,
-                                            item.quantity
-                                        );
-
-                                }
-
-
-                                return {
-
-                                    ...item,
-
-                                    subtotal,
-
-                                };
-
-                            }
-                        );
-
-
-                    set({
-
-                        wholesaleMode:
-                            newMode,
-
-                        items:
-                            updatedItems,
-
-                    });
-
-                },
-
-
+    },
             /*
             ====================================================
             HOLD CART
-            ====================================================
-
-            The complete cart item is copied using ...item,
-            so open-price notes are preserved.
             ====================================================
             */
 
@@ -1630,13 +2030,29 @@ const useCartStore =
                         heldCarts,
                         nextHeldNumber,
                         wholesaleMode,
-                    } = get();
+                        preparedCart,
+                    } =
+                        get();
 
 
                     if (
                         items.length ===
                         0
                     ) {
+
+                        return false;
+
+                    }
+
+
+                    if (
+                        preparedCart
+                    ) {
+
+                        alert(
+                            "A mobile prepared cart cannot be placed on hold. Complete or clear it first."
+                        );
+
 
                         return false;
 
@@ -1661,9 +2077,7 @@ const useCartStore =
                     set({
 
                         heldCarts: [
-
                             ...heldCarts,
-
                             {
 
                                 id:
@@ -1677,9 +2091,7 @@ const useCartStore =
                                         (
                                             item
                                         ) => ({
-
                                             ...item,
-
                                         })
                                     ),
 
@@ -1691,10 +2103,10 @@ const useCartStore =
                                     new Date(),
 
                             },
-
                         ],
 
-                        items: [],
+                        items:
+                            [],
 
                         selectedIndex:
                             0,
@@ -1718,10 +2130,6 @@ const useCartStore =
             ====================================================
             RESUME CART
             ====================================================
-
-            Since the whole item is restored using ...item,
-            Grocery notes are restored automatically.
-            ====================================================
             */
 
             resumeCart:
@@ -1729,9 +2137,20 @@ const useCartStore =
                     id
                 ) => {
 
+                    if (
+                        get()
+                            .preparedCart
+                    ) {
+
+                        return false;
+
+                    }
+
+
                     const {
                         heldCarts,
-                    } = get();
+                    } =
+                        get();
 
 
                     const held =
@@ -1760,9 +2179,7 @@ const useCartStore =
                                 (
                                     item
                                 ) => ({
-
                                     ...item,
-
                                 })
                             ),
 
@@ -1831,9 +2248,20 @@ const useCartStore =
             resumeLatestCart:
                 () => {
 
+                    if (
+                        get()
+                            .preparedCart
+                    ) {
+
+                        return false;
+
+                    }
+
+
                     const {
                         heldCarts,
-                    } = get();
+                    } =
+                        get();
 
 
                     if (
@@ -1860,9 +2288,7 @@ const useCartStore =
                                 (
                                     item
                                 ) => ({
-
                                     ...item,
-
                                 })
                             ),
 

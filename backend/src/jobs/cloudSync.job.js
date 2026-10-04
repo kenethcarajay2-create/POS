@@ -1,192 +1,238 @@
-import cron from "node-cron";
+import cron
+    from "node-cron";
 
-import syncService from "../services/sync.service.js";
-
-import {
-    isCloudConnected,
-} from "../config/cloudDatabase.js";
+import syncService
+    from "../services/sync.service.js";
 
 
 /*
 ============================================================
-CLOUD SYNC JOB
+CLOUD RECONCILIATION JOB
 ============================================================
 
-Schedule:
+The live cloud sync worker handles near-real-time syncing.
+
+This 6-hour cron job remains as a slower safety /
+reconciliation mechanism.
+
+It helps recover from situations such as:
+
+- prolonged internet outages
+- temporary Atlas outages
+- DNS failures
+- a missed live-sync attempt
+- backend restarts
+- temporary cloud connection errors
+
+IMPORTANT:
+
+This job does NOT replace the live worker.
+
+It also does NOT block normal POS operations.
+============================================================
+*/
+
+
+/*
+============================================================
+SCHEDULE
+============================================================
+
+Runs every 6 hours:
 
 12:00 AM
 6:00 AM
 12:00 PM
 6:00 PM
 
-Every day.
-
-The POS does NOT wait for this job.
+Timezone:
+Asia/Manila
 ============================================================
 */
 
-const startCloudSyncJob = () => {
-
-    
-
-    cron.schedule(
-        "0 */6 * * *",
-        async () => {
-
-            console.log(
-                "☁️ Starting scheduled cloud sync..."
-            );
+const CLOUD_SYNC_CRON =
+    "0 */6 * * *";
 
 
-            try {
-
-                const result =
-                    await syncService
-                        .syncToCloud();
-
-
-                console.log(
-                    "☁️ Scheduled cloud sync completed."
-                );
-
-
-                console.log(
-                    result
-                );
-
-
-            } catch (
-                error
-            ) {
-
-                /*
-                IMPORTANT:
-
-                Never crash the POS because cloud sync failed.
-                */
-
-                console.error(
-                    "☁️ Scheduled cloud sync failed:"
-                );
-
-
-                console.error(
-                    error.message
-                );
-
-            }
-
-        },
-        {
-            timezone:
-                "Asia/Manila",
-        }
-    );
-
-
-    console.log(
-        "☁️ Cloud sync scheduler started."
-    );
-
-
-    console.log(
-        "☁️ Automatic sync: every 6 hours."
-    );
-
-};
+const CLOUD_SYNC_TIMEZONE =
+    "Asia/Manila";
 
 
 /*
 ============================================================
-STARTUP SYNC
-============================================================
-
-Runs shortly after backend startup.
-
-We delay it so:
-
-1. Local MongoDB is already ready
-2. Express can start
-3. POS startup isn't held up by synchronization
+STATE
 ============================================================
 */
 
-const runStartupSync = () => {
-
-    const STARTUP_DELAY =
-        30 * 1000;
+let cloudSyncTask =
+    null;
 
 
-    setTimeout(
-        async () => {
+let jobStarted =
+    false;
+
+
+/*
+============================================================
+RUN RECONCILIATION SYNC
+============================================================
+*/
+
+const runCloudReconciliationSync =
+    async () => {
+
+        try {
 
             console.log(
-                "☁️ Running startup cloud sync..."
+                "☁️ Starting scheduled cloud reconciliation sync..."
             );
 
 
-            try {
-
-                /*
-                Cloud connection may currently be offline.
-
-                syncToCloud() already knows how to attempt
-                reconnection.
-                */
-
-                if (
-                    !isCloudConnected()
-                ) {
-
-                    console.log(
-                        "☁️ Cloud currently offline. Attempting reconnect..."
-                    );
-
-                }
+            const result =
+                await syncService.syncToCloud();
 
 
-                const result =
-                    await syncService
-                        .syncToCloud();
+            /*
+            Another sync may already be running.
 
+            That is expected because the live worker may
+            happen to run at nearly the same time.
+            */
 
-                console.log(
-                    "☁️ Startup cloud sync completed."
-                );
-
-
-                console.log(
-                    result
-                );
-
-
-            } catch (
-                error
+            if (
+                result?.success ===
+                false
             ) {
 
-                console.error(
-                    "☁️ Startup cloud sync failed:"
+                console.log(
+                    `☁️ Scheduled sync skipped: ${
+                        result?.message ||
+                        "another sync is already running"
+                    }`
                 );
 
 
-                console.error(
-                    error.message
-                );
-
-
-                /*
-                No process.exit() here.
-
-                Local POS continues running.
-                */
+                return;
 
             }
 
-        },
-        STARTUP_DELAY
-    );
 
-};
+            console.log(
+                "☁️ Scheduled cloud reconciliation sync completed."
+            );
+
+        } catch (
+            error
+        ) {
+
+            /*
+            ====================================================
+            IMPORTANT
+            ====================================================
+
+            Scheduled cloud sync failure must never crash or
+            stop StorePOS.
+
+            Local MongoDB remains authoritative.
+
+            Because sync.service.js does not advance
+            lastSyncAt after a failed sync, the same unsynced
+            local changes remain eligible for the next retry.
+            ====================================================
+            */
+
+            console.warn(
+                "☁️ Scheduled cloud reconciliation unavailable:",
+                error?.message ||
+                error
+            );
+
+        }
+
+    };
+
+
+/*
+============================================================
+START CLOUD SYNC JOB
+============================================================
+*/
+
+const startCloudSyncJob =
+    () => {
+
+        /*
+        Prevent duplicate cron registration.
+        */
+
+        if (
+            jobStarted
+        ) {
+
+            return;
+
+        }
+
+
+        jobStarted =
+            true;
+
+
+        cloudSyncTask =
+            cron.schedule(
+                CLOUD_SYNC_CRON,
+
+                () => {
+
+                    runCloudReconciliationSync();
+
+                },
+
+                {
+                    timezone:
+                        CLOUD_SYNC_TIMEZONE,
+                }
+            );
+
+
+        console.log(
+            "☁️ Cloud reconciliation job enabled (every 6 hours, Asia/Manila)."
+        );
+
+    };
+
+
+/*
+============================================================
+STOP CLOUD SYNC JOB
+============================================================
+*/
+
+const stopCloudSyncJob =
+    () => {
+
+        if (
+            cloudSyncTask
+        ) {
+
+            cloudSyncTask.stop();
+
+
+            cloudSyncTask =
+                null;
+
+        }
+
+
+        jobStarted =
+            false;
+
+
+        console.log(
+            "☁️ Cloud reconciliation job stopped."
+        );
+
+    };
 
 
 /*
@@ -196,6 +242,10 @@ EXPORT
 */
 
 export {
+
+    runCloudReconciliationSync,
+
     startCloudSyncJob,
-    runStartupSync,
+
+    stopCloudSyncJob,
 };

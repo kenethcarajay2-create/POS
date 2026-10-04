@@ -55,8 +55,11 @@ export const getDefaultRoute = (
 
     Example:
 
-    POS + Sales
+    POS + Bulk Order + Sales
     -> /pos
+
+    Bulk Order only
+    -> /bulk-orders
     --------------------------------------------------------
     */
 
@@ -76,6 +79,30 @@ export const getDefaultRoute = (
 
             path:
                 "/pos",
+        },
+
+        /*
+        ====================================================
+        BULK ORDERS
+        ====================================================
+
+        Bulk Orders have their own independent permission.
+
+        This allows:
+
+        POS: false
+        bulkOrder: true
+
+        -> User can still access /bulk-orders.
+        ====================================================
+        */
+
+        {
+            permission:
+                "bulkOrder",
+
+            path:
+                "/bulk-orders",
         },
 
         {

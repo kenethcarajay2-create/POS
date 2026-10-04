@@ -44,7 +44,6 @@ STORE
 */
 
 import useAuthStore from "../store/auth.store";
-import CashierReportPage from "../pages/reports/CashierReportPage";
 
 
 /*
@@ -53,34 +52,76 @@ PAGES
 ============================================================
 */
 
-import DashboardPage from "../pages/Dashboard/DashboardPage";
+import DashboardPage
+    from "../pages/Dashboard/DashboardPage";
 
-import ProductsPage from "../pages/Products/ProductsPage";
+import ProductsPage
+    from "../pages/Products/ProductsPage";
 
-import POSPage from "../pages/POS/POSPage";
+import POSPage
+    from "../pages/POS/POSPage";
 
-import SalesPage from "../pages/Sales/SalesPage";
+import BulkOrderPage
+    from "../pages/POS/BulkOrderPage";
 
-import InventoryPage from "../pages/Inventory/InventoryPage";
+import SalesPage
+    from "../pages/Sales/SalesPage";
 
-import LedgerPage from "../pages/Ledger/LedgerPage";
+import InventoryPage
+    from "../pages/Inventory/InventoryPage";
 
-import WorkersPage from "../pages/Workers/WorkersPage";
+import StockTransferPage
+    from "../pages/Inventory/StockTransferPage";
 
-import UsersPage from "../pages/Users/UsersPage";
-import SettingsPage from "../pages/Settings/SettingsPage";
-import CustomersPage from "../pages/Customers/CustomersPage";
+import LedgerPage
+    from "../pages/Ledger/LedgerPage";
+
+import WorkersPage
+    from "../pages/Workers/WorkersPage";
+
+import UsersPage
+    from "../pages/Users/UsersPage";
+
+import SettingsPage
+    from "../pages/Settings/SettingsPage";
+
+import CustomersPage
+    from "../pages/Customers/CustomersPage";
+
+
 /*
 ============================================================
 REPORTS
 ============================================================
 */
 
-import ReportsPage from "../pages/reports/ReportsPage";
+import ReportsPage
+    from "../pages/reports/ReportsPage";
 
-import SalesReportPage from "../pages/reports/SalesReportPage";
+import SalesReportPage
+    from "../pages/reports/SalesReportPage";
 
-import ProductsReportPage from "../pages/reports/ProductsReportPage";
+import ProductsReportPage
+    from "../pages/reports/ProductsReportPage";
+
+import InventoryReportPage
+    from "../pages/reports/InventoryReportPage";
+
+import TransactionReportPage
+    from "../pages/reports/TransactionReportPage";
+
+import CashierReportPage
+    from "../pages/reports/CashierReportPage";
+
+
+/*
+============================================================
+SETTINGS
+============================================================
+*/
+
+import BranchManagementPage
+    from "../pages/Settings/BranchManagementPage";
 
 
 /*
@@ -93,12 +134,16 @@ function LandingRedirect() {
 
     const user =
         useAuthStore(
-            (state) =>
+            (
+                state
+            ) =>
                 state.user
         );
 
 
-    if (!user) {
+    if (
+        !user
+    ) {
 
         return (
 
@@ -138,7 +183,9 @@ function NoAccessPage() {
 
     const logout =
         useAuthStore(
-            (state) =>
+            (
+                state
+            ) =>
                 state.logout
         );
 
@@ -254,7 +301,6 @@ function AppRoutes() {
 
             <Routes>
 
-
                 {/* ==========================================
                     PUBLIC
                 ========================================== */}
@@ -283,22 +329,8 @@ function AppRoutes() {
                     }
                 >
 
-
                     {/* ======================================
                         SMART LANDING PAGE
-                    ======================================
-
-                    Admin:
-                    /
-
-                    -> /dashboard
-
-
-                    Kenneth:
-                    POS = true
-                    Sales = true
-
-                    -> /pos
                     ====================================== */}
 
                     <Route
@@ -370,6 +402,26 @@ function AppRoutes() {
 
 
                     {/* ======================================
+                        STOCK TRANSFERS
+                    ====================================== */}
+
+                    <Route
+                        path="/stock-transfers"
+                        element={
+
+                            <PermissionRoute
+                                permission="inventory"
+                            >
+
+                                <StockTransferPage />
+
+                            </PermissionRoute>
+
+                        }
+                    />
+
+
+                    {/* ======================================
                         POS
                     ====================================== */}
 
@@ -387,6 +439,26 @@ function AppRoutes() {
 
                         }
                     />
+
+
+                    {/* ======================================
+    BULK ORDERS
+====================================== */}
+
+<Route
+    path="/bulk-orders"
+    element={
+
+        <PermissionRoute
+            permission="bulkOrder"
+        >
+
+            <BulkOrderPage />
+
+        </PermissionRoute>
+
+    }
+/>
 
 
                     {/* ======================================
@@ -446,6 +518,38 @@ function AppRoutes() {
 
 
                     <Route
+                        path="/reports/inventory"
+                        element={
+
+                            <PermissionRoute
+                                permission="reports"
+                            >
+
+                                <InventoryReportPage />
+
+                            </PermissionRoute>
+
+                        }
+                    />
+
+
+                    <Route
+                        path="/reports/transactions"
+                        element={
+
+                            <PermissionRoute
+                                permission="reports"
+                            >
+
+                                <TransactionReportPage />
+
+                            </PermissionRoute>
+
+                        }
+                    />
+
+
+                    <Route
                         path="/reports/products"
                         element={
 
@@ -454,6 +558,22 @@ function AppRoutes() {
                             >
 
                                 <ProductsReportPage />
+
+                            </PermissionRoute>
+
+                        }
+                    />
+
+
+                    <Route
+                        path="/reports/cashiers"
+                        element={
+
+                            <PermissionRoute
+                                permission="reports"
+                            >
+
+                                <CashierReportPage />
 
                             </PermissionRoute>
 
@@ -520,54 +640,62 @@ function AppRoutes() {
                         }
                     />
 
+
+                    {/* ======================================
+                        CUSTOMERS
+                    ====================================== */}
+
                     <Route
-    path="/customers"
-    element={
+                        path="/customers"
+                        element={
 
-        <PermissionRoute
-            permission="customers"
-        >
+                            <PermissionRoute
+                                permission="customers"
+                            >
 
-            <CustomersPage />
+                                <CustomersPage />
 
-        </PermissionRoute>
+                            </PermissionRoute>
 
-    }
-/>
+                        }
+                    />
 
-                    
-{/* ======================================
-    SETTINGS
-====================================== */}
 
-<Route
-    path="/settings"
-    element={
+                    {/* ======================================
+                        SETTINGS
+                    ====================================== */}
 
-        <PermissionRoute
-            permission="settings"
-        >
+                    <Route
+                        path="/settings"
+                        element={
 
-            <SettingsPage />
+                            <PermissionRoute
+                                permission="settings"
+                            >
 
-        </PermissionRoute>
+                                <SettingsPage />
 
-    }
-    />
-<Route
-    path="/reports/cashiers"
-    element={
+                            </PermissionRoute>
 
-        <PermissionRoute
-            permission="reports"
-        >
+                        }
+                    />
 
-            <CashierReportPage />
 
-        </PermissionRoute>
+                    <Route
+                        path="/settings/branches"
+                        element={
 
-    }
-/>
+                            <ProtectedRoute
+                                permission="settings"
+                            >
+
+                                <BranchManagementPage />
+
+                            </ProtectedRoute>
+
+                        }
+                    />
+
 
                     {/* ======================================
                         NO ACCESS
@@ -596,8 +724,6 @@ function AppRoutes() {
                         />
                     }
                 />
-
-               
 
             </Routes>
 
