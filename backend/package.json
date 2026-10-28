@@ -1,21 +1,26 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "StorePOS Backend",
+  "main": "src/server.js",
   "type": "module",
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "seed": "node src/seeds/admin.seed.js",
+    "cloud-to-local": "node src/scripts/cloud-to-local.js",
     "migrate:users-branches": "node src/migrations/migrate-users-to-main-branch.js",
     "migrate:sales-branches": "node src/migrations/migrate-sales-to-main-branch.js",
     "migrate:inventory-transactions": "node src/migrations/migrate-inventory-transactions-to-main-branch.js",
     "migrate:branch-inventory": "node src/migrations/migrate-product-stock-to-main-branch.js",
     "migrate:ledger-branches": "node src/migrations/migrate-ledger-to-main-branch.js",
     "setup:branch2": "node src/migrations/create-branch-2.js"
-},
-  "keywords": [],
+  },
+  "keywords": [
+    "storepos",
+    "pos",
+    "api"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {

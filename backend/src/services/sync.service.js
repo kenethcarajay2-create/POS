@@ -481,31 +481,36 @@ GET / CREATE SYNC STATE
 ============================================================
 */
 
-const getSyncState = async () => {
+const getSyncState =
+    async () => {
 
-    let state =
-        await SyncState.findOne({
-            key:
-                SYNC_KEY,
-        });
+        let state =
+            await SyncState.findOne({
 
-
-    if (
-        !state
-    ) {
-
-        state =
-            await SyncState.create({
                 key:
                     SYNC_KEY,
+
             });
 
-    }
+
+        if (
+            !state
+        ) {
+
+            state =
+                await SyncState.create({
+
+                    key:
+                        SYNC_KEY,
+
+                });
+
+        }
 
 
-    return state;
+        return state;
 
-};
+    };
 
 
 /*
@@ -523,58 +528,59 @@ We use updatedAt to determine whether the lock is stale.
 ============================================================
 */
 
-const isSyncLockStale = (
-    state
-) => {
+const isSyncLockStale =
+    (
+        state
+    ) => {
 
-    if (
-        !state ||
-        state.status !==
-            "SYNCING"
-    ) {
+        if (
+            !state ||
+            state.status !==
+                "SYNCING"
+        ) {
 
-        return false;
+            return false;
 
-    }
-
-
-    if (
-        !state.updatedAt
-    ) {
-
-        return true;
-
-    }
+        }
 
 
-    const updatedAt =
-        new Date(
-            state.updatedAt
-        ).getTime();
+        if (
+            !state.updatedAt
+        ) {
+
+            return true;
+
+        }
 
 
-    if (
-        Number.isNaN(
-            updatedAt
-        )
-    ) {
-
-        return true;
-
-    }
+        const updatedAt =
+            new Date(
+                state.updatedAt
+            ).getTime();
 
 
-    const age =
-        Date.now() -
-        updatedAt;
+        if (
+            Number.isNaN(
+                updatedAt
+            )
+        ) {
+
+            return true;
+
+        }
 
 
-    return (
-        age >=
-        STALE_SYNC_LOCK_MS
-    );
+        const age =
+            Date.now() -
+            updatedAt;
 
-};
+
+        return (
+            age >=
+            STALE_SYNC_LOCK_MS
+        );
+
+    };
 
 
 /*
@@ -626,46 +632,47 @@ GET CLOUD MODEL
 ============================================================
 */
 
-const getCloudModel = (
-    localModel,
-    modelName
-) => {
+const getCloudModel =
+    (
+        localModel,
+        modelName
+    ) => {
 
-    const cloudConnection =
-        getCloudConnection();
+        const cloudConnection =
+            getCloudConnection();
 
 
-    if (
-        !cloudConnection
-    ) {
+        if (
+            !cloudConnection
+        ) {
 
-        throw new Error(
-            "Cloud database is not connected."
+            throw new Error(
+                "Cloud database is not connected."
+            );
+
+        }
+
+
+        if (
+            cloudConnection.models[
+                modelName
+            ]
+        ) {
+
+            return cloudConnection.models[
+                modelName
+            ];
+
+        }
+
+
+        return cloudConnection.model(
+            modelName,
+            localModel.schema,
+            localModel.collection.name
         );
 
-    }
-
-
-    if (
-        cloudConnection.models[
-            modelName
-        ]
-    ) {
-
-        return cloudConnection.models[
-            modelName
-        ];
-
-    }
-
-
-    return cloudConnection.model(
-        modelName,
-        localModel.schema,
-        localModel.collection.name
-    );
-
-};
+    };
 
 
 /*
@@ -674,21 +681,36 @@ BUILD INCREMENTAL QUERY
 ============================================================
 */
 
-const buildIncrementalQuery = ({
-    lastSyncAt,
-    syncStartedAt,
-}) => {
+const buildIncrementalQuery =
+    ({
+        lastSyncAt,
+        syncStartedAt,
+    }) => {
 
-    if (
-        lastSyncAt
-    ) {
+        if (
+            lastSyncAt
+        ) {
+
+            return {
+
+                updatedAt: {
+
+                    $gt:
+                        lastSyncAt,
+
+                    $lte:
+                        syncStartedAt,
+
+                },
+
+            };
+
+        }
+
 
         return {
 
             updatedAt: {
-
-                $gt:
-                    lastSyncAt,
 
                 $lte:
                     syncStartedAt,
@@ -697,204 +719,1353 @@ const buildIncrementalQuery = ({
 
         };
 
-    }
-
-
-    return {
-
-        updatedAt: {
-
-            $lte:
-                syncStartedAt,
-
-        },
-
     };
-
-};
 
 
 /*
 ============================================================
-SYNC COLLECTION
+NORMALIZE STRING
 ============================================================
 */
 
-const syncCollection = async ({
-    localModel,
-    cloudModel,
-    lastSyncAt,
-    syncStartedAt,
-    syncMode = "incremental",
-}) => {
+const normalizeString =
+    (
+        value
+    ) => {
 
-    let query =
-        {};
+        return String(
+            value ??
+            ""
+        ).trim();
+
+    };
 
 
-    /*
-    ========================================================
-    QUERY MODE
-    ========================================================
-    */
+/*
+============================================================
+FIND EXISTING CLOUD PRODUCT
+============================================================
 
-    if (
-        syncMode ===
-        "incremental"
-    ) {
+A product can already exist in Atlas even when the local
+MongoDB _id is different.
 
-        query =
-            buildIncrementalQuery({
-                lastSyncAt,
-                syncStartedAt,
-            });
+Match priority:
 
-    } else if (
-        syncMode ===
-        "full"
-    ) {
+1. Same MongoDB _id
+2. Same pricingSourceId
+3. Same sourceCaptureId
+4. Same barcode
 
-        query =
+If any match is found, that cloud document is UPDATED.
+
+This prevents duplicate-key errors such as:
+
+E11000 duplicate key error
+index: barcode_1
+
+when the same real-world product already exists under an
+older cloud _id.
+============================================================
+*/
+
+const findExistingCloudProduct =
+    async (
+        cloudModel,
+        document
+    ) => {
+
+        /*
+        ====================================================
+        SAME _id
+        ====================================================
+        */
+
+        let existing =
+            await cloudModel
+                .findById(
+                    document._id
+                )
+                .lean();
+
+
+        if (
+            existing
+        ) {
+
+            return existing;
+
+        }
+
+
+        /*
+        ====================================================
+        SAME PRICING SOURCE ID
+        ====================================================
+        */
+
+        if (
+            document.pricingSourceId
+        ) {
+
+            existing =
+                await cloudModel
+                    .findOne({
+
+                        pricingSourceId:
+                            document.pricingSourceId,
+
+                    })
+                    .lean();
+
+
+            if (
+                existing
+            ) {
+
+                return existing;
+
+            }
+
+        }
+
+
+        /*
+        ====================================================
+        SAME SOURCE CAPTURE ID
+        ====================================================
+        */
+
+        if (
+            document.sourceCaptureId
+        ) {
+
+            existing =
+                await cloudModel
+                    .findOne({
+
+                        sourceCaptureId:
+                            document.sourceCaptureId,
+
+                    })
+                    .lean();
+
+
+            if (
+                existing
+            ) {
+
+                return existing;
+
+            }
+
+        }
+
+
+        /*
+        ====================================================
+        SAME BARCODE
+        ====================================================
+        */
+
+        const barcode =
+            normalizeString(
+                document.barcode
+            );
+
+
+        if (
+            barcode
+        ) {
+
+            existing =
+                await cloudModel
+                    .findOne({
+
+                        barcode,
+
+                    })
+                    .lean();
+
+
+            if (
+                existing
+            ) {
+
+                return existing;
+
+            }
+
+        }
+
+
+        return null;
+
+    };
+
+
+/*
+============================================================
+FIND EXISTING CLOUD BRANCH
+============================================================
+
+Branches should normally retain identical _id values.
+
+However, older Atlas data may contain the same logical branch
+under another _id.
+
+We therefore also allow branch code as a fallback identity.
+============================================================
+*/
+
+const findExistingCloudBranch =
+    async (
+        cloudModel,
+        document
+    ) => {
+
+        let existing =
+            await cloudModel
+                .findById(
+                    document._id
+                )
+                .lean();
+
+
+        if (
+            existing
+        ) {
+
+            return existing;
+
+        }
+
+
+        const code =
+            normalizeString(
+                document.code
+            );
+
+
+        if (
+            code
+        ) {
+
+            existing =
+                await cloudModel
+                    .findOne({
+
+                        code,
+
+                    })
+                    .lean();
+
+
+            if (
+                existing
+            ) {
+
+                return existing;
+
+            }
+
+        }
+
+
+        return null;
+
+    };
+
+
+/*
+============================================================
+RESOLVE CLOUD PRODUCT FOR LOCAL PRODUCT
+============================================================
+
+Used by BranchInventory synchronization.
+
+Because old cloud Product records may have different _id
+values, BranchInventory.product cannot blindly use the local
+product _id.
+
+This function finds the corresponding cloud Product and
+returns its actual cloud _id.
+============================================================
+*/
+
+const resolveCloudProductId =
+    async (
+        localProductId,
+        CloudProduct
+    ) => {
+
+        const localProduct =
+            await Product
+                .findById(
+                    localProductId
+                )
+                .lean();
+
+
+        if (
+            !localProduct
+        ) {
+
+            throw new Error(
+                `Local product ${localProductId} was not found while synchronizing branch inventory.`
+            );
+
+        }
+
+
+        const cloudProduct =
+            await findExistingCloudProduct(
+                CloudProduct,
+                localProduct
+            );
+
+
+        if (
+            !cloudProduct
+        ) {
+
+            throw new Error(
+                `Cloud product mapping could not be resolved for local product ${localProductId} (${localProduct.barcode || localProduct.name || "unknown product"}).`
+            );
+
+        }
+
+
+        return cloudProduct._id;
+
+    };
+
+
+/*
+============================================================
+RESOLVE CLOUD BRANCH FOR LOCAL BRANCH
+============================================================
+
+Same concept as product mapping.
+
+Normally branch IDs are identical, but code matching provides
+a safe fallback for older Atlas data.
+============================================================
+*/
+
+const resolveCloudBranchId =
+    async (
+        localBranchId,
+        CloudBranch
+    ) => {
+
+        const localBranch =
+            await Branch
+                .findById(
+                    localBranchId
+                )
+                .lean();
+
+
+        if (
+            !localBranch
+        ) {
+
+            throw new Error(
+                `Local branch ${localBranchId} was not found while synchronizing branch inventory.`
+            );
+
+        }
+
+
+        const cloudBranch =
+            await findExistingCloudBranch(
+                CloudBranch,
+                localBranch
+            );
+
+
+        if (
+            !cloudBranch
+        ) {
+
+            throw new Error(
+                `Cloud branch mapping could not be resolved for local branch ${localBranchId} (${localBranch.code || localBranch.name || "unknown branch"}).`
+            );
+
+        }
+
+
+        return cloudBranch._id;
+
+    };
+
+
+/*
+============================================================
+SYNC PRODUCT COLLECTION
+============================================================
+
+Products require identity matching beyond MongoDB _id.
+
+When an equivalent product already exists in cloud:
+
+    UPDATE IT
+
+When no equivalent product exists:
+
+    CREATE IT
+
+Existing cloud _id values are preserved.
+
+Product.stock remains legacy data.
+
+Live inventory is synchronized separately through
+BranchInventory.
+============================================================
+*/
+
+const syncProductCollection =
+    async ({
+        localModel,
+        cloudModel,
+        lastSyncAt,
+        syncStartedAt,
+        syncMode = "incremental",
+    }) => {
+
+        let query =
             {};
 
-    } else {
 
-        throw new Error(
-            `Unsupported cloud sync mode: ${syncMode}`
-        );
+        /*
+        ====================================================
+        QUERY MODE
+        ====================================================
+        */
 
-    }
+        if (
+            syncMode ===
+            "incremental"
+        ) {
+
+            query =
+                buildIncrementalQuery({
+
+                    lastSyncAt,
+
+                    syncStartedAt,
+
+                });
+
+        } else if (
+            syncMode ===
+            "full"
+        ) {
+
+            query =
+                {};
+
+        } else {
+
+            throw new Error(
+                `Unsupported cloud sync mode: ${syncMode}`
+            );
+
+        }
 
 
-    /*
-    ========================================================
-    LOAD LOCAL DOCUMENTS
-    ========================================================
-    */
+        /*
+        ====================================================
+        LOAD LOCAL PRODUCTS
+        ====================================================
+        */
 
-    const documents =
-        await localModel
-            .find(
-                query
-            )
-            .lean();
+        const documents =
+            await localModel
+                .find(
+                    query
+                )
+                .lean();
 
 
-    if (
-        documents.length ===
-        0
-    ) {
+        if (
+            documents.length ===
+            0
+        ) {
+
+            return {
+
+                scanned:
+                    0,
+
+                synced:
+                    0,
+
+                matched:
+                    0,
+
+                modified:
+                    0,
+
+                upserted:
+                    0,
+
+                syncMode,
+
+            };
+
+        }
+
+
+        let matched =
+            0;
+
+        let modified =
+            0;
+
+        let upserted =
+            0;
+
+
+        /*
+        ====================================================
+        PROCESS PRODUCTS
+        ====================================================
+        */
+
+        for (
+            const document
+            of documents
+        ) {
+
+            const existing =
+                await findExistingCloudProduct(
+                    cloudModel,
+                    document
+                );
+
+
+            const {
+                _id,
+                ...data
+            } =
+                document;
+
+
+            /*
+            =================================================
+            EXISTING PRODUCT
+            =================================================
+            */
+
+            if (
+                existing
+            ) {
+
+                const result =
+                    await cloudModel
+                        .updateOne(
+                            {
+                                _id:
+                                    existing._id,
+                            },
+                            {
+                                $set:
+                                    data,
+                            }
+                        );
+
+
+                matched +=
+                    1;
+
+
+                modified +=
+                    result.modifiedCount ||
+                    0;
+
+
+                continue;
+
+            }
+
+
+            /*
+            =================================================
+            NEW PRODUCT
+            =================================================
+
+            Preserve local _id for genuinely new products.
+            =================================================
+            */
+
+            await cloudModel.create({
+
+                _id,
+
+                ...data,
+
+            });
+
+
+            upserted +=
+                1;
+
+        }
+
 
         return {
 
             scanned:
-                0,
+                documents.length,
 
             synced:
-                0,
+                documents.length,
+
+            matched,
+
+            modified,
+
+            upserted,
+
+            syncMode,
+
+        };
+
+    };
+
+
+/*
+============================================================
+SYNC BRANCH COLLECTION
+============================================================
+
+Normally branch IDs match.
+
+If cloud contains an older branch document with the same
+branch code but another _id, update that document instead
+of creating a duplicate logical branch.
+============================================================
+*/
+
+const syncBranchCollection =
+    async ({
+        localModel,
+        cloudModel,
+        lastSyncAt,
+        syncStartedAt,
+        syncMode = "incremental",
+    }) => {
+
+        let query =
+            {};
+
+
+        if (
+            syncMode ===
+            "incremental"
+        ) {
+
+            query =
+                buildIncrementalQuery({
+
+                    lastSyncAt,
+
+                    syncStartedAt,
+
+                });
+
+        } else if (
+            syncMode ===
+            "full"
+        ) {
+
+            query =
+                {};
+
+        } else {
+
+            throw new Error(
+                `Unsupported cloud sync mode: ${syncMode}`
+            );
+
+        }
+
+
+        const documents =
+            await localModel
+                .find(
+                    query
+                )
+                .lean();
+
+
+        if (
+            documents.length ===
+            0
+        ) {
+
+            return {
+
+                scanned:
+                    0,
+
+                synced:
+                    0,
+
+                matched:
+                    0,
+
+                modified:
+                    0,
+
+                upserted:
+                    0,
+
+                syncMode,
+
+            };
+
+        }
+
+
+        let matched =
+            0;
+
+        let modified =
+            0;
+
+        let upserted =
+            0;
+
+
+        for (
+            const document
+            of documents
+        ) {
+
+            const existing =
+                await findExistingCloudBranch(
+                    cloudModel,
+                    document
+                );
+
+
+            const {
+                _id,
+                ...data
+            } =
+                document;
+
+
+            if (
+                existing
+            ) {
+
+                const result =
+                    await cloudModel
+                        .updateOne(
+                            {
+                                _id:
+                                    existing._id,
+                            },
+                            {
+                                $set:
+                                    data,
+                            }
+                        );
+
+
+                matched +=
+                    1;
+
+
+                modified +=
+                    result.modifiedCount ||
+                    0;
+
+
+                continue;
+
+            }
+
+
+            await cloudModel.create({
+
+                _id,
+
+                ...data,
+
+            });
+
+
+            upserted +=
+                1;
+
+        }
+
+
+        return {
+
+            scanned:
+                documents.length,
+
+            synced:
+                documents.length,
+
+            matched,
+
+            modified,
+
+            upserted,
+
+            syncMode,
+
+        };
+
+    };
+
+
+/*
+============================================================
+SYNC BRANCH INVENTORY COLLECTION
+============================================================
+
+BranchInventory is the authoritative stock source.
+
+Important:
+
+Local Product _id and Cloud Product _id may differ.
+
+Therefore we resolve:
+
+    local product
+        ↓
+    matching cloud product
+        ↓
+    cloud product _id
+
+before writing BranchInventory.
+
+Same is done for branches.
+
+An existing BranchInventory is matched by:
+
+    cloud branch + cloud product
+
+rather than only BranchInventory._id.
+
+This allows stock, minimumStock and isActive to update the
+existing cloud inventory record instead of creating duplicate
+inventory documents.
+============================================================
+*/
+
+const syncBranchInventoryCollection =
+    async ({
+        localModel,
+        cloudModel,
+        lastSyncAt,
+        syncStartedAt,
+        syncMode = "incremental",
+    }) => {
+
+        let query =
+            {};
+
+
+        if (
+            syncMode ===
+            "incremental"
+        ) {
+
+            query =
+                buildIncrementalQuery({
+
+                    lastSyncAt,
+
+                    syncStartedAt,
+
+                });
+
+        } else if (
+            syncMode ===
+            "full"
+        ) {
+
+            query =
+                {};
+
+        } else {
+
+            throw new Error(
+                `Unsupported cloud sync mode: ${syncMode}`
+            );
+
+        }
+
+
+        const documents =
+            await localModel
+                .find(
+                    query
+                )
+                .lean();
+
+
+        if (
+            documents.length ===
+            0
+        ) {
+
+            return {
+
+                scanned:
+                    0,
+
+                synced:
+                    0,
+
+                matched:
+                    0,
+
+                modified:
+                    0,
+
+                upserted:
+                    0,
+
+                syncMode,
+
+            };
+
+        }
+
+
+        const CloudProduct =
+            getCloudModel(
+                Product,
+                "Product"
+            );
+
+
+        const CloudBranch =
+            getCloudModel(
+                Branch,
+                "Branch"
+            );
+
+
+        let matched =
+            0;
+
+        let modified =
+            0;
+
+        let upserted =
+            0;
+
+
+        /*
+        ====================================================
+        CACHE ID MAPPINGS
+
+        Prevent repeated cloud/local lookups for the same
+        product or branch during a large inventory sync.
+        ====================================================
+        */
+
+        const productIdMap =
+            new Map();
+
+
+        const branchIdMap =
+            new Map();
+
+
+        for (
+            const document
+            of documents
+        ) {
+
+            const localProductKey =
+                String(
+                    document.product
+                );
+
+
+            const localBranchKey =
+                String(
+                    document.branch
+                );
+
+
+            let cloudProductId =
+                productIdMap.get(
+                    localProductKey
+                );
+
+
+            if (
+                !cloudProductId
+            ) {
+
+                cloudProductId =
+                    await resolveCloudProductId(
+                        document.product,
+                        CloudProduct
+                    );
+
+
+                productIdMap.set(
+                    localProductKey,
+                    cloudProductId
+                );
+
+            }
+
+
+            let cloudBranchId =
+                branchIdMap.get(
+                    localBranchKey
+                );
+
+
+            if (
+                !cloudBranchId
+            ) {
+
+                cloudBranchId =
+                    await resolveCloudBranchId(
+                        document.branch,
+                        CloudBranch
+                    );
+
+
+                branchIdMap.set(
+                    localBranchKey,
+                    cloudBranchId
+                );
+
+            }
+
+
+            const {
+                _id,
+                branch,
+                product,
+                ...data
+            } =
+                document;
+
+
+            /*
+            =================================================
+            FIND EXISTING CLOUD INVENTORY
+            =================================================
+            */
+
+            const existing =
+                await cloudModel
+                    .findOne({
+
+                        branch:
+                            cloudBranchId,
+
+                        product:
+                            cloudProductId,
+
+                    })
+                    .lean();
+
+
+            /*
+            =================================================
+            UPDATE EXISTING INVENTORY
+            =================================================
+            */
+
+            if (
+                existing
+            ) {
+
+                const result =
+                    await cloudModel
+                        .updateOne(
+                            {
+                                _id:
+                                    existing._id,
+                            },
+                            {
+                                $set: {
+
+                                    ...data,
+
+                                    branch:
+                                        cloudBranchId,
+
+                                    product:
+                                        cloudProductId,
+
+                                },
+                            }
+                        );
+
+
+                matched +=
+                    1;
+
+
+                modified +=
+                    result.modifiedCount ||
+                    0;
+
+
+                continue;
+
+            }
+
+
+            /*
+            =================================================
+            CREATE NEW INVENTORY
+            =================================================
+            */
+
+            await cloudModel.create({
+
+                _id,
+
+                ...data,
+
+                branch:
+                    cloudBranchId,
+
+                product:
+                    cloudProductId,
+
+            });
+
+
+            upserted +=
+                1;
+
+        }
+
+
+        return {
+
+            scanned:
+                documents.length,
+
+            synced:
+                documents.length,
+
+            matched,
+
+            modified,
+
+            upserted,
+
+            syncMode,
+
+        };
+
+    };
+
+
+/*
+============================================================
+SYNC GENERIC COLLECTION
+============================================================
+
+Used for collections where local and cloud MongoDB _id values
+are expected to remain identical.
+
+Products, Branches and BranchInventory have specialized sync
+functions above.
+============================================================
+*/
+
+const syncCollection =
+    async ({
+        localModel,
+        cloudModel,
+        lastSyncAt,
+        syncStartedAt,
+        syncMode = "incremental",
+    }) => {
+
+        let query =
+            {};
+
+
+        /*
+        ====================================================
+        QUERY MODE
+        ====================================================
+        */
+
+        if (
+            syncMode ===
+            "incremental"
+        ) {
+
+            query =
+                buildIncrementalQuery({
+
+                    lastSyncAt,
+
+                    syncStartedAt,
+
+                });
+
+        } else if (
+            syncMode ===
+            "full"
+        ) {
+
+            query =
+                {};
+
+        } else {
+
+            throw new Error(
+                `Unsupported cloud sync mode: ${syncMode}`
+            );
+
+        }
+
+
+        /*
+        ====================================================
+        LOAD LOCAL DOCUMENTS
+        ====================================================
+        */
+
+        const documents =
+            await localModel
+                .find(
+                    query
+                )
+                .lean();
+
+
+        if (
+            documents.length ===
+            0
+        ) {
+
+            return {
+
+                scanned:
+                    0,
+
+                synced:
+                    0,
+
+                matched:
+                    0,
+
+                modified:
+                    0,
+
+                upserted:
+                    0,
+
+                syncMode,
+
+            };
+
+        }
+
+
+        /*
+        ====================================================
+        BUILD CLOUD UPSERTS
+        ====================================================
+        */
+
+        const operations =
+            documents.map(
+                (
+                    document
+                ) => {
+
+                    const {
+                        _id,
+                        ...data
+                    } =
+                        document;
+
+
+                    return {
+
+                        updateOne: {
+
+                            filter: {
+                                _id,
+                            },
+
+                            update: {
+
+                                $set:
+                                    data,
+
+                            },
+
+                            upsert:
+                                true,
+
+                        },
+
+                    };
+
+                }
+            );
+
+
+        /*
+        ====================================================
+        WRITE TO CLOUD
+        ====================================================
+        */
+
+        const result =
+            await cloudModel.bulkWrite(
+                operations,
+                {
+                    ordered:
+                        false,
+                }
+            );
+
+
+        return {
+
+            scanned:
+                documents.length,
+
+            synced:
+                documents.length,
 
             matched:
+                result.matchedCount ||
                 0,
 
             modified:
+                result.modifiedCount ||
                 0,
 
             upserted:
+                result.upsertedCount ||
                 0,
 
             syncMode,
 
         };
 
-    }
-
-
-    /*
-    ========================================================
-    BUILD CLOUD UPSERTS
-    ========================================================
-    */
-
-    const operations =
-        documents.map(
-            (
-                document
-            ) => {
-
-                const {
-                    _id,
-                    ...data
-                } =
-                    document;
-
-
-                return {
-
-                    updateOne: {
-
-                        filter: {
-                            _id,
-                        },
-
-                        update: {
-
-                            $set:
-                                data,
-
-                        },
-
-                        upsert:
-                            true,
-
-                    },
-
-                };
-
-            }
-        );
-
-
-    /*
-    ========================================================
-    WRITE TO CLOUD
-    ========================================================
-    */
-
-    const result =
-        await cloudModel.bulkWrite(
-            operations,
-            {
-                ordered:
-                    false,
-            }
-        );
-
-
-    return {
-
-        scanned:
-            documents.length,
-
-        synced:
-            documents.length,
-
-        matched:
-            result.matchedCount ||
-            0,
-
-        modified:
-            result.modifiedCount ||
-            0,
-
-        upserted:
-            result.upsertedCount ||
-            0,
-
-        syncMode,
-
     };
-
-};
 
 
 /*
@@ -903,199 +2074,578 @@ SYNC TO CLOUD
 ============================================================
 */
 
-const syncToCloud = async () => {
+const syncToCloud =
+    async () => {
 
-    let state =
-        await getSyncState();
+        let state =
+            await getSyncState();
 
 
-    /*
-    ========================================================
-    STALE LOCK RECOVERY
-    ========================================================
-    */
+        /*
+        ========================================================
+        STALE LOCK RECOVERY
+        ========================================================
+        */
 
-    if (
-        state.status ===
-        "SYNCING"
-    ) {
+        if (
+            state.status ===
+            "SYNCING"
+        ) {
 
-        const recovered =
-            await recoverStaleSyncLock(
-                state
+            const recovered =
+                await recoverStaleSyncLock(
+                    state
+                );
+
+
+            if (
+                recovered
+            ) {
+
+                state =
+                    await getSyncState();
+
+            }
+
+        }
+
+
+        /*
+        ========================================================
+        PREVENT REAL OVERLAPPING RUNS
+        ========================================================
+        */
+
+        if (
+            state.status ===
+            "SYNCING"
+        ) {
+
+            return {
+
+                success:
+                    false,
+
+                message:
+                    "A cloud sync is already running.",
+
+            };
+
+        }
+
+
+        /*
+        ========================================================
+        MARK SYNCING
+        ========================================================
+        */
+
+        state.status =
+            "SYNCING";
+
+
+        state.lastError =
+            "";
+
+
+        await state.save();
+
+
+        try {
+
+            /*
+            ====================================================
+            CLOUD CONNECTION
+            ====================================================
+            */
+
+            if (
+                !isCloudConnected()
+            ) {
+
+                await connectCloudDatabase();
+
+            }
+
+
+            if (
+                !isCloudConnected()
+            ) {
+
+                throw new Error(
+                    "Cloud database is unavailable."
+                );
+
+            }
+
+
+            /*
+            ====================================================
+            COMMON SYNC WINDOW
+            ====================================================
+            */
+
+            const syncStartedAt =
+                new Date();
+
+
+            const lastSyncAt =
+                state.lastSyncAt;
+
+
+            const collections =
+                {};
+
+
+            /*
+            ====================================================
+            SYNC COLLECTIONS
+            ====================================================
+            */
+
+            for (
+                const config
+                of SYNC_COLLECTIONS
+            ) {
+
+                const CloudModel =
+                    getCloudModel(
+                        config.model,
+                        config.modelName
+                    );
+
+
+                console.log(
+                    `☁️ Syncing ${config.key}...`
+                );
+
+
+                let result;
+
+
+                /*
+                =================================================
+                BRANCHES
+                =================================================
+                */
+
+                if (
+                    config.key ===
+                    "branches"
+                ) {
+
+                    result =
+                        await syncBranchCollection({
+
+                            localModel:
+                                config.model,
+
+                            cloudModel:
+                                CloudModel,
+
+                            lastSyncAt,
+
+                            syncStartedAt,
+
+                            syncMode:
+                                config.syncMode,
+
+                        });
+
+                }
+
+
+                /*
+                =================================================
+                PRODUCTS
+                =================================================
+                */
+
+                else if (
+                    config.key ===
+                    "products"
+                ) {
+
+                    result =
+                        await syncProductCollection({
+
+                            localModel:
+                                config.model,
+
+                            cloudModel:
+                                CloudModel,
+
+                            lastSyncAt,
+
+                            syncStartedAt,
+
+                            syncMode:
+                                config.syncMode,
+
+                        });
+
+                }
+
+
+                /*
+                =================================================
+                BRANCH INVENTORY
+                =================================================
+                */
+
+                else if (
+                    config.key ===
+                    "branchInventories"
+                ) {
+
+                    result =
+                        await syncBranchInventoryCollection({
+
+                            localModel:
+                                config.model,
+
+                            cloudModel:
+                                CloudModel,
+
+                            lastSyncAt,
+
+                            syncStartedAt,
+
+                            syncMode:
+                                config.syncMode,
+
+                        });
+
+                }
+
+
+                /*
+                =================================================
+                GENERIC COLLECTION
+                =================================================
+                */
+
+                else {
+
+                    result =
+                        await syncCollection({
+
+                            localModel:
+                                config.model,
+
+                            cloudModel:
+                                CloudModel,
+
+                            lastSyncAt,
+
+                            syncStartedAt,
+
+                            syncMode:
+                                config.syncMode,
+
+                        });
+
+                }
+
+
+                collections[
+                    config.key
+                ] =
+                    result;
+
+
+                console.log(
+                    `☁️ ${config.key}: ${result.synced} synced (${result.syncMode})`
+                );
+
+            }
+
+
+            /*
+            ====================================================
+            SUCCESS
+            ====================================================
+            */
+
+            state.lastSyncAt =
+                syncStartedAt;
+
+
+            state.lastSuccessAt =
+                new Date();
+
+
+            state.status =
+                "SUCCESS";
+
+
+            state.lastError =
+                "";
+
+
+            await state.save();
+
+
+            return {
+
+                success:
+                    true,
+
+                syncedAt:
+                    state.lastSuccessAt,
+
+                lastSyncAt:
+                    state.lastSyncAt,
+
+                collections,
+
+            };
+
+
+        } catch (
+            error
+        ) {
+
+            /*
+            ====================================================
+            FAILURE
+            ====================================================
+
+            lastSyncAt intentionally remains unchanged.
+
+            Therefore all unsynchronized local changes remain
+            eligible for the next retry.
+            ====================================================
+            */
+
+            state.status =
+                "FAILED";
+
+
+            state.lastError =
+                error?.message ||
+                "Unknown cloud synchronization error.";
+
+
+            try {
+
+                await state.save();
+
+            } catch (
+                stateError
+            ) {
+
+                console.error(
+                    "☁️ Unable to save failed sync state:",
+                    stateError
+                );
+
+            }
+
+
+            console.error(
+                "☁️ Cloud sync failed:",
+                error
+            );
+
+
+            throw error;
+
+        }
+
+    };
+
+
+/*
+============================================================
+GET NEXT SCHEDULED SYNC
+============================================================
+*/
+
+const getNextSyncTime =
+    () => {
+
+        const now =
+            new Date();
+
+
+        const next =
+            new Date(
+                now
+            );
+
+
+        const hour =
+            now.getHours();
+
+
+        const scheduledHours = [
+            0,
+            6,
+            12,
+            18,
+        ];
+
+
+        const nextHour =
+            scheduledHours.find(
+                (
+                    scheduledHour
+                ) =>
+                    scheduledHour >
+                    hour
             );
 
 
         if (
-            recovered
+            nextHour !==
+            undefined
         ) {
+
+            next.setHours(
+                nextHour,
+                0,
+                0,
+                0
+            );
+
+        } else {
+
+            next.setDate(
+                next.getDate() +
+                    1
+            );
+
+
+            next.setHours(
+                0,
+                0,
+                0,
+                0
+            );
+
+        }
+
+
+        return next;
+
+    };
+
+
+/*
+============================================================
+GET SYNC STATUS
+============================================================
+*/
+
+const getSyncStatus =
+    async () => {
+
+        let state =
+            await getSyncState();
+
+
+        if (
+            state.status ===
+                "SYNCING" &&
+            isSyncLockStale(
+                state
+            )
+        ) {
+
+            await recoverStaleSyncLock(
+                state
+            );
+
 
             state =
                 await getSyncState();
 
         }
 
-    }
-
-
-    /*
-    ========================================================
-    PREVENT REAL OVERLAPPING RUNS
-    ========================================================
-    */
-
-    if (
-        state.status ===
-        "SYNCING"
-    ) {
 
         return {
 
-            success:
-                false,
+            status:
+                state.status,
 
-            message:
-                "A cloud sync is already running.",
+            lastSyncAt:
+                state.lastSyncAt,
+
+            lastSuccessAt:
+                state.lastSuccessAt,
+
+            lastError:
+                state.lastError,
+
+            cloudConnected:
+                isCloudConnected(),
+
+            nextSyncAt:
+                getNextSyncTime(),
+
+            automaticSync:
+                true,
+
+            /*
+            The 6-hour sync remains our slower safety /
+            reconciliation schedule.
+
+            The live outbox worker operates separately.
+            */
+
+            syncIntervalHours:
+                6,
+
+            liveSyncEnabled:
+                true,
+
+            liveSyncIntervalSeconds:
+                5,
+
+            staleLockTimeoutMinutes:
+                STALE_SYNC_LOCK_MS /
+                60000,
+
+            collections:
+                SYNC_COLLECTIONS.map(
+                    (
+                        item
+                    ) => ({
+
+                        key:
+                            item.key,
+
+                        syncMode:
+                            item.syncMode,
+
+                    })
+                ),
 
         };
 
-    }
+    };
 
 
-    /*
-    ========================================================
-    MARK SYNCING
-    ========================================================
-    */
+/*
+============================================================
+RESET SYNC STATE
+============================================================
+*/
 
-    state.status =
-        "SYNCING";
+const resetSyncState =
+    async () => {
 
+        const state =
+            await getSyncState();
 
-    state.lastError =
-        "";
-
-
-    await state.save();
-
-
-    try {
-
-        /*
-        ====================================================
-        CLOUD CONNECTION
-        ====================================================
-        */
-
-        if (
-            !isCloudConnected()
-        ) {
-
-            await connectCloudDatabase();
-
-        }
-
-
-        if (
-            !isCloudConnected()
-        ) {
-
-            throw new Error(
-                "Cloud database is unavailable."
-            );
-
-        }
-
-
-        /*
-        ====================================================
-        COMMON SYNC WINDOW
-        ====================================================
-        */
-
-        const syncStartedAt =
-            new Date();
-
-
-        const lastSyncAt =
-            state.lastSyncAt;
-
-
-        const collections =
-            {};
-
-
-        /*
-        ====================================================
-        SYNC COLLECTIONS
-        ====================================================
-        */
-
-        for (
-            const config
-            of SYNC_COLLECTIONS
-        ) {
-
-            const CloudModel =
-                getCloudModel(
-                    config.model,
-                    config.modelName
-                );
-
-
-            console.log(
-                `☁️ Syncing ${config.key}...`
-            );
-
-
-            const result =
-                await syncCollection({
-
-                    localModel:
-                        config.model,
-
-                    cloudModel:
-                        CloudModel,
-
-                    lastSyncAt,
-
-                    syncStartedAt,
-
-                    syncMode:
-                        config.syncMode,
-
-                });
-
-
-            collections[
-                config.key
-            ] =
-                result;
-
-
-            console.log(
-                `☁️ ${config.key}: ${result.synced} synced (${result.syncMode})`
-            );
-
-        }
-
-
-        /*
-        ====================================================
-        SUCCESS
-        ====================================================
-        */
 
         state.lastSyncAt =
-            syncStartedAt;
-
-
-        state.lastSuccessAt =
-            new Date();
+            null;
 
 
         state.status =
-            "SUCCESS";
+            "IDLE";
 
 
         state.lastError =
@@ -1110,278 +2660,12 @@ const syncToCloud = async () => {
             success:
                 true,
 
-            syncedAt:
-                state.lastSuccessAt,
-
-            lastSyncAt:
-                state.lastSyncAt,
-
-            collections,
+            message:
+                "Sync state reset. Next sync will perform a full upload.",
 
         };
 
-
-    } catch (
-        error
-    ) {
-
-        /*
-        ====================================================
-        FAILURE
-        ====================================================
-
-        lastSyncAt intentionally remains unchanged.
-
-        Therefore all unsynchronized local changes remain
-        eligible for the next retry.
-        ====================================================
-        */
-
-        state.status =
-            "FAILED";
-
-
-        state.lastError =
-            error?.message ||
-            "Unknown cloud synchronization error.";
-
-
-        try {
-
-            await state.save();
-
-        } catch (
-            stateError
-        ) {
-
-            console.error(
-                "☁️ Unable to save failed sync state:",
-                stateError
-            );
-
-        }
-
-
-        console.error(
-            "☁️ Cloud sync failed:",
-            error
-        );
-
-
-        throw error;
-
-    }
-
-};
-
-
-/*
-============================================================
-GET NEXT SCHEDULED SYNC
-============================================================
-*/
-
-const getNextSyncTime = () => {
-
-    const now =
-        new Date();
-
-
-    const next =
-        new Date(
-            now
-        );
-
-
-    const hour =
-        now.getHours();
-
-
-    const scheduledHours = [
-        0,
-        6,
-        12,
-        18,
-    ];
-
-
-    const nextHour =
-        scheduledHours.find(
-            (
-                scheduledHour
-            ) =>
-                scheduledHour >
-                hour
-        );
-
-
-    if (
-        nextHour !==
-        undefined
-    ) {
-
-        next.setHours(
-            nextHour,
-            0,
-            0,
-            0
-        );
-
-    } else {
-
-        next.setDate(
-            next.getDate() +
-                1
-        );
-
-
-        next.setHours(
-            0,
-            0,
-            0,
-            0
-        );
-
-    }
-
-
-    return next;
-
-};
-
-
-/*
-============================================================
-GET SYNC STATUS
-============================================================
-*/
-
-const getSyncStatus = async () => {
-
-    let state =
-        await getSyncState();
-
-
-    if (
-        state.status ===
-        "SYNCING" &&
-        isSyncLockStale(
-            state
-        )
-    ) {
-
-        await recoverStaleSyncLock(
-            state
-        );
-
-
-        state =
-            await getSyncState();
-
-    }
-
-
-    return {
-
-        status:
-            state.status,
-
-        lastSyncAt:
-            state.lastSyncAt,
-
-        lastSuccessAt:
-            state.lastSuccessAt,
-
-        lastError:
-            state.lastError,
-
-        cloudConnected:
-            isCloudConnected(),
-
-        nextSyncAt:
-            getNextSyncTime(),
-
-        automaticSync:
-            true,
-
-        /*
-        The 6-hour sync remains our slower safety /
-        reconciliation schedule.
-
-        The live outbox worker operates separately.
-        */
-
-        syncIntervalHours:
-            6,
-
-        liveSyncEnabled:
-            true,
-
-        liveSyncIntervalSeconds:
-            5,
-
-        staleLockTimeoutMinutes:
-            STALE_SYNC_LOCK_MS /
-            60000,
-
-        collections:
-            SYNC_COLLECTIONS.map(
-                (
-                    item
-                ) => ({
-
-                    key:
-                        item.key,
-
-                    syncMode:
-                        item.syncMode,
-
-                })
-            ),
-
     };
-
-};
-
-
-/*
-============================================================
-RESET SYNC STATE
-============================================================
-*/
-
-const resetSyncState = async () => {
-
-    const state =
-        await getSyncState();
-
-
-    state.lastSyncAt =
-        null;
-
-
-    state.status =
-        "IDLE";
-
-
-    state.lastError =
-        "";
-
-
-    await state.save();
-
-
-    return {
-
-        success:
-            true,
-
-        message:
-            "Sync state reset. Next sync will perform a full upload.",
-
-    };
-
-};
 
 
 /*

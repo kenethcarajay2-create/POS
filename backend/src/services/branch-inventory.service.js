@@ -2,9 +2,13 @@ import mongoose from "mongoose";
 
 import BranchInventory from "../models/branchInventory.model.js";
 
+import Branch from "../models/branch.model.js";
+
 import Product from "../models/product.model.js";
 
 import ApiError from "../utils/ApiError.js";
+
+import syncOutboxService from "./syncOutbox.service.js";
 
 
 /*
@@ -224,6 +228,196 @@ const requireProduct = async (
     return product;
 
 };
+
+
+/*
+============================================================
+ENQUEUE INVENTORY SYNC CHANGE
+============================================================
+
+Every real local stock mutation creates a durable delta event
+in the SAME MongoDB transaction when a session is supplied.
+
+Remote cloud events call the stock helpers with:
+
+    skipSyncEvent: true
+
+so an incoming event never creates another outgoing event.
+============================================================
+*/
+
+const enqueueInventorySyncChange =
+    async ({
+        branchId,
+        productId,
+        quantityChange,
+        source = "INVENTORY",
+        action = "UPDATE",
+        referenceId = null,
+        session = null,
+        skipSyncEvent = false,
+    }) => {
+
+        if (
+            skipSyncEvent
+        ) {
+
+            return;
+
+        }
+
+
+        const numericQuantityChange =
+            Number(
+                quantityChange
+            );
+
+
+        if (
+            !Number.isFinite(
+                numericQuantityChange
+            ) ||
+            numericQuantityChange ===
+                0
+        ) {
+
+            return;
+
+        }
+
+
+        let productQuery =
+            Product.findById(
+                productId
+            );
+
+
+        let branchQuery =
+            Branch.findById(
+                branchId
+            );
+
+
+        if (
+            session
+        ) {
+
+            productQuery =
+                productQuery.session(
+                    session
+                );
+
+
+            branchQuery =
+                branchQuery.session(
+                    session
+                );
+
+        }
+
+
+        const [
+            product,
+            branch,
+        ] =
+            await Promise.all([
+                productQuery,
+                branchQuery,
+            ]);
+
+
+        if (
+            !product
+        ) {
+
+            throw new ApiError(
+                404,
+                "Product not found while creating inventory synchronization event."
+            );
+
+        }
+
+
+        if (
+            !branch
+        ) {
+
+            throw new ApiError(
+                404,
+                "Branch not found while creating inventory synchronization event."
+            );
+
+        }
+
+
+        const barcode =
+            String(
+                product.barcode ||
+                ""
+            ).trim();
+
+
+        const branchCode =
+            String(
+                branch.code ||
+                ""
+            )
+                .trim()
+                .toUpperCase();
+
+
+        if (
+            !barcode
+        ) {
+
+            throw new ApiError(
+                409,
+                `Product ${product.name || product._id} does not have a barcode and cannot be synchronized between POS computers.`
+            );
+
+        }
+
+
+        if (
+            !branchCode
+        ) {
+
+            throw new ApiError(
+                409,
+                "The branch does not have a branch code and cannot be synchronized between POS computers."
+            );
+
+        }
+
+
+        await syncOutboxService
+            .enqueueInventoryChange({
+
+                productId:
+                    product._id,
+
+                productBarcode:
+                    barcode,
+
+                branchId:
+                    branch._id,
+
+                branchCode,
+
+                quantityChange:
+                    numericQuantityChange,
+
+                source,
+
+                action,
+
+                referenceId,
+
+                session,
+
+            });
+
+    };
 
 
 /*
@@ -595,6 +789,10 @@ const deductStock = async (
     quantity,
     {
         session = null,
+        skipSyncEvent = false,
+        source = "INVENTORY",
+        action = "DEDUCT",
+        referenceId = null,
     } = {}
 ) => {
 
@@ -668,6 +866,30 @@ const deductStock = async (
             Number(
                 inventory.stock
             );
+
+
+        await enqueueInventorySyncChange({
+
+            branchId:
+                resolvedBranchId,
+
+            productId:
+                resolvedProductId,
+
+            quantityChange:
+                -numericQuantity,
+
+            source,
+
+            action,
+
+            referenceId,
+
+            session,
+
+            skipSyncEvent,
+
+        });
 
 
         return {
@@ -765,6 +987,10 @@ const addStock = async (
     quantity,
     {
         session = null,
+        skipSyncEvent = false,
+        source = "INVENTORY",
+        action = "ADD",
+        referenceId = null,
     } = {}
 ) => {
 
@@ -831,6 +1057,30 @@ const addStock = async (
             Number(
                 inventory.stock
             );
+
+
+        await enqueueInventorySyncChange({
+
+            branchId:
+                resolvedBranchId,
+
+            productId:
+                resolvedProductId,
+
+            quantityChange:
+                numericQuantity,
+
+            source,
+
+            action,
+
+            referenceId,
+
+            session,
+
+            skipSyncEvent,
+
+        });
 
 
         return {
@@ -951,6 +1201,10 @@ const setStock = async (
     newStock,
     {
         session = null,
+        skipSyncEvent = false,
+        source = "INVENTORY",
+        action = "SET",
+        referenceId = null,
     } = {}
 ) => {
 
@@ -1073,6 +1327,31 @@ const setStock = async (
         );
 
     }
+
+
+    await enqueueInventorySyncChange({
+
+        branchId:
+            resolvedBranchId,
+
+        productId:
+            resolvedProductId,
+
+        quantityChange:
+            numericNewStock -
+            previousStock,
+
+        source,
+
+        action,
+
+        referenceId,
+
+        session,
+
+        skipSyncEvent,
+
+    });
 
 
     return {

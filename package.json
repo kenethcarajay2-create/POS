@@ -1,0 +1,27 @@
+{
+  "name": "17_pos",
+  "version": "1.0.0",
+  "description": "StorePOS",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently -k -n BACKEND,FRONTEND \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kenethcarajay2-create/POS.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/kenethcarajay2-create/POS/issues"
+  },
+  "homepage": "https://github.com/kenethcarajay2-create/POS#readme",
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
+}

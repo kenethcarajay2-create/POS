@@ -82,12 +82,9 @@ const normalizeObjectId =
     ) => {
 
         if (
-            value ===
-                null ||
-            value ===
-                undefined ||
-            value ===
-                ""
+            value === null ||
+            value === undefined ||
+            value === ""
         ) {
 
             if (
@@ -175,15 +172,6 @@ const createOutboxEvent =
 ============================================================
 ENQUEUE SYNC REQUEST
 ============================================================
-
-Existing generic local -> cloud synchronization event.
-
-Normal synchronization requests intentionally have:
-
-commandPayload: null
-
-They do not contain capability credentials.
-============================================================
 */
 
 const enqueueSyncRequest =
@@ -231,16 +219,6 @@ const enqueueSyncRequest =
                     "branch ID"
                 ),
 
-            /*
-            Normal synchronization requests do not have a
-            command payload.
-
-            IMPORTANT:
-
-            markSynced() must therefore never attempt to create
-            commandPayload.claimToken on these events.
-            */
-
             commandPayload:
                 null,
 
@@ -278,19 +256,211 @@ const enqueueSyncRequest =
 
 /*
 ============================================================
-ENQUEUE PREPARED CART FINALIZE COMMAND
+ENQUEUE INVENTORY CHANGE
 ============================================================
 
-This MUST be inserted in the SAME local MongoDB transaction
-that creates the Sale.
+Stores a SIGNED stock delta.
 
-That provides the guarantee:
+Examples:
 
-Sale committed locally
-    ⇔
-PreparedCart finalize command committed locally
+Sale of 2:
+    -2
 
-A checkout never depends on Atlas availability.
+Stock in 10:
+    +10
+
+This event is the cross-computer inventory message.
+============================================================
+*/
+
+const enqueueInventoryChange =
+    async ({
+        productId,
+        productBarcode,
+        branchId,
+        branchCode,
+        quantityChange,
+        source = "INVENTORY",
+        action = "ADJUST",
+        referenceId = null,
+        session = null,
+    }) => {
+
+        const resolvedProductId =
+            normalizeObjectId(
+                productId,
+                "product ID",
+                {
+                    required:
+                        true,
+                }
+            );
+
+
+        const resolvedBranchId =
+            normalizeObjectId(
+                branchId,
+                "branch ID",
+                {
+                    required:
+                        true,
+                }
+            );
+
+
+        const resolvedReferenceId =
+            normalizeObjectId(
+                referenceId,
+                "reference ID"
+            );
+
+
+        const normalizedProductBarcode =
+            String(
+                productBarcode ||
+                ""
+            ).trim();
+
+
+        if (
+            !normalizedProductBarcode
+        ) {
+
+            throw new Error(
+                "Product barcode is required for inventory synchronization."
+            );
+
+        }
+
+
+        const normalizedBranchCode =
+            String(
+                branchCode ||
+                ""
+            )
+                .trim()
+                .toUpperCase();
+
+
+        if (
+            !normalizedBranchCode
+        ) {
+
+            throw new Error(
+                "Branch code is required for inventory synchronization."
+            );
+
+        }
+
+
+        const normalizedQuantityChange =
+            Number(
+                quantityChange
+            );
+
+
+        if (
+            !Number.isFinite(
+                normalizedQuantityChange
+            ) ||
+            normalizedQuantityChange ===
+                0
+        ) {
+
+            throw new Error(
+                "Inventory quantity change must be a non-zero number."
+            );
+
+        }
+
+
+        const document = {
+
+            eventId:
+                createEventId(),
+
+            type:
+                "INVENTORY_CHANGE",
+
+            source:
+                String(
+                    source ||
+                    "INVENTORY"
+                )
+                    .trim()
+                    .toUpperCase(),
+
+            action:
+                String(
+                    action ||
+                    "ADJUST"
+                )
+                    .trim()
+                    .toUpperCase(),
+
+            aggregateId:
+                resolvedProductId,
+
+            branch:
+                resolvedBranchId,
+
+            commandPayload: {
+
+                productId:
+                    resolvedProductId,
+
+                productBarcode:
+                    normalizedProductBarcode,
+
+                branchId:
+                    resolvedBranchId,
+
+                branchCode:
+                    normalizedBranchCode,
+
+                quantityChange:
+                    normalizedQuantityChange,
+
+                referenceId:
+                    resolvedReferenceId,
+
+            },
+
+            status:
+                "PENDING",
+
+            attempts:
+                0,
+
+            lastAttemptAt:
+                null,
+
+            nextRetryAt:
+                null,
+
+            lastError:
+                "",
+
+            syncedAt:
+                null,
+
+            failedAt:
+                null,
+
+        };
+
+
+        return await createOutboxEvent(
+            document,
+            session
+        );
+
+    };
+
+
+/*
+============================================================
+ENQUEUE PREPARED CART FINALIZE COMMAND
 ============================================================
 */
 
@@ -462,32 +632,26 @@ const getReadyEvents =
                 },
 
                 $or: [
-
                     {
                         nextRetryAt:
                             null,
                     },
-
                     {
                         nextRetryAt: {
                             $lte:
                                 now,
                         },
                     },
-
                 ],
 
             })
-
             .sort({
                 createdAt:
                     1,
             })
-
             .limit(
                 limit
             )
-
             .lean();
 
     };
@@ -519,33 +683,24 @@ const markAttempt =
 
         await SyncOutbox.updateMany(
             {
-
                 eventId: {
                     $in:
                         eventIds,
                 },
-
                 status:
                     "PENDING",
-
             },
             {
-
                 $inc: {
                     attempts:
                         1,
                 },
-
                 $set: {
-
                     lastAttemptAt:
                         new Date(),
-
                     lastError:
                         "",
-
                 },
-
             }
         );
 
@@ -555,39 +710,6 @@ const markAttempt =
 /*
 ============================================================
 MARK SYNCED
-============================================================
-
-IMPORTANT:
-
-There are two kinds of outbox events:
-
-SYNC_REQUEST
-    commandPayload is null.
-
-CLOUD_COMMAND
-    commandPayload may contain sensitive capability
-    credentials such as PreparedCart claimToken.
-
-We MUST NOT execute:
-
-"commandPayload.claimToken": null
-
-against a document where commandPayload itself is null.
-
-MongoDB correctly rejects that operation with:
-
-Cannot create field 'claimToken' in element
-{ commandPayload: null }
-
-Therefore normal synchronization events and cloud commands
-are acknowledged separately.
-
-For CLOUD_COMMAND events the entire commandPayload is cleared
-after successful acknowledgement.
-
-Clearing the complete payload is safer than retaining the
-other command parameters because the command has already
-completed and no retry is required.
 ============================================================
 */
 
@@ -613,109 +735,62 @@ const markSynced =
             new Date();
 
 
-        /*
-        --------------------------------------------------------
-        NORMAL SYNC REQUESTS
-        --------------------------------------------------------
-
-        Do NOT touch commandPayload.
-        --------------------------------------------------------
-        */
-
         await SyncOutbox.updateMany(
             {
-
                 eventId: {
                     $in:
                         eventIds,
                 },
-
                 status:
                     "PENDING",
-
                 type: {
                     $ne:
                         "CLOUD_COMMAND",
                 },
-
             },
             {
-
                 $set: {
-
                     status:
                         "SYNCED",
-
                     syncedAt:
                         now,
-
                     failedAt:
                         null,
-
                     nextRetryAt:
                         null,
-
                     lastError:
                         "",
-
                 },
-
             }
         );
 
 
-        /*
-        --------------------------------------------------------
-        CLOUD COMMANDS
-        --------------------------------------------------------
-
-        Destroy the complete command payload after successful
-        acknowledgement.
-
-        This guarantees claimToken is no longer retained while
-        avoiding unsafe nested writes against null payloads.
-        --------------------------------------------------------
-        */
-
         await SyncOutbox.updateMany(
             {
-
                 eventId: {
                     $in:
                         eventIds,
                 },
-
                 status:
                     "PENDING",
-
                 type:
                     "CLOUD_COMMAND",
-
             },
             {
-
                 $set: {
-
                     status:
                         "SYNCED",
-
                     syncedAt:
                         now,
-
                     failedAt:
                         null,
-
                     nextRetryAt:
                         null,
-
                     lastError:
                         "",
-
                     commandPayload:
                         null,
-
                 },
-
             }
         );
 
@@ -781,38 +856,25 @@ const markFailed =
 
 
                     return {
-
                         updateOne: {
-
                             filter: {
-
                                 eventId:
                                     event.eventId,
-
                                 status:
                                     "PENDING",
-
                             },
-
                             update: {
-
                                 $set: {
-
                                     lastError:
                                         errorMessage,
-
                                     nextRetryAt:
                                         new Date(
                                             Date.now() +
                                             retryDelay
                                         ),
-
                                 },
-
                             },
-
                         },
-
                     };
 
                 }
@@ -833,21 +895,6 @@ const markFailed =
 /*
 ============================================================
 MARK TERMINAL FAILURE
-============================================================
-
-Used only when retrying cannot ever safely succeed.
-
-Examples:
-
-- PreparedCart consumed by another sale
-- PreparedCart cancelled
-- claim ownership no longer matches
-
-The event remains in the database for diagnosis.
-
-As with markSynced(), normal events and cloud commands are
-handled separately so we never attempt to create nested
-fields under commandPayload: null.
 ============================================================
 */
 
@@ -886,97 +933,58 @@ const markTerminalFailed =
                 );
 
 
-        /*
-        --------------------------------------------------------
-        NON-CLOUD-COMMAND EVENTS
-        --------------------------------------------------------
-        */
-
         await SyncOutbox.updateMany(
             {
-
                 eventId: {
                     $in:
                         eventIds,
                 },
-
                 status:
                     "PENDING",
-
                 type: {
                     $ne:
                         "CLOUD_COMMAND",
                 },
-
             },
             {
-
                 $set: {
-
                     status:
                         "FAILED",
-
                     failedAt:
                         now,
-
                     nextRetryAt:
                         null,
-
                     lastError:
                         errorMessage,
-
                 },
-
             }
         );
 
 
-        /*
-        --------------------------------------------------------
-        CLOUD COMMAND EVENTS
-        --------------------------------------------------------
-
-        Destroy capability credentials because the command is
-        permanently failed and must never be retried.
-        --------------------------------------------------------
-        */
-
         await SyncOutbox.updateMany(
             {
-
                 eventId: {
                     $in:
                         eventIds,
                 },
-
                 status:
                     "PENDING",
-
                 type:
                     "CLOUD_COMMAND",
-
             },
             {
-
                 $set: {
-
                     status:
                         "FAILED",
-
                     failedAt:
                         now,
-
                     nextRetryAt:
                         null,
-
                     lastError:
                         errorMessage,
-
                     commandPayload:
                         null,
-
                 },
-
             }
         );
 
@@ -996,6 +1004,9 @@ const getOutboxStatus =
             pending,
             synced,
             failed,
+            inventoryPending,
+            inventorySynced,
+            inventoryFailed,
             oldestPending,
         ] =
             await Promise.all([
@@ -1011,6 +1022,27 @@ const getOutboxStatus =
                 }),
 
                 SyncOutbox.countDocuments({
+                    status:
+                        "FAILED",
+                }),
+
+                SyncOutbox.countDocuments({
+                    type:
+                        "INVENTORY_CHANGE",
+                    status:
+                        "PENDING",
+                }),
+
+                SyncOutbox.countDocuments({
+                    type:
+                        "INVENTORY_CHANGE",
+                    status:
+                        "SYNCED",
+                }),
+
+                SyncOutbox.countDocuments({
+                    type:
+                        "INVENTORY_CHANGE",
                     status:
                         "FAILED",
                 }),
@@ -1033,6 +1065,8 @@ const getOutboxStatus =
                             type
                             source
                             action
+                            aggregateId
+                            branch
                         `
                     )
                     .lean(),
@@ -1041,17 +1075,20 @@ const getOutboxStatus =
 
 
         return {
-
             pending,
-
             synced,
-
             failed,
-
+            inventory: {
+                pending:
+                    inventoryPending,
+                synced:
+                    inventorySynced,
+                failed:
+                    inventoryFailed,
+            },
             oldestPending:
                 oldestPending ||
                 null,
-
         };
 
     };
@@ -1060,11 +1097,6 @@ const getOutboxStatus =
 /*
 ============================================================
 CLEANUP SYNCED EVENTS
-============================================================
-
-Only successful old events are deleted.
-
-PENDING and FAILED events are preserved.
 ============================================================
 */
 
@@ -1093,53 +1125,33 @@ const cleanupSyncedEvents =
 
         const result =
             await SyncOutbox.deleteMany({
-
                 status:
                     "SYNCED",
-
                 syncedAt: {
                     $lt:
                         cutoff,
                 },
-
             });
 
 
         return {
-
             deleted:
                 result.deletedCount ||
                 0,
-
         };
 
     };
 
 
-/*
-============================================================
-EXPORT
-============================================================
-*/
-
 export default {
-
     enqueueSyncRequest,
-
+    enqueueInventoryChange,
     enqueuePreparedCartFinalize,
-
     getReadyEvents,
-
     markAttempt,
-
     markSynced,
-
     markFailed,
-
     markTerminalFailed,
-
     getOutboxStatus,
-
     cleanupSyncedEvents,
-
 };

@@ -1529,6 +1529,176 @@ const openBulkOrderPrintWindow =
     };
 
 
+
+/*
+============================================================
+UNSAVED BULK ORDER LOCAL DRAFT
+============================================================
+
+Keeps the current Bulk Order in this browser when the user:
+
+- switches to Order History
+- navigates to another POS page
+- refreshes the browser
+- closes and reopens the POS
+
+The local draft is removed only when:
+
+- the user explicitly starts a New Blank Order
+- the current local order is successfully saved
+- a locked/completed/cancelled order replaces the editor
+
+The branch ID is included in the storage key so one branch's
+unfinished order cannot appear in another branch.
+============================================================
+*/
+
+const BULK_ORDER_LOCAL_DRAFT_PREFIX =
+    "storepos:bulk-order-local-draft:v1";
+
+
+const getBulkOrderLocalDraftKey =
+    (
+        branch
+    ) => {
+
+        const branchId =
+            String(
+                branch?._id ||
+                branch?.id ||
+                localStorage.getItem(
+                    "activeBranchId"
+                ) ||
+                "default"
+            );
+
+
+        return `${BULK_ORDER_LOCAL_DRAFT_PREFIX}:${branchId}`;
+
+    };
+
+
+const readBulkOrderLocalDraft =
+    (
+        branch
+    ) => {
+
+        try {
+
+            const raw =
+                localStorage.getItem(
+                    getBulkOrderLocalDraftKey(
+                        branch
+                    )
+                );
+
+
+            if (
+                !raw
+            ) {
+
+                return null;
+
+            }
+
+
+            const parsed =
+                JSON.parse(
+                    raw
+                );
+
+
+            if (
+                !parsed ||
+                typeof parsed !==
+                    "object"
+            ) {
+
+                return null;
+
+            }
+
+
+            return parsed;
+
+        }
+        catch (
+            error
+        ) {
+
+            console.warn(
+                "Unable to restore local Bulk Order draft:",
+                error
+            );
+
+
+            return null;
+
+        }
+
+    };
+
+
+const writeBulkOrderLocalDraft =
+    (
+        branch,
+        draft
+    ) => {
+
+        try {
+
+            localStorage.setItem(
+                getBulkOrderLocalDraftKey(
+                    branch
+                ),
+                JSON.stringify(
+                    draft
+                )
+            );
+
+        }
+        catch (
+            error
+        ) {
+
+            console.warn(
+                "Unable to save local Bulk Order draft:",
+                error
+            );
+
+        }
+
+    };
+
+
+const clearBulkOrderLocalDraft =
+    (
+        branch
+    ) => {
+
+        try {
+
+            localStorage.removeItem(
+                getBulkOrderLocalDraftKey(
+                    branch
+                )
+            );
+
+        }
+        catch (
+            error
+        ) {
+
+            console.warn(
+                "Unable to clear local Bulk Order draft:",
+                error
+            );
+
+        }
+
+    };
+
+
 /*
 ============================================================
 PAGE
@@ -1762,6 +1932,18 @@ function BulkOrderPage() {
     ] =
         useState(
             null
+        );
+
+
+    /*
+    ============================================================
+    LOCAL UNSAVED DRAFT RESTORATION
+    ============================================================
+    */
+
+    const localDraftRestoredRef =
+        useRef(
+            false
         );
 
 
@@ -2240,6 +2422,471 @@ function BulkOrderPage() {
             loadActiveBranch,
             loadOrders,
             showToast,
+        ]
+    );
+
+
+    /*
+    ============================================================
+    RESTORE UNSAVED LOCAL ORDER
+    ============================================================
+
+    Wait until the active branch and products are loaded before
+    restoring. Product data is used to refresh pricing and unit
+    information while retaining the user's unfinished quantities.
+    ============================================================
+    */
+
+    useEffect(
+        () => {
+
+            if (
+                loading ||
+                localDraftRestoredRef.current
+            ) {
+
+                return;
+
+            }
+
+
+            localDraftRestoredRef.current =
+                true;
+
+
+            const draft =
+                readBulkOrderLocalDraft(
+                    activeBranch
+                );
+
+
+            if (
+                !draft
+            ) {
+
+                return;
+
+            }
+
+
+            const restoredMode =
+                draft.pricingMode ===
+                    "RETAIL"
+                    ? "RETAIL"
+                    : "WHOLESALE";
+
+
+            setPricingMode(
+                restoredMode
+            );
+
+
+            setCustomerName(
+                String(
+                    draft.customerName ||
+                    ""
+                )
+            );
+
+
+            setNotes(
+                String(
+                    draft.notes ||
+                    ""
+                )
+            );
+
+
+            /*
+            A locally persisted editor can remember the backend
+            order metadata when the user was editing an already
+            saved order. This means Update Order continues to
+            target the same order after navigating away.
+
+            Completed/cancelled orders are not restored as an
+            editable local draft.
+            */
+
+            const restoredOrder =
+                draft.currentOrder &&
+                ![
+                    "COMPLETED",
+                    "CANCELLED",
+                ].includes(
+                    draft.currentOrder.status
+                )
+                    ? draft.currentOrder
+                    : null;
+
+
+            setCurrentOrder(
+                restoredOrder
+            );
+
+
+            const restoredItems =
+                (
+                    Array.isArray(
+                        draft.items
+                    )
+                        ? draft.items
+                        : []
+                )
+                    .map(
+                        (
+                            savedItem
+                        ) => {
+
+                            const id =
+                                String(
+                                    savedItem.productId ||
+                                    ""
+                                );
+
+
+                            if (
+                                !id
+                            ) {
+
+                                return null;
+
+                            }
+
+
+                            const product =
+                                products.find(
+                                    (
+                                        candidate
+                                    ) =>
+                                        getProductId(
+                                            candidate
+                                        ) ===
+                                        id
+                                );
+
+
+                            const quantity =
+                                Math.max(
+                                    1,
+                                    Math.floor(
+                                        Number(
+                                            savedItem.quantity
+                                        ) ||
+                                        1
+                                    )
+                                );
+
+
+                            const pricing =
+                                (
+                                    Array.isArray(
+                                        product?.pricing
+                                    ) &&
+                                    product.pricing.length >
+                                        0
+                                )
+                                    ? product.pricing
+                                    : (
+                                        savedItem.pricing ||
+                                        []
+                                    );
+
+
+                            const baseUnit =
+                                product?.baseUnit ||
+                                savedItem.baseUnit ||
+                                "Piece";
+
+
+                            const livePricing =
+                                calculateLivePricing(
+                                    pricing,
+                                    quantity,
+                                    restoredMode
+                                );
+
+
+                            const sortInfo =
+                                getLocalSortInfo(
+                                    baseUnit
+                                );
+
+
+                            return {
+
+                                productId:
+                                    id,
+
+                                barcode:
+                                    product?.barcode ||
+                                    savedItem.barcode ||
+                                    "",
+
+                                name:
+                                    product?.name ||
+                                    savedItem.name ||
+                                    "Product",
+
+                                baseUnit,
+
+                                quantity,
+
+                                pricing,
+
+                                pricingBreakdown:
+                                    livePricing
+                                        .pricingBreakdown,
+
+                                effectiveUnitPrice:
+                                    livePricing
+                                        .effectiveUnitPrice,
+
+                                lineTotal:
+                                    livePricing
+                                        .lineTotal,
+
+                                sortGroup:
+                                    sortInfo.group,
+
+                                sortPriority:
+                                    sortInfo.priority,
+
+                            };
+
+                        }
+                    )
+                    .filter(
+                        Boolean
+                    );
+
+
+            setItems(
+                restoredItems
+            );
+
+
+            /*
+            Keep the user's last page inside Bulk Orders as well.
+            If they left while viewing History, returning to this
+            page will still preserve the unfinished New Order.
+            */
+
+            if (
+                draft.tab ===
+                    "history" ||
+                draft.tab ===
+                    "new"
+            ) {
+
+                setTab(
+                    draft.tab
+                );
+
+            }
+
+
+            if (
+                restoredItems.length >
+                    0 ||
+                draft.customerName ||
+                draft.notes
+            ) {
+
+                showToast(
+                    "Unfinished Bulk Order restored."
+                );
+
+            }
+
+        },
+        [
+            loading,
+            activeBranch,
+            products,
+            showToast,
+        ]
+    );
+
+
+    /*
+    ============================================================
+    AUTO-SAVE UNSAVED ORDER LOCALLY
+    ============================================================
+
+    This does not create/update anything in MongoDB. It only
+    preserves the editor in localStorage until the user explicitly
+    saves or clears it.
+    ============================================================
+    */
+
+    useEffect(
+        () => {
+
+            if (
+                loading ||
+                !localDraftRestoredRef.current
+            ) {
+
+                return;
+
+            }
+
+
+            const hasLocalWork =
+                items.length >
+                    0 ||
+                String(
+                    customerName ||
+                    ""
+                ).trim() !==
+                    "" ||
+                String(
+                    notes ||
+                    ""
+                ).trim() !==
+                    "";
+
+
+            /*
+            A completed/cancelled order is not an unfinished
+            editor and should never be persisted as one.
+            */
+
+            if (
+                currentOrder?.status ===
+                    "COMPLETED" ||
+                currentOrder?.status ===
+                    "CANCELLED"
+            ) {
+
+                clearBulkOrderLocalDraft(
+                    activeBranch
+                );
+
+
+                return;
+
+            }
+
+
+            if (
+                !hasLocalWork
+            ) {
+
+                clearBulkOrderLocalDraft(
+                    activeBranch
+                );
+
+
+                return;
+
+            }
+
+
+            const timer =
+                window.setTimeout(
+                    () => {
+
+                        writeBulkOrderLocalDraft(
+                            activeBranch,
+                            {
+                                version:
+                                    1,
+
+                                savedAt:
+                                    new Date()
+                                        .toISOString(),
+
+                                tab,
+
+                                pricingMode,
+
+                                customerName,
+
+                                notes,
+
+                                currentOrder:
+                                    currentOrder
+                                        ? {
+                                            _id:
+                                                currentOrder._id,
+
+                                            orderNumber:
+                                                currentOrder.orderNumber,
+
+                                            revision:
+                                                currentOrder.revision,
+
+                                            status:
+                                                currentOrder.status,
+
+                                            pricingMode:
+                                                currentOrder.pricingMode,
+                                        }
+                                        : null,
+
+                                items:
+                                    items.map(
+                                        (
+                                            item
+                                        ) => ({
+
+                                            productId:
+                                                item.productId,
+
+                                            barcode:
+                                                item.barcode ||
+                                                "",
+
+                                            name:
+                                                item.name ||
+                                                "Product",
+
+                                            baseUnit:
+                                                item.baseUnit ||
+                                                "Piece",
+
+                                            quantity:
+                                                Number(
+                                                    item.quantity ||
+                                                    1
+                                                ),
+
+                                            pricing:
+                                                Array.isArray(
+                                                    item.pricing
+                                                )
+                                                    ? item.pricing
+                                                    : [],
+
+                                        })
+                                    ),
+                            }
+                        );
+
+                    },
+                    150
+                );
+
+
+            return () => {
+
+                window.clearTimeout(
+                    timer
+                );
+
+            };
+
+        },
+        [
+            loading,
+            activeBranch,
+            tab,
+            pricingMode,
+            customerName,
+            notes,
+            currentOrder,
+            items,
         ]
     );
 
@@ -3555,7 +4202,23 @@ function BulkOrderPage() {
     */
 
     const resetOrder =
-        () => {
+        (
+            {
+                clearLocalDraft =
+                    true,
+            } = {}
+        ) => {
+
+            if (
+                clearLocalDraft
+            ) {
+
+                clearBulkOrderLocalDraft(
+                    activeBranch
+                );
+
+            }
+
 
             setCurrentOrder(
                 null
@@ -3703,6 +4366,22 @@ function BulkOrderPage() {
                     order
                 );
 
+
+                /*
+                The editor is now safely stored by the backend,
+                so the temporary browser copy is no longer needed.
+                */
+
+                clearBulkOrderLocalDraft(
+                    activeBranch
+                );
+
+
+                /*
+                The current order remains visible after saving, but it is no
+                longer an *unsaved local draft*. The next actual edit will
+                naturally be persisted again by the autosave effect.
+                */
 
                 await loadOrders();
 
